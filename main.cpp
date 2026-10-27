@@ -227,6 +227,9 @@ int main(int argc, char** argv)
 
     // The host's main thread owns the window and input (macOS requires it); the title runs on its own threads.
     bool headless = getenv("SSA_HEADLESS") != nullptr;
+    // The 3D at the frame's size where the game renders it smaller (Swap Force), unless original_resolution.
+    if (::game::Current().fullScene.width != 0 && !settings.originalResolution)
+        ultrawide::SetScene16x9(::game::Current().fullScene.width, ::game::Current().fullScene.height, false);
     SDL_Window* window = nullptr;
     if (!headless)
     {

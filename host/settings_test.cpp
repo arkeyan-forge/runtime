@@ -108,6 +108,19 @@ int main()
     run = Parse({ { "video", { { "skip_intro_movies", "yes" } } } }, {}, {});
     CHECK(run.ok && !run.settings.skipIntroMovies && run.warnings.size() == 1);
 
+    // original_resolution: off by default; [video], then the game's [<game>.video], then the command line.
+    CHECK(!Parse({}, {}, {}).settings.originalResolution);
+    run = Parse({ { "video", { { "original_resolution", "1" } } } }, {}, {});
+    CHECK(run.ok && run.warnings.empty() && run.settings.originalResolution);
+    run = Parse({ { "video", { { "original_resolution", "1" } } }, { "ssa.video", { { "original_resolution", "0" } } } }, {}, {});
+    CHECK(run.ok && !run.settings.originalResolution);
+    run = Parse({ { "ssa.video", { { "original_resolution", "1" } } } }, {}, { "--original-resolution", "0" });
+    CHECK(run.ok && !run.settings.originalResolution);
+    run = Parse({}, {}, { "--original-resolution=1" });
+    CHECK(run.ok && run.settings.originalResolution && DescribeSettings(run.settings).find("original resolution") != std::string::npos);
+    run = Parse({ { "swapforce.video", { { "original_resolution", "1" } } } }, {}, {}); // another game's section: ignored
+    CHECK(run.ok && !run.settings.originalResolution);
+
     // aspect: auto by default; 16:9 from the file or the command line (the last wins); anything else warns.
     run = Parse({}, {}, {});
     CHECK(run.settings.aspectAuto);

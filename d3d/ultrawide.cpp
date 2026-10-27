@@ -10,11 +10,23 @@ namespace
     constexpr float MaxAspect = 4.0f; // 32:9 is 3.56; anything beyond is clamped (the sides would be mostly sky)
 
     float g_aspect = Wide;
+    uint32_t g_baseWidth = ultrawide::SceneWidth16x9, g_baseHeight = ultrawide::SceneHeight16x9;
+    bool g_keepsArea = game::UltrawideSceneKeepsArea;
     uint32_t g_sceneWidth = ultrawide::SceneWidth16x9, g_sceneHeight = ultrawide::SceneHeight16x9;
     uint32_t g_frameWidth = ultrawide::FrameWidth16x9;
     bool g_active;
     std::atomic<int> g_movies;
 }
+
+void ultrawide::SetScene16x9(uint32_t width, uint32_t height, bool keepsArea)
+{
+    g_baseWidth = g_sceneWidth = width;
+    g_baseHeight = g_sceneHeight = height;
+    g_keepsArea = keepsArea;
+}
+
+uint32_t ultrawide::Scene16x9Width() { return g_baseWidth; }
+uint32_t ultrawide::Scene16x9Height() { return g_baseHeight; }
 
 void ultrawide::Configure(bool automatic, uint32_t windowWidth, uint32_t windowHeight)
 {
@@ -24,14 +36,14 @@ void ultrawide::Configure(bool automatic, uint32_t windowWidth, uint32_t windowH
     if (!g_active)
         return;
     g_aspect = std::min(aspect, MaxAspect);
-    if (game::UltrawideSceneKeepsArea)
+    if (g_keepsArea)
     {
-        float area = float(SceneWidth16x9) * float(SceneHeight16x9);
+        float area = float(g_baseWidth) * float(g_baseHeight);
         g_sceneWidth = std::min(FrameWidth16x9, uint32_t(std::sqrt(area * g_aspect) / 16.0f) * 16);
         g_sceneHeight = uint32_t(float(g_sceneWidth) / g_aspect / 8.0f) * 8;
     }
     else
-        g_sceneWidth = std::max(SceneWidth16x9, uint32_t(std::lround(SceneHeight16x9 * g_aspect / 32.0f)) * 32);
+        g_sceneWidth = std::max(g_baseWidth, uint32_t(std::lround(g_baseHeight * g_aspect / 32.0f)) * 32);
     g_frameWidth = std::max(FrameWidth16x9, uint32_t(std::lround(FrameHeight * g_aspect)));
     fprintf(stderr, "[ultrawide] window %ux%u: aspect %.3f, scene %ux%u, frame %ux%u\n", windowWidth, windowHeight, g_aspect, g_sceneWidth,
         g_sceneHeight, g_frameWidth, FrameHeight);

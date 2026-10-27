@@ -141,7 +141,11 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
         else if (key == "skip_intro_movies") set.Bool(file, "skip_intro_movies", value, s.skipIntroMovies);
         else if (key == "texture_dump") set.Bool(file, "texture_dump", value, s.textureDump);
         else if (key == "texture_packs") set.Bool(file, "texture_packs", value, s.texturePacks);
+        else if (key == "original_resolution") set.Bool(file, "original_resolution", value, s.originalResolution);
     }
+    // The game's own video section (Skylauncher keeps one per game) wins over [video] for the keys that are per game.
+    for (const auto& [key, value] : section((gameSection + ".video").c_str()))
+        if (key == "original_resolution") set.Bool(file, "original_resolution", value, s.originalResolution);
     for (const auto& [key, value] : section("input"))
     {
         if (key == "device") set.Device(file, value);
@@ -202,6 +206,7 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
         else if (option == "--fps-limit") { if (!take()) return false; set.FpsLimit(cli, value); }
         else if (option == "--texture-dump") { if (!take()) return false; set.Bool(cli, "texture_dump", value, s.textureDump); }
         else if (option == "--texture-packs") { if (!take()) return false; set.Bool(cli, "texture_packs", value, s.texturePacks); }
+        else if (option == "--original-resolution") { if (!take()) return false; set.Bool(cli, "original_resolution", value, s.originalResolution); }
         else if (option == "--input") { if (!take()) return false; set.Device(cli, value); }
         else if (option == "--gamepad") { if (!take()) return false; s.gamepad = value; }
         else if (option == "--glyphs") { if (!take()) return false; set.Glyphs(cli, value); }
@@ -252,6 +257,8 @@ std::string SettingsHelp(const char* program)
         "  --fps-limit <n>             30 or 60 (experimental); 0 and more than 60 mean 60\n"
         "  --texture-dump <0|1>        write the game's textures as DDS files (default 0; docs/runtime/gpu/texture_packs.md)\n"
         "  --texture-packs <0|1>       use the replacement textures of the textures folder (default 1)\n"
+        "  --original-resolution <0|1> Swap Force: the console's 3D at 81 % of the frame, stretched (default 0: the 3D\n"
+        "                              at the frame's size)\n"
         "  --input <auto|keyboard|gamepad>\n"
         "                              what the game listens to (default auto: keyboard and gamepad)\n"
         "  --gamepad <guid>            the gamepad to use (see --list-gamepads; default the first one)\n"
@@ -290,5 +297,6 @@ std::string DescribeSettings(const RuntimeSettings& s)
         s.language.empty() ? "game" : s.language, s.voiceLanguage.empty() ? "game" : s.voiceLanguage,
         s.toyboxAutoOpen ? "" : ", toybox auto-open off")
         + (s.aspectAuto ? "" : ", aspect 16:9")
-        + (s.textureDump ? ", texture dump" : "") + (s.texturePacks ? "" : ", texture packs off");
+        + (s.textureDump ? ", texture dump" : "") + (s.texturePacks ? "" : ", texture packs off")
+        + (s.originalResolution ? ", original resolution" : "");
 }

@@ -69,6 +69,15 @@ namespace game
         // fps_limit 60 the runtime then writes 1 there before every swap, and the game measures its frame time instead
         // (d3d/render.cpp, Swap). False for a game that steps by the time it measures at any interval (Lux, Giants).
         bool presentIntervalPacesGame = false;
+
+        // The 3D scene's size at full resolution when the game renders it smaller than the 1280x720 frame and stretches
+        // it (Swap Force: 1040x620, 81 % of the frame): the runtime renders it at this size instead unless [video]
+        // original_resolution is set (d3d/ultrawide.h SetScene16x9). {0, 0}: the game's scene is already full size.
+        struct Size
+        {
+            uint32_t width, height;
+        };
+        Size fullScene = {};
     };
 
     // The adapter of the game being built, defined by games/<id>/adapter.cpp.

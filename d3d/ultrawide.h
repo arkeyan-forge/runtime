@@ -17,6 +17,13 @@ namespace ultrawide
     constexpr uint32_t SceneWidth16x9 = game::UltrawideSceneWidth, SceneHeight16x9 = game::UltrawideSceneHeight;
     constexpr uint32_t FrameWidth16x9 = 1280, FrameHeight = 720;
 
+    // The 16:9 scene the runtime asks the game for, when it is not the game's own (SceneWidth16x9 x SceneHeight16x9):
+    // Swap Force at full resolution renders 1280x720 (game::Adapter::fullScene). `keepsArea` replaces
+    // game::UltrawideSceneKeepsArea (a full-size scene has no EDRAM budget to keep). Called once, before Configure.
+    void SetScene16x9(uint32_t width, uint32_t height, bool keepsArea);
+    uint32_t Scene16x9Width();
+    uint32_t Scene16x9Height();
+
     // `automatic` is [video] aspect=auto; the window's size in pixels. Called once before the title starts.
     void Configure(bool automatic, uint32_t windowWidth, uint32_t windowHeight);
 
@@ -26,7 +33,7 @@ namespace ultrawide
     // The window's aspect when Active(), else 16:9 (the game's own).
     float Aspect();
 
-    // The 3D scene's size: SceneWidth16x9 x SceneHeight16x9 unless Active(). Wide (SSA): the height stays, the width is
+    // The 3D scene's size: Scene16x9Width() x Scene16x9Height() unless Active(). Wide (SSA): the height stays, the width is
     // height x aspect, a multiple of 32 (the sun tiles are 32x32 pixels). With game::UltrawideSceneKeepsArea (Giants)
     // the scene keeps its 16:9 pixel count and is at most 1280 wide, so that it still fits the console's 10 MB of
     // EDRAM (a bigger one makes the game split it into tiles) and the game's viewports (capped at the back buffer's

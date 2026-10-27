@@ -29,6 +29,8 @@ struct RuntimeSettings
     bool skipIntroMovies = false; // skip the start-up logos (legal, atvilogo, xpeclogo, tfb); story movies still play
     bool textureDump = false;     // dump the game's textures as DDS files (host/texture_pack.h)
     bool texturePacks = true;     // replace textures with the files of the game's textures folder, when there is one
+    bool originalResolution = false; // [<game>.video] or [video] original_resolution: the game's own smaller 3D scene,
+                                  // stretched to the frame (Swap Force's 1040x620); default the scene at the frame's size
     std::string inputDevice = "auto"; // auto, keyboard, gamepad
     std::string gamepad;          // SDL GUID, empty: the first one connected
     std::string keys[22];         // SDL key name per g_keyActions entry
