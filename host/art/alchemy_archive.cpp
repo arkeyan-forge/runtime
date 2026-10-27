@@ -705,7 +705,8 @@ namespace art::alchemy
         // (30315 pictures, DXT5 tiled), DC78A2E3 (27947, DXT1 tiled), 19E29222 (132, 8 bits per texel, tiled:
         // "format_tfl8" lookup ramps). On Swap Force's (2026-10-27): 049D7FAA, DXT5 linear, its rows 32 blocks apart
         // (every UI picture: the logo, the menus, the collection icons, the face-off portraits). The other linear and
-        // the DXT3 ones are from public format lists, not seen on either disc.
+        // the DXT3 ones are from public format lists, not seen on either disc. 250C4EF0 (Swap Force, 9 pictures: the title's
+        // logo, the legal and level title screens): A8R8G8B8, tiled, 8-in-32, the size padded to 32 texels.
         struct Known
         {
             uint32_t hash;
@@ -716,7 +717,7 @@ namespace art::alchemy
             { 0xB9BCDC57, TextureFormat::Dxt5, true }, { 0xDC78A2E3, TextureFormat::Dxt1, true }, { 0x19E29222, TextureFormat::L8, true },
             { 0x50A19F21, TextureFormat::Dxt3, true }, { 0x049D7FAA, TextureFormat::Dxt5, false }, { 0x93566F0B, TextureFormat::Dxt5, false },
             { 0xD936ADEE, TextureFormat::Dxt1, false }, { 0xCC82E927, TextureFormat::Dxt1, false }, { 0xCBBED02C, TextureFormat::Dxt3, false },
-            { 0xEABABF45, TextureFormat::Dxt3, false },
+            { 0xEABABF45, TextureFormat::Dxt3, false }, { 0x250C4EF0, TextureFormat::Argb8, true },
         };
         for (const Known& known : Formats)
         {
@@ -724,7 +725,7 @@ namespace art::alchemy
                 continue;
             texture.format = known.format;
             texture.tiled = known.tiled;
-            texture.endian = known.format == TextureFormat::L8 ? TextureEndian::None : TextureEndian::In16;
+            texture.endian = known.format == TextureFormat::L8 ? TextureEndian::None : known.format == TextureFormat::Argb8 ? TextureEndian::In32 : TextureEndian::In16;
             texture.pitch = 0;
             return true;
         }

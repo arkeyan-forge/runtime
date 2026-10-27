@@ -1295,6 +1295,17 @@ namespace
                     }
                 }
             fprintf(stderr, "[dump]   vs c0 %g %g %g %g c4 %g %g %g %g\n", g_constants[0], g_constants[1], g_constants[2], g_constants[3], g_constants[16], g_constants[17], g_constants[18], g_constants[19]);
+            // SKY_DUMP_VS_CONSTANTS=<n>: the vertex shader's c0 to c<n-1> too (a debugging aid: matrices, bone palettes,
+            // motion-blur inputs).
+            static const uint32_t vsConstants = skyenv::Get("SKY_DUMP_VS_CONSTANTS") != nullptr
+                ? std::clamp(uint32_t(atoi(skyenv::Get("SKY_DUMP_VS_CONSTANTS"))), 1u, 256u) : 0;
+            if (vsConstants != 0)
+            {
+                fprintf(stderr, "[dump]   vs c0-c%u", vsConstants - 1);
+                for (uint32_t i = 0; i < vsConstants * 4; i++)
+                    fprintf(stderr, " %g", g_constants[i]);
+                fprintf(stderr, "\n");
+            }
             const float* ps = g_constants.data() + 256 * 4;
             fprintf(stderr, "[dump]   ps c0-c5");
             for (uint32_t i = 0; i < 24; i++)

@@ -82,6 +82,10 @@ namespace collection
         // The game's large pictures of a toy or variant (Giants: the versus screen's character art, about 1000x960),
         // keyed as `portraits`: files of the portraits folder's "artworks" subfolder (art/game_art.h). JSON: "artworks".
         std::map<uint32_t, std::string> artworks;
+        // Swap Force's swap screen pictures: a swapper's top above its waist (SwapTop types) and its legs (SwapBottom
+        // types), each cut out on transparency to be stacked (icons.h, SwapperPicture). Keyed as `portraits`; files of
+        // the "artworks" subfolder. JSON: "halves".
+        std::map<uint32_t, std::string> halves;
         // The hats the game has, by the number a figure stores (0: none), with their English names. JSON: "hats".
         std::map<uint16_t, std::string> hats;
         std::string runtime;                    // the runtime's executable name ("SSARecomp"); its data is in datadir::Game(id)

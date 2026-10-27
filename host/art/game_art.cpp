@@ -30,7 +30,7 @@ namespace art
     namespace
     {
         // Bump when a picture is read or composed differently: the cached pictures (not the portraits) are made again.
-        constexpr int CacheVersion = 3;
+        constexpr int CacheVersion = 4; // 4: Swap Force's logo from its lossless 32-bit picture
 
         std::string Lower(std::string text)
         {
@@ -609,7 +609,7 @@ namespace art
         {
             const collection::Game* game = collection::Catalogue::Get().FindGame(m.game);
             int present = CountPngs(folder);
-            if (game != nullptr && Complete(game->artworks, folder))
+            if (game != nullptr && Complete(game->artworks, folder) && (game->halves.empty() || Complete(game->halves, folder)))
                 return present;
             if (!m.artworkMaterials.empty())
                 return AlchemyMaterials(m.artworkMaterials, disc, folder);

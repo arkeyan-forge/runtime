@@ -427,6 +427,90 @@ namespace collection
         return PortraitPath(gameId, toy, variant, true);
     }
 
+    std::string HalfPicturePath(const Toy& toy, uint16_t variant)
+    {
+        for (const Game& game : Catalogue::Get().Games())
+        {
+            std::filesystem::path data = datadir::Game(game.id);
+            std::string folder;
+            if (const char* portraits = skyenv::Get("SKY_PORTRAITS"))
+                folder = std::string(portraits) + "/artworks/";
+            else if (!data.empty())
+                folder = datadir::Text(data / "portraits") + "/artworks/";
+            else
+                continue;
+            for (uint32_t key : { uint32_t(toy.type) << 16 | variant, uint32_t(toy.type) << 16 }) // for variant 0 the same twice
+            {
+                auto it = game.halves.find(key);
+                if (it == game.halves.end())
+                    continue;
+                std::string path = folder + it->second + ".png";
+                if (SDL_GetPathInfo(path.c_str(), nullptr))
+                    return path;
+            }
+        }
+        return {};
+    }
+
+    namespace
+    {
+        // The bounding box (x0, y0, x1, y1: end exclusive) of the pixels whose alpha is above `minAlpha`.
+        bool VisibleBox(const Image& image, uint8_t minAlpha, int& x0, int& y0, int& x1, int& y1)
+        {
+            x0 = image.width, y0 = image.height, x1 = 0, y1 = 0;
+            for (int y = 0; y < image.height; y++)
+                for (int x = 0; x < image.width; x++)
+                    if ((image.rgba[size_t(y) * image.width + x] >> 24) > minAlpha)
+                        x0 = std::min(x0, x), y0 = std::min(y0, y), x1 = std::max(x1, x + 1), y1 = std::max(y1, y + 1);
+            return x0 < x1 && y0 < y1;
+        }
+
+        Image Cut(const Image& image, int x0, int y0, int x1, int y1)
+        {
+            Image out{ x1 - x0, y1 - y0, std::vector<uint32_t>(size_t(x1 - x0) * size_t(y1 - y0)) };
+            for (int y = y0; y < y1; y++)
+                std::copy_n(image.rgba.begin() + size_t(y) * image.width + x0, x1 - x0, out.rgba.begin() + size_t(y - y0) * out.width);
+            return out;
+        }
+    }
+
+    Image CropToVisible(const Image& image, uint8_t minAlpha)
+    {
+        int x0, y0, x1, y1;
+        if (!VisibleBox(image, minAlpha, x0, y0, x1, y1))
+            return image;
+        return Cut(image, x0, y0, x1, y1);
+    }
+
+    Image StackHalves(const Image& top, const Image& bottom)
+    {
+        int box[2][4];
+        if (!VisibleBox(top, 8, box[0][0], box[0][1], box[0][2], box[0][3]) || !VisibleBox(bottom, 8, box[1][0], box[1][1], box[1][2], box[1][3]))
+            return {};
+        Image halves[2] = { Cut(top, box[0][0], box[0][1], box[0][2], box[0][3]), Cut(bottom, box[1][0], box[1][1], box[1][2], box[1][3]) };
+        int width = std::max(halves[0].width, halves[1].width);
+        Image out;
+        out.width = width;
+        for (Image& half : halves)
+        {
+            int height = std::max(1, int(std::lround(double(half.height) * width / half.width)));
+            half = Resize(half, width, height);
+            out.height += height;
+        }
+        out.rgba.reserve(size_t(out.width) * out.height);
+        for (const Image& half : halves)
+            out.rgba.insert(out.rgba.end(), half.rgba.begin(), half.rgba.end());
+        return out;
+    }
+
+    Image SwapperPicture(const Toy& top, uint16_t topVariant, const Toy& bottom, uint16_t bottomVariant)
+    {
+        std::string upper = HalfPicturePath(top, topVariant), lower = HalfPicturePath(bottom, bottomVariant);
+        if (upper.empty() || lower.empty())
+            return {};
+        return StackHalves(LoadPng(upper), LoadPng(lower));
+    }
+
     uint16_t VariantFor(const Toy& toy, VariantKind kind)
     {
         if (kind == VariantKind::Base || kind == toy.edition)

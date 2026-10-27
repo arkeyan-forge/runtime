@@ -191,7 +191,8 @@ namespace collection
     Card CardOf(const std::vector<Figure>& list, size_t index);
     std::string SwapperName(const std::string& top, const std::string& bottom);
     // The card's name: the top's label if the player gave one; else the swapper's name when both halves are the same
-    // swapper ("Wash Buckler"); else both ("Boom Jet / Wash Buckler"); the figure's DisplayName for a single figure.
+    // swapper ("Wash Buckler"); else the mixed swapper's name as the game gives it, SwapperName ("Nitro Magna Jet");
+    // the figure's DisplayName for a single figure.
     std::string CardName(const Card& card);
     // LevelText of the card's first figure (a swapper's top carries the level), `game` as for LevelText.
     std::string CardLevelText(const Card& card, const std::string& game, bool french = false);

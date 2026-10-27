@@ -23,6 +23,18 @@ namespace toybox
 {
     namespace
     {
+        // A swapper half's name without the catalogue's " (top)" / " (bottom)" (the sheet says Top: and Bottom: already).
+        std::string WithoutHalf(std::string name)
+        {
+            for (const char* suffix : { " (top)", " (bottom)" })
+            {
+                size_t length = strlen(suffix);
+                if (name.size() > length && name.compare(name.size() - length, length, suffix) == 0)
+                    name.erase(name.size() - length);
+            }
+            return name;
+        }
+
         // Colours and type of the first Toy Box (the approved mockup, private/design/toybox-design), kept on purpose.
         namespace Look
         {
@@ -423,10 +435,90 @@ namespace toybox
             return true;
         }
 
-        void HeroPortrait(const Figure& f, ImVec2 center, int diameter)
+        std::map<std::string, collection::Image> g_stacks; // swappers' stacked pictures (an empty one: the halves have none)
+
+        // A swapper's two halves stacked, top above bottom, as the game's swap screen (collection::SwapperPicture, the same
+        // picture as Skylauncher's), fitted into a square of `box` pixels at `center`. False when a half has no such picture
+        // from a disc: the caller draws the round portrait with the bottom small in a corner.
+        bool SwapperStack(const Toy* top, uint16_t topVariant, const Toy* bottom, uint16_t bottomVariant, ImVec2 center, int box, bool grey = false)
         {
-            if (ArtworkPicture(f.toy, f.variant, center, diameter + 24))
+            if (top == nullptr || bottom == nullptr)
+                return false;
+            char key[96];
+            snprintf(key, sizeof(key), "swapper %u %u %u %u", top->type, topVariant, bottom->type, bottomVariant);
+            auto found = g_stacks.find(key);
+            if (found == g_stacks.end())
+            {
+                found = g_stacks.emplace(key, collection::SwapperPicture(*top, topVariant, *bottom, bottomVariant)).first;
+                fprintf(stderr, "[toybox] swapper picture %s + %s: %s\n", top->name.c_str(), bottom->name.c_str(), found->second.Empty() ? "no halves from the disc (round portrait)" : "stacked");
+            }
+            const collection::Image& source = found->second;
+            if (source.Empty())
+                return false;
+            float scale = std::min(float(box) / source.width, float(box) / source.height);
+            int w = std::max(1, int(source.width * scale)), h = std::max(1, int(source.height * scale));
+            std::string baked = std::string(key) + " " + std::to_string(box) + (grey ? " grey" : "");
+            collection::Image fitted;
+            if (!g_baked.count(baked))
+                fitted = collection::Resize(source, w, h);
+            imgui_software::Texture* texture = Bake(baked, w, h, [&](float dx, float dy) {
+                uint32_t pixel = fitted.rgba[size_t(std::clamp(int(dy + h / 2.0f), 0, h - 1)) * w + size_t(std::clamp(int(dx + w / 2.0f), 0, w - 1))];
+                ImVec4 color((pixel & 0xFF) / 255.0f, (pixel >> 8 & 0xFF) / 255.0f, (pixel >> 16 & 0xFF) / 255.0f, (pixel >> 24 & 0xFF) / 255.0f);
+                if (grey)
+                {
+                    float l = (color.x + color.y + color.z) / 3 * 0.6f;
+                    color = ImVec4(l, l, l, color.w);
+                }
+                return color;
+            });
+            ImVec2 min(std::round(center.x - w / 2.0f), std::round(center.y - h / 2.0f));
+            g_draw->AddImage(imgui_software::Ref(texture), min, ImVec2(min.x + w, min.y + h));
+            return true;
+        }
+
+        // The bottom that goes with a swapper's top toy (the same version's when it has one), for the Add a figure screen.
+        bool SwapperStackOfToy(const Toy* top, uint16_t variant, ImVec2 center, int box)
+        {
+            if (top == nullptr || top->category != Category::SwapTop)
+                return false;
+            const Toy* bottom = Catalogue::Get().Find(collection::MatchingHalf(top->type));
+            uint16_t bottomVariant = 0;
+            if (bottom != nullptr && variant != 0)
+                for (const collection::Variant& candidate : bottom->variants)
+                    if (candidate.id == variant)
+                        bottomVariant = candidate.id;
+            return SwapperStack(top, variant, bottom, bottomVariant, center, box);
+        }
+
+        // A figure's round portrait, a swapper's two halves stacked instead (else its top with the bottom small in a corner).
+        bool CardStack(const Model& model, const Figure& f, ImVec2 center, int box, bool grey = false)
+        {
+            collection::Card card = model.CardFor(f);
+            return card.Swapper() && SwapperStack(card.first->toy, card.first->variant, card.second->toy, card.second->variant, center, box, grey);
+        }
+
+        void CardPortrait(const Model& model, const Figure& f, ImVec2 center, int diameter, bool grey = false)
+        {
+            if (CardStack(model, f, center, diameter + 14, grey))
                 return;
+            FigurePortrait(f, center, diameter, grey);
+            BottomBadge(model, f, center, diameter, grey);
+        }
+
+        void HeroPortrait(const Model& model, const Figure& f, ImVec2 center, int diameter)
+        {
+            if (collection::Card card = model.CardFor(f); card.Swapper() && card.first->toy != nullptr && card.second->toy != nullptr &&
+                !collection::HalfPicturePath(*card.first->toy, card.first->variant).empty() && !collection::HalfPicturePath(*card.second->toy, card.second->variant).empty())
+            {
+                RoundRect(ImVec2(center.x - diameter / 2.0f - 12, center.y - diameter / 2.0f - 12), ImVec2(center.x + diameter / 2.0f + 12, center.y + diameter / 2.0f + 12), Look::Field, 18);
+                if (CardStack(model, f, center, diameter + 8))
+                    return;
+            }
+            if (ArtworkPicture(f.toy, f.variant, center, diameter + 24))
+            {
+                BottomBadge(model, f, center, diameter);
+                return;
+            }
             int size = diameter + 2 * 40;
             Blit(Bake("halo " + std::to_string(diameter), size, [&](float dx, float dy) {
                 float distance = std::sqrt(dx * dx + dy * dy), ring = diameter / 2.0f + 5;
@@ -434,6 +526,7 @@ namespace toybox
                 return Color(Look::Gold, std::max(Coverage(ring, distance), glow * glow / 0.43f));
             }), center, float(size));
             FigurePortrait(f, center, diameter);
+            BottomBadge(model, f, center, diameter);
         }
 
         void EmptySeatPicture(ImVec2 center, int diameter)
@@ -671,8 +764,7 @@ namespace toybox
         {
             float width = b.x - a.x, cx = (a.x + b.x) / 2;
             Box(a, b, cursor ? Look::CardSelected : Look::Panel, cursor ? Look::Gold : Look::CardBorder, 16, 2);
-            FigurePortrait(f, ImVec2(cx, a.y + 54), 80, grey);
-            BottomBadge(model, f, ImVec2(cx, a.y + 54), 80, grey);
+            CardPortrait(model, f, ImVec2(cx, a.y + 54), 80, grey);
             TextCentered(g_black, 15, ImVec2(cx, a.y + 110), grey ? Look::TextDimmer : Look::Text, Fit(g_black, 15, model.FigureName(f), width - 16));
             std::string line = model.LevelLine(f);
             if (!line.empty())
@@ -930,8 +1022,7 @@ namespace toybox
                 }
                 else if (f != nullptr)
                 {
-                    FigurePortrait(*f, picture, 64);
-                    BottomBadge(model, *f, picture, 64);
+                    CardPortrait(model, *f, picture, 64);
                     name = model.FigureName(*f);
                     line = model.LevelLine(*f);
                     if (s.waiting)
@@ -1109,8 +1200,7 @@ namespace toybox
             ImVec2 min(32, 88), max(520, 664);
             Panel(min, max);
             float cx = (min.x + max.x) / 2, y = min.y + 24;
-            HeroPortrait(f, ImVec2(cx, y + 74), 148);
-            BottomBadge(model, f, ImVec2(cx, y + 74), 148);
+            HeroPortrait(model, f, ImVec2(cx, y + 74), 148);
             y += 170;
             std::string name = model.FigureName(f);
             float size = 30;
@@ -1155,7 +1245,7 @@ namespace toybox
             }
             std::vector<std::string> facts;
             if (collection::Card card = model.CardFor(f); card.Swapper())
-                facts.push_back(std::string(L("Top: ", "Haut : ")) + card.first->DisplayName() + L(" · Bottom: ", " · Bas : ") + card.second->DisplayName());
+                facts.push_back(std::string(L("Top: ", "Haut : ")) + WithoutHalf(card.first->DisplayName()) + L(" · Bottom: ", " · Bas : ") + WithoutHalf(card.second->DisplayName()));
             else if (f.IsSwapTop() || f.IsSwapBottom())
                 facts.push_back(f.IsSwapTop() ? L("A top with no bottom yet.", "Un haut sans bas pour l'instant.") : L("A bottom with no top yet.", "Un bas sans haut pour l'instant."));
             std::string nickname = figures::NicknameUtf8(f.stats);
@@ -1290,7 +1380,7 @@ namespace toybox
                         index = int(k);
                 }
                 if (index >= 0)
-                    FigurePortrait(model.figures[index], at, 72);
+                    CardPortrait(model, model.figures[index], at, 72);
                 else
                     EmptySeatPicture(at, 72);
                 if (places[i].pinned)
@@ -1448,7 +1538,7 @@ namespace toybox
                 constexpr float Left = 32, Width = 300, Center = Left + Width / 2;
                 Panel(ImVec2(Left, Top), ImVec2(Left + Width, Top + Height));
                 float y = Top + 24;
-                HeroPortrait(f, ImVec2(Center, y + 74), 148);
+                HeroPortrait(model, f, ImVec2(Center, y + 74), 148);
                 y += 176;
                 std::string name = model.FigureName(f);
                 float size = 28;
@@ -1598,7 +1688,8 @@ namespace toybox
                 ImVec2 a(x, y), b(x + cardWidth, y + cardHeight);
                 bool cursor = int(i) == grid.cursor;
                 Box(a, b, cursor ? Look::CardSelected : Look::Panel, cursor && !model.addVersions ? Look::Gold : Look::CardBorder, 14, 2);
-                Portrait(toy, toy->edition, ImVec2(x + 34, y + cardHeight / 2), 48);
+                if (!SwapperStackOfToy(toy, 0, ImVec2(x + 34, y + cardHeight / 2), 52))
+                    Portrait(toy, toy->edition, ImVec2(x + 34, y + cardHeight / 2), 48);
                 Text(g_black, 14, ImVec2(x + 66, y + 12), Look::Text, Fit(g_black, 14, Model::AddName(*toy), cardWidth - 74 - (VersionCount(*toy) == 0 ? 0 : 42)));
                 int owned = 0;
                 for (const Figure& f : model.figures)
@@ -1621,7 +1712,8 @@ namespace toybox
             {
                 const Toy* toy = model.addToys[grid.cells[grid.cursor].figure];
                 float y = pmin.y + 20;
-                Portrait(toy, toy->edition, ImVec2(pmin.x + 52, y + 32), 64);
+                if (!SwapperStackOfToy(toy, 0, ImVec2(pmin.x + 52, y + 32), 68))
+                    Portrait(toy, toy->edition, ImVec2(pmin.x + 52, y + 32), 64);
                 Text(g_display, 20, ImVec2(pmin.x + 96, y + 8), 0xFFFFFF, Fit(g_display, 20, Model::AddName(*toy), pmax.x - pmin.x - 110));
                 Text(g_bold, 14, ImVec2(pmin.x + 96, y + 38), Look::TextDim, L("Versions", "Versions"));
                 y += 84;
@@ -1634,7 +1726,8 @@ namespace toybox
                     Box(a, b, focused ? Look::CardSelected : Look::Night, focused ? Look::Gold : Look::CardBorder, 10, 2);
                     // The version's picture (the toy's own when it has none), its name and its kind.
                     float middle = (a.y + b.y) / 2, picture = std::min(36.0f, b.y - a.y - 6);
-                    if (!ArtworkPicture(toy, version.variant, ImVec2(a.x + 8 + picture / 2, middle), int(picture), false))
+                    if (!SwapperStackOfToy(toy, version.variant, ImVec2(a.x + 8 + picture / 2, middle), int(picture)) &&
+                        !ArtworkPicture(toy, version.variant, ImVec2(a.x + 8 + picture / 2, middle), int(picture), false))
                         Portrait(toy, version.kind, ImVec2(a.x + 8 + picture / 2, middle), int(picture));
                     float textX = a.x + 16 + picture;
                     Text(g_black, 14, ImVec2(textX, middle - (version.kind == VariantKind::Base ? 9 : 17)), Look::Text, Fit(g_black, 14, version.name, b.x - textX - 100));
@@ -1949,7 +2042,7 @@ namespace toybox
                 if (index >= 0)
                 {
                     const Figure& f = model.figures[index];
-                    FigurePortrait(f, at, 92);
+                    CardPortrait(model, f, at, 92);
                     std::string name = model.FigureName(f);
                     TextCentered(g_black, 15, ImVec2(at.x, at.y + 60), aimed ? Look::GoldText : Look::Text, Fit(g_black, 15, name, 170));
                     // The card's words: the level for this game, unless the place says more.
@@ -1979,7 +2072,7 @@ namespace toybox
             }
             // Centre: the seat's figure; releasing here cancels.
             if (current != nullptr)
-                FigurePortrait(*current, WheelCenter, 110);
+                CardPortrait(model, *current, WheelCenter, 110);
             else
                 EmptySeatPicture(WheelCenter, 110);
             if (w.aimed < 0)

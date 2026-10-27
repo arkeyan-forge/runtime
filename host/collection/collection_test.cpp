@@ -1006,6 +1006,63 @@ namespace
     }
 
 
+    // A swapper's picture: its two halves cut to their visible pixels and stacked (icons.h), on synthetic images, then through
+    // the catalogue's "halves" with the files in a scratch portraits folder.
+    void TestSwapperPicture()
+    {
+        using namespace collection;
+        // A picture of `w` x `h` with an opaque rectangle (colour `rgb`) at (x, y) of size rw x rh; the rest transparent.
+        auto make = [](int w, int h, int x, int y, int rw, int rh, uint32_t rgb) {
+            Image image{ w, h, std::vector<uint32_t>(size_t(w) * h, 0) };
+            for (int j = y; j < y + rh; j++)
+                for (int i = x; i < x + rw; i++)
+                    image.rgba[size_t(j) * w + i] = 0xFF000000u | rgb;
+            return image;
+        };
+        // The crop: the bounding box of the visible pixels; a faint haze (alpha 3) does not count; nothing visible: unchanged.
+        Image padded = make(40, 30, 10, 12, 8, 6, 0x0000FF);
+        padded.rgba[0] = 0x03FFFFFFu;
+        Image cut = CropToVisible(padded);
+        CHECK(cut.width == 8 && cut.height == 6 && cut.rgba.size() == 48 && cut.rgba[0] == 0xFF0000FFu && cut.rgba[47] == 0xFF0000FFu);
+        Image empty{ 5, 4, std::vector<uint32_t>(20, 0) };
+        CHECK(CropToVisible(empty).width == 5 && CropToVisible(empty).height == 4);
+
+        // The stack: both at the wider's width (20), the top (20 x 10) above the bottom (10 x 8 grown to 20 x 16).
+        Image top = make(100, 60, 30, 20, 20, 10, 0x0000FF), bottom = make(64, 64, 10, 40, 10, 8, 0x00FF00);
+        Image stacked = StackHalves(top, bottom);
+        CHECK(stacked.width == 20 && stacked.height == 26 && stacked.rgba.size() == 520);
+        CHECK(stacked.rgba[0] == 0xFF0000FFu && stacked.rgba[size_t(9) * 20 + 19] == 0xFF0000FFu); // the top, to the waist
+        CHECK(stacked.rgba[size_t(10) * 20 + 0] == 0xFF00FF00u && stacked.rgba[size_t(25) * 20 + 19] == 0xFF00FF00u); // the bottom under it
+        // A half with nothing visible: no picture (the caller falls back to the inset).
+        CHECK(StackHalves(top, empty).Empty() && StackHalves(empty, bottom).Empty());
+        // The narrower half grows; the wider one is not touched: the top at 8 wide over a bottom at 16 wide.
+        Image narrow = StackHalves(make(30, 30, 0, 0, 8, 8, 0xFF0000), make(30, 30, 0, 0, 16, 4, 0x00FF00));
+        CHECK(narrow.width == 16 && narrow.height == 20);
+
+        // Through the catalogue: Blast Zone's halves (2004 and 1004) in the scratch portraits folder.
+        const Toy* blastTop = Catalogue::Get().Find(2004);
+        const Toy* blastBottom = Catalogue::Get().Find(1004);
+        CHECK(blastTop != nullptr && blastBottom != nullptr);
+        if (blastTop == nullptr || blastBottom == nullptr)
+            return;
+        CHECK(HalfPicturePath(*blastTop, 0x2000).empty() && SwapperPicture(*blastTop, 0, *blastBottom, 0).Empty()); // no file yet
+        std::string folder = g_scratch + "/portraits/artworks";
+        SDL_CreateDirectory((g_scratch + "/portraits").c_str());
+        SDL_CreateDirectory(folder.c_str());
+        CHECK(SavePng(make(64, 64, 8, 4, 48, 24, 0x2040FF), folder + "/fireknightbody_wii_material.png"));
+        CHECK(SavePng(make(64, 64, 16, 30, 32, 20, 0x40FF20), folder + "/fireknightlegs_wii_material.png"));
+        CHECK(HalfPicturePath(*blastTop, 0x2000) == folder + "/fireknightbody_wii_material.png"); // the base version: the plain toy's
+        CHECK(HalfPicturePath(*blastBottom, 0) == folder + "/fireknightlegs_wii_material.png");
+        Image blast = SwapperPicture(*blastTop, 0x2000, *blastBottom, 0);
+        CHECK(blast.width == 48 && blast.height == 24 + 30); // 48 x 24 over 32 x 20 grown to 48 x 30
+        // Dark Blast Zone has pictures of its own, not on the disc folder yet: its halves fall back to the plain toy's.
+        CHECK(HalfPicturePath(*blastTop, 0x2402) == folder + "/fireknightbody_wii_material.png");
+        CHECK(SavePng(make(64, 64, 0, 0, 10, 10, 0xFF0000), folder + "/darkblasttop_wii_material.png"));
+        CHECK(HalfPicturePath(*blastTop, 0x2402) == folder + "/darkblasttop_wii_material.png");
+        // A toy that is not a swapper half has none.
+        CHECK(Catalogue::Get().Find(0) != nullptr && HalfPicturePath(*Catalogue::Get().Find(0), 0).empty());
+    }
+
     // The smart search (search.h): names, elements, games, toy types, versions, levels, both languages, accents, typos.
     void TestSearch()
     {
@@ -1206,6 +1263,7 @@ int main(int argc, char** argv)
     TestIcons(sheetFolder);
     TestManagement();
     TestSwappers();
+    TestSwapperPicture();
     TestSearch();
     TestBadIndex();
     TestPortalOverview();

@@ -170,7 +170,7 @@ namespace collection
                 }
                 game.kindPictures[category] = value.AsString();
             }
-            for (auto [field, pictures] : { std::pair{ "portraits", &game.portraits }, std::pair{ "artworks", &game.artworks } })
+            for (auto [field, pictures] : { std::pair{ "portraits", &game.portraits }, std::pair{ "artworks", &game.artworks }, std::pair{ "halves", &game.halves } })
                 for (const auto& [key, value] : item[field].Members())
                 {
                     // "<type>" or "<type>:<variant id>"

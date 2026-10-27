@@ -390,6 +390,10 @@ namespace
         std::vector<uint8_t> v12 = MakeIgz(0xB9BCDC57, 12);
         CHECK(!art::alchemy::IgzFile::Parse(v12)); // a version the table lacks is refused, not guessed
 
+        // Swap Force's 32-bit pictures (250C4EF0: the title's logo): A8R8G8B8, tiled, 8-in-32.
+        art::Texture argb;
+        CHECK(art::alchemy::TextureFormatOf(0x250C4EF0, argb) && argb.format == art::TextureFormat::Argb8 && argb.tiled && argb.endian == art::TextureEndian::In32);
+
         // IGZ v7 [V]: the picture's name from the strings, the material's dependency, and Swap Force's linear DXT5
         // (049D7FAA), its rows 32 blocks apart.
         auto v7 = art::alchemy::IgzFile::Parse(MakeIgz(0x049D7FAA, 7, true));
@@ -611,6 +615,9 @@ namespace
         size(art::CachedPath(game, art::Role::Logo), w, h);
         printf("  logo %dx%d", w, h);
         CHECK(w >= 512 && h >= 200 && w > h);
+        // [SwapForce] No picture of the logo on the disc is larger than 872x400: the title screen's lossless 32-bit one
+        // (juicestandard_title_00) is the sharpest, the DXT5 copy of it (title_10) the same size.
+        CHECK(strcmp(game, "swapforce") != 0 || (w == 872 && h == 400));
         size(art::CachedPath(game, art::Role::Background), w, h);
         printf(", background %dx%d\n", w, h);
         CHECK(w >= 512 && h >= 512);
@@ -642,23 +649,61 @@ namespace
         // toy and variant is its own artwork when the game has one (Giants: 99, about 1000x960).
         const collection::Game* entry = catalogue.FindGame(game);
         int ownPortraits = 0, ownArtworks = 0, absent = 0;
-        for (const auto* pictures : { &entry->portraits, &entry->artworks })
+        for (const auto* pictures : { &entry->portraits, &entry->artworks, &entry->halves })
             for (const auto& [key, name] : *pictures)
             {
-                bool art = pictures == &entry->artworks;
+                bool art = pictures != &entry->portraits; // the artworks folder holds the halves too
                 std::filesystem::path path = (art ? art::ArtworkFolder(game) : art::PortraitFolder(game)) / (name + ".png");
                 std::error_code error;
                 if (!std::filesystem::is_regular_file(path, error))
                     absent++, fprintf(stderr, "  missing %s\n", datadir::Text(path).c_str());
-                (art ? ownArtworks : ownPortraits) += (key & 0xFFFF) != 0;
+                (art ? ownArtworks : ownPortraits) += (key & 0xFFFF) != 0 && pictures != &entry->halves;
             }
         CHECK(absent == 0);
         printf("  %d artworks; variants with their own portrait %d, with their own artwork %d\n", got.artworks, ownPortraits, ownArtworks);
         if (strcmp(game, "swapforce") == 0)
         {
-            // [SwapForce] 179 face-off portraits (640x320, one per Skylander and variant; 175 named by the toy data);
-            // Series 2 Zook's is its own.
-            CHECK(got.artworks == 179 && again.artworks == 179);
+            // [SwapForce] 179 face-off portraits (640x320, one per Skylander and variant; 175 named by the toy data) and the
+            // swap screen's pictures of the swappers' halves (50 named by the catalogue's "halves", and the belt picture that
+            // the game names "altdecocowboytop", not mapped); Series 2 Zook's is its own.
+            CHECK(got.artworks == 179 + 51 && again.artworks == 179 + 51);
+            CHECK(entry->halves.size() == 50);
+            // Every swapper half has a picture (the plain toy's, and each variant's own), cut out on transparency, to be stacked.
+            int halves = 0;
+            for (const collection::Toy* toy : catalogue.Accepted(game))
+                if (toy->category == collection::Category::SwapTop || toy->category == collection::Category::SwapBottom)
+                {
+                    std::string path = collection::HalfPicturePath(*toy, 0);
+                    size(path, w, h);
+                    CHECK(!path.empty() && w >= 256 && h >= 256);
+                    halves += !path.empty();
+                }
+            CHECK(halves == 32);
+            // Boom Jet's two halves stack: top above bottom at the wider's width; Dark Blast Zone's own pictures.
+            const collection::Toy* boomTop = catalogue.Find(2000);
+            const collection::Toy* boomBottom = catalogue.Find(1000);
+            collection::Image boom = boomTop != nullptr && boomBottom != nullptr ? collection::SwapperPicture(*boomTop, 0x2000, *boomBottom, 0x2000) : collection::Image{};
+            CHECK(!boom.Empty() && boom.width > 200 && boom.height > boom.width / 2 && boom.height < boom.width * 2);
+            // SWAPPER_PICTURES=<folder> writes every matched swapper's picture, the variants and a few mixed ones, to look at.
+            if (const char* sheet = getenv("SWAPPER_PICTURES"); sheet != nullptr && *sheet)
+            {
+                std::filesystem::create_directories(sheet);
+                auto write = [&](uint16_t top, uint16_t topVariant, uint16_t bottom, uint16_t bottomVariant, const std::string& name) {
+                    collection::Image image = collection::SwapperPicture(*catalogue.Find(top), topVariant, *catalogue.Find(bottom), bottomVariant);
+                    CHECK(!image.Empty() && collection::SavePng(image, std::string(sheet) + "/" + name + ".png"));
+                };
+                for (uint16_t i = 0; i < 16; i++)
+                    write(2000 + i, 0, 1000 + i, 0, "matched-" + std::to_string(100 + i).substr(1) + "-" + catalogue.Find(2000 + i)->name);
+                for (uint16_t i = 0; i < 16; i++)
+                    for (const collection::Variant& variant : catalogue.Find(2000 + i)->variants)
+                        if (variant.id != 0 && variant.id != 0x2000)
+                            write(2000 + i, variant.id, 1000 + i, variant.id, "variant-" + std::to_string(100 + i).substr(1) + "-" + std::to_string(variant.id));
+                for (auto [top, bottom] : { std::pair{ 2012, 1010 }, std::pair{ 2000, 1015 }, std::pair{ 2007, 1002 }, std::pair{ 2004, 1001 }, std::pair{ 2010, 1006 } })
+                    write(uint16_t(top), 0, uint16_t(bottom), 0, "mixed-" + std::to_string(top) + "-" + std::to_string(bottom));
+            }
+            CHECK(collection::HalfPicturePath(*catalogue.Find(2004), 0x2402).ends_with("artworks/darkblasttop_wii_material.png"));
+            CHECK(collection::HalfPicturePath(*catalogue.Find(1013), 0x2402).ends_with("artworks/altdecocowboylegs_wii_material.png"));
+            CHECK(collection::HalfPicturePath(*catalogue.Find(2013), 0x2402).ends_with("artworks/altdecocowboybelt_wii_material.png"));
             const collection::Toy* zook = catalogue.Find(25);
             std::string best = zook != nullptr ? collection::BestPicturePath(game, *zook, 0x1801) : std::string();
             size(best, w, h);
