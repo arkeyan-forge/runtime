@@ -6,6 +6,7 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include "env.h"
 
 namespace
 {
@@ -62,17 +63,17 @@ void SetHostGamepad(const GamepadState& state, int user, bool connected)
 bool GamepadConnected(int user)
 {
     std::lock_guard lock(g_mutex);
-    // SSA_PRESS_FILE: the first controller is there from the start (a game that saw no pad at its title may wait for one)
-    static const bool pressFile = getenv("SSA_PRESS_FILE") != nullptr;
+    // SKY_PRESS_FILE: the first controller is there from the start (a game that saw no pad at its title may wait for one)
+    static const bool pressFile = skyenv::Get("SKY_PRESS_FILE") != nullptr;
     return user >= 0 && user < MaxUsers && (g_users[user].connected || !g_users[user].script.empty() || (user == 0 && pressFile));
 }
 
-// SSA_PRESS_FILE=<file>: lines appended to it while the game runs are presses made at once, "<button>[:<hold seconds>]"
+// SKY_PRESS_FILE=<file>: lines appended to it while the game runs are presses made at once, "<button>[:<hold seconds>]"
 // for the first controller, "2 <button>[:<hold>]" for the second (an unattended run steered from outside, by looking
-// at the frames it writes; the same names as SSA_PRESS).
+// at the frames it writes; the same names as SKY_PRESS).
 static void ReadPressFile()
 {
-    static const char* path = getenv("SSA_PRESS_FILE");
+    static const char* path = skyenv::Get("SKY_PRESS_FILE");
     static size_t offset = 0;
     static auto lastCheck = std::chrono::steady_clock::now();
     auto now = std::chrono::steady_clock::now();

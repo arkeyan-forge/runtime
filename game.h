@@ -50,9 +50,9 @@ namespace game
         // nullptr: the console language is all there is.
         bool (*SetTextLanguage)(std::string_view code) = nullptr;
 
-        // SSA_LEVEL=<level> (test aid, kernel/files.cpp RedirectLevel): the disc path of the first level's files up to
+        // SKY_LEVEL=<level> (test aid, kernel/files.cpp RedirectLevel): the disc path of the first level's files up to
         // the end of the level's name (its name starts after the last backslash), and the characters that may follow
-        // the name in a path the redirect rewrites ('\0': the path ends there). Empty: the game has no SSA_LEVEL.
+        // the name in a path the redirect rewrites ('\0': the path ends there). Empty: the game has no SKY_LEVEL.
         struct FirstLevel
         {
             std::string_view path;

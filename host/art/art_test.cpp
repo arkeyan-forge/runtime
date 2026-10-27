@@ -5,6 +5,7 @@
 //   ./SSAArtTest [--keep]            --keep: leave the scratch pictures to look at
 #include "host/art/alchemy_archive.h"
 #include "host/art/game_art.h"
+#include "host/art/ico.h"
 #include "host/art/lux_images.h"
 #include "host/art/xenos_texture.h"
 #include "host/collection/catalogue.h"
@@ -13,6 +14,7 @@
 #include "host/collection/upgrades.h"
 #include "vfs.h"
 #include <SDL3/SDL.h>
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -20,6 +22,7 @@
 #include <set>
 #include <string>
 #include <vector>
+#include "../env.h"
 
 namespace
 {
@@ -473,7 +476,7 @@ namespace
     {
         std::filesystem::path folder = scratch / "rule";
         std::filesystem::create_directories(folder);
-        SDL_setenv_unsafe("SSA_PORTRAITS", datadir::Text(folder).c_str(), 1);
+        SDL_setenv_unsafe("SKY_PORTRAITS", datadir::Text(folder).c_str(), 1);
         collection::Image square{ 4, 4, std::vector<uint32_t>(16, 0xFF336699) };
         for (const char* name : { "toy_eruptor_hud", "eruptor", "eruptor_lightcore", "eagle" })
             CHECK(collection::SavePng(square, datadir::Text(folder / (std::string(name) + ".png"))));
@@ -528,7 +531,7 @@ namespace
             named = named && toy != nullptr && variant && !name.empty();
         }
         CHECK(named);
-        SDL_unsetenv_unsafe("SSA_PORTRAITS");
+        SDL_unsetenv_unsafe("SKY_PORTRAITS");
     }
 
     // --- The discs (optional) --------------------------------------------------------------------------------------
@@ -698,6 +701,27 @@ namespace
     }
 }
 
+void TestIco()
+{
+    // A 64x64 PNG header (signature, IHDR chunk) is all MakeIco reads.
+    std::vector<uint8_t> png = { 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n', 0, 0, 0, 13, 'I', 'H', 'D', 'R', 0, 0, 0, 64, 0, 0, 0, 64, 8, 6, 0, 0, 0 };
+    png.resize(40, 0);
+    std::vector<uint8_t> ico = MakeIco(png);
+    CHECK(ico.size() == 22 + png.size());
+    CHECK(ico[2] == 1 && ico[4] == 1);           // an icon, one image
+    CHECK(ico[6] == 64 && ico[7] == 64);         // its size
+    CHECK(ico[14] == png.size() && ico[18] == 22); // its length and offset
+    CHECK(std::equal(png.begin(), png.end(), ico.begin() + 22));
+    png[19] = 0; // 256 is stored as 0
+    png[18] = 1;
+    png[23] = 0;
+    png[22] = 1;
+    CHECK(MakeIco(png)[6] == 0);
+    png[22] = 2; // not square
+    CHECK(MakeIco(png).empty());
+    CHECK(MakeIco({ 1, 2, 3 }).empty());
+}
+
 int main(int argc, char** argv)
 {
     bool keep = argc > 1 && strcmp(argv[1], "--keep") == 0;
@@ -706,6 +730,7 @@ int main(int argc, char** argv)
     TestArgbAndL8();
     TestAlchemy();
     TestLux();
+    TestIco();
 
     // Scratch data folder: SKYLANDERS_DATA if set (the harness sets one), else a temporary one.
     std::filesystem::path scratch;

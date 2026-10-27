@@ -99,7 +99,7 @@ namespace
         Write(s / "games" / "abc123" / "SSARecomp.app" / "Contents" / "MacOS" / "SSARecomp", "binary");
         Write(s / "games" / "abc123" / "install.log", "@done\n");
         Write(s / "games" / "abc123" / "ssabuild-work" / "logs" / "link.log", "link");
-        Write(s / "kit" / "v0.3.0" / "SSABuild", "kit");
+        Write(s / "kit" / "v0.3.0" / "SkyBuild", "kit");
         Write(old.root / "Collection" / "fig.sky", "collection bytes"); // already in place
         return old;
     }
@@ -134,7 +134,7 @@ namespace
         CHECK(Read(old.root / "logs" / "skylauncher-game.log") == "game\n");
         CHECK(Read(game / "SSARecomp.app" / "Contents" / "MacOS" / "SSARecomp") == "binary");
         CHECK(Read(game / "install.log") == "@done\n" && Read(game / "ssabuild-work" / "logs" / "link.log") == "link");
-        CHECK(Read(old.root / "kit" / "v0.3.0" / "SSABuild") == "kit");
+        CHECK(Read(old.root / "kit" / "v0.3.0" / "SkyBuild") == "kit");
         // launcher.ini: moved, the install path follows, the ISO's stays
         std::string ini = Read(old.root / "launcher.ini");
         CHECK(ini.find("iso=/discs/game.iso\n") != std::string::npos && ini.find("vsync=0") != std::string::npos);
@@ -160,13 +160,13 @@ namespace
         Write(roots.ssarecomp / "SSARecomp" / "saves" / "s.bin", "save");
         Write(roots.skylauncher / "games" / "ff" / "SSARecomp.exe", "exe");
         Write(roots.skylauncher / "games" / "ff" / "ssabuild-work" / "x", "x");
-        Write(roots.skylauncher / "kit" / "v0.3.0" / "SSABuild.exe", "kit");
+        Write(roots.skylauncher / "kit" / "v0.3.0" / "SkyBuild.exe", "kit");
         Write(roots.localSsarecomp / "toolchains" / "llvm-mingw.zip", "zip");
         Write(roots.localSsarecomp / "toolchains" / "llvm-mingw" / "bin" / "clang.exe", "clang");
         MigrationReport report = Migrate(roots, root);
         CHECK(report.failed == 0 && Read(root / "SSA" / "SSARecomp.exe") == "exe" && Read(root / "SSA" / "saves" / "s.bin") == "save");
         CHECK(Read(root / "toolchains" / "llvm-mingw" / "bin" / "clang.exe") == "clang" && Read(root / "toolchains" / "llvm-mingw.zip") == "zip");
-        CHECK(Read(root / "kit" / "v0.3.0" / "SSABuild.exe") == "kit");
+        CHECK(Read(root / "kit" / "v0.3.0" / "SkyBuild.exe") == "kit");
         CHECK(Read(root / "launcher.ini").find("runtime=" + (root / "SSA" / "SSARecomp.exe").string()) != std::string::npos);
         CHECK(!Has(roots.ssarecomp) && !Has(roots.skylauncher) && !Has(roots.localSsarecomp));
         // a second game folder (another disc) stays where it was

@@ -65,7 +65,7 @@ namespace glyphs
 
     Style Current();
 
-    // Test aid, from the host's main loop before it reads events: SSA_GLYPHS_SCRIPT="ps5:25,key:45,switch:55,..." at
+    // Test aid, from the host's main loop before it reads events: SKY_GLYPHS_SCRIPT="ps5:25,key:45,switch:55,..." at
     // those seconds since launch attaches a virtual SDL gamepad of that family (ps5, ps4, switch, xboxone, xbox360; the
     // previous one is detached) and presses its Guide button half a second later, or ("key") sends a key press, so that
     // glyphs=auto switches through the real event path.

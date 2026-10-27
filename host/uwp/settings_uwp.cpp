@@ -70,7 +70,7 @@ void UwpApplySettings(const std::string& localState, uint32_t defaultScale)
         fprintf(stderr, "[settings] wrote %s\n", path.c_str());
     }
 
-    // [portal] mode (auto, real, emulated): read by PortalInit as SSA_PORTAL.
+    // [portal] mode (auto, real, emulated): read by PortalInit as SKY_PORTAL.
     auto portal = config.find("portal");
     std::string portalMode = portal != config.end() && portal->second.count("mode") ? portal->second.at("mode") : "auto";
     if (portalMode != "auto" && portalMode != "real" && portalMode != "emulated")
@@ -78,7 +78,7 @@ void UwpApplySettings(const std::string& localState, uint32_t defaultScale)
         fprintf(stderr, "[settings] unknown [portal] mode \"%s\" (auto, real or emulated): auto\n", portalMode.c_str());
         portalMode = "auto";
     }
-    _putenv_s("SSA_PORTAL", portalMode.c_str());
+    _putenv_s("SKY_PORTAL", portalMode.c_str());
     fprintf(stderr, "[settings] portal %s\n", portalMode.c_str());
 
     std::vector<std::string> warnings;

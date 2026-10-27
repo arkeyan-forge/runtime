@@ -1,12 +1,12 @@
 #pragma once
 
 // Where everything of the player's lives (docs/getting-started/settings.md): one folder per OS, "Skylanders", shared by the game, the
-// launcher and SSABuild. Plain C++ and the C library only (no SDL), so SSABuild can use it too.
+// launcher and SkyBuild. Plain C++ and the C library only (no SDL), so SkyBuild can use it too.
 //
 //   <root>/Collection/      the figures, shared by every game          (collection.h)
 //   <root>/launcher.ini     the settings shared by the games and the launcher
 //   <root>/kit/             the kits the launcher downloaded, <release tag>/ each
-//   <root>/toolchains/      the compilers SSABuild downloads (Windows)
+//   <root>/toolchains/      the compilers SkyBuild downloads (Windows)
 //   <root>/logs/            the launcher's logs, migration.log
 //   <root>/<Game>/          one per game ("SSA"): the built game, its settings, saves, pipelines.bin, portal.txt,
 //                           figures, portraits, launcher-cache and SSARecomp.log
@@ -41,7 +41,7 @@ namespace datadir
     // --- Migration from the older layouts -----------------------------------------------------------------------------
     //
     // Before, the game kept its data in <roaming>/SSARecomp (and, nested, <roaming>/SSARecomp/SSARecomp), Skylauncher
-    // its games and kits in its own folder (%LOCALAPPDATA%\Skylauncher on Windows), SSABuild its compilers in
+    // its games and kits in its own folder (%LOCALAPPDATA%\Skylauncher on Windows), SkyBuild its compilers in
     // %LOCALAPPDATA%\SSARecomp\toolchains. Migrate() moves them into the layout above:
     //  - entries are RENAMED, one by one; a source that is gone is skipped, so a half-done run is finished by the next;
     //  - nothing is overwritten or deleted: when the target exists the moved entry is kept beside it as
@@ -80,7 +80,7 @@ namespace datadir
     // The old folders of this machine.
     OldRoots RealOldRoots();
     // Migrate(RealOldRoots(), Root()), at most once per process, and never when the run is a test run or portable
-    // (SKYLANDERS_DATA, SKYLAUNCHER_DATA, SSA_SAVE_DIR, SSA_SETTINGS, SSA_LAUNCHER_INI or SSA_COLLECTION is set: the
+    // (SKYLANDERS_DATA, SKY_LAUNCHER_DATA, SKY_SAVE_DIR, SKY_SETTINGS, SKY_LAUNCHER_INI or SKY_COLLECTION is set: the
     // old folders would be the player's own). Call first thing in main, before any path is used.
     MigrationReport MigrateOnce();
 }

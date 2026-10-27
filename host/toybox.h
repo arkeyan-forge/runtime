@@ -19,7 +19,7 @@ bool ToyboxHandleEvent(const SDL_Event& event);
 // (everything while one is open, View while it may become the wheel) and gives back a tap of View.
 void ToyboxFilterGamepad(GamepadState& state);
 
-// Main thread, once per frame: runs SSA_TOYBOX_SCRIPT and redraws the menu when it changed.
+// Main thread, once per frame: runs SKY_TOYBOX_SCRIPT and redraws the menu when it changed.
 void ToyboxUpdate();
 
 // [portal] toybox_auto_open (default on): when the game asks for a figure (its "place a Skylander on the portal" screen),

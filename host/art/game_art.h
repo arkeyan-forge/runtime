@@ -46,7 +46,7 @@ namespace art
     // "logo.png", "background.png", "title_icon.png".
     const char* RoleFile(Role role);
 
-    // <data>/<Game>/launcher-cache/ and <data>/<Game>/portraits/ (SSA_PORTRAITS overrides the second, for tests). Empty
+    // <data>/<Game>/launcher-cache/ and <data>/<Game>/portraits/ (SKY_PORTRAITS overrides the second, for tests). Empty
     // when the data folder is unknown.
     std::filesystem::path CacheFolder(std::string_view game);
     std::filesystem::path PortraitFolder(std::string_view game);

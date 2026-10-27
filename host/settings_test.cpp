@@ -1,8 +1,11 @@
-// Checks the settings parser: launcher.ini, SSA_* variables and the command line, and their precedence.
+// Checks the settings parser: launcher.ini, SKY_* variables (and the older SSA_* names) and the command line, and their precedence.
 // usage: SSASettingsTest
+#include "host/env.h"
 #include "host/settings.h"
 #include <cstdio>
+#include <cstdlib>
 #include <map>
+#include <string>
 
 namespace
 {
@@ -46,6 +49,31 @@ namespace
 
 int main()
 {
+    // The helper on the real environment: the current name, then SSA_*, and for the launcher SKYLAUNCHER_*.
+    {
+        auto put = [](const char* name, const char* value)
+        {
+#if defined(_WIN32)
+            _putenv_s(name, value);
+#else
+            setenv(name, value, 1);
+#endif
+        };
+        CHECK(skyenv::Get("SKY_ENVTEST_A") == nullptr);
+        put("SSA_ENVTEST_A", "old");
+        CHECK(std::string(skyenv::Get("SKY_ENVTEST_A")) == "old");
+        put("SKY_ENVTEST_A", "new");
+        CHECK(std::string(skyenv::Get("SKY_ENVTEST_A")) == "new");
+        put("SKYLAUNCHER_ENVTEST_B", "launcher");
+        CHECK(std::string(skyenv::Get("SKY_LAUNCHER_ENVTEST_B")) == "launcher");
+        put("SSA_LAUNCHER_ENVTEST_C", "ini");
+        CHECK(std::string(skyenv::Get("SKY_LAUNCHER_ENVTEST_C")) == "ini");
+        put("SKY_ENVTEST_D", "");
+        put("SSA_ENVTEST_D", "old");
+        CHECK(std::string(skyenv::Get("SKY_ENVTEST_D")).empty()); // set, even empty, wins
+        CHECK(std::string(skyenv::Get("PATH")) == std::string(std::getenv("PATH"))); // other names are plain
+    }
+
     // Defaults.
     Run run = Parse({}, {}, {});
     CHECK(run.ok && run.warnings.empty());
@@ -74,10 +102,14 @@ int main()
     CHECK(run.settings.keys[KeyIndex("b")] == "X");
     CHECK(run.settings.language == "fr" && run.settings.voiceLanguage == "de");
 
-    // SSA_* variables over the file, the command line over both.
+    // SKY_* variables over the file, the command line over both. The older SSA_* names still work, and SKY_* wins.
     run = Parse(config, { { "SSA_LANGUAGE", "it" }, { "SSA_VOICE_LANGUAGE", "es" } }, {});
     CHECK(run.settings.language == "it" && run.settings.voiceLanguage == "es");
-    run = Parse(config, { { "SSA_LANGUAGE", "it" } }, { "--language", "en", "--scale", "2", "--vsync=1", "--windowed",
+    run = Parse(config, { { "SSA_LANGUAGE", "it" }, { "SKY_LANGUAGE", "pt" } }, {});
+    CHECK(run.settings.language == "pt");
+    run = Parse(config, { { "SKY_LANGUAGE", "it" }, { "SKY_VOICE_LANGUAGE", "es" } }, {});
+    CHECK(run.settings.language == "it" && run.settings.voiceLanguage == "es");
+    run = Parse(config, { { "SKY_LANGUAGE", "it" } }, { "--language", "en", "--scale", "2", "--vsync=1", "--windowed",
         "--anisotropy", "16", "--input", "gamepad", "--gamepad", "ffff", "--key", "a=Space", "--glyphs=playstation", "game.iso",
         "--select-iso" });
     CHECK(run.ok && run.warnings.empty());
@@ -138,11 +170,11 @@ int main()
     CHECK(!run.settings.textureDump && run.settings.texturePacks);
     run = Parse({ { "video", { { "texture_dump", "1" }, { "texture_packs", "0" } } } }, {}, {});
     CHECK(run.settings.textureDump && !run.settings.texturePacks && run.warnings.empty());
-    run = Parse({ { "video", { { "texture_dump", "1" } } } }, { { "SSA_TEXTURE_DUMP", "0" }, { "SSA_TEXTURE_PACKS", "0" } }, {});
+    run = Parse({ { "video", { { "texture_dump", "1" } } } }, { { "SKY_TEXTURE_DUMP", "0" }, { "SKY_TEXTURE_PACKS", "0" } }, {});
     CHECK(!run.settings.textureDump && !run.settings.texturePacks);
-    run = Parse({}, { { "SSA_TEXTURE_PACKS", "0" } }, { "--texture-packs", "1", "--texture-dump=1" });
+    run = Parse({}, { { "SKY_TEXTURE_PACKS", "0" } }, { "--texture-packs", "1", "--texture-dump=1" });
     CHECK(run.settings.textureDump && run.settings.texturePacks);
-    run = Parse({}, { { "SSA_TEXTURE_DUMP", "yes" } }, {});
+    run = Parse({}, { { "SKY_TEXTURE_DUMP", "yes" } }, {});
     CHECK(!run.settings.textureDump && run.warnings.size() == 1);
 
     // fps_limit: 30 or 60; 0 and more than 60 mean 60, other values 30, with a warning.
@@ -155,7 +187,7 @@ int main()
     run = Parse({}, {}, { "--fps-limit", "45" });
     CHECK(run.settings.fpsLimit == 30 && run.warnings.size() == 1);
 
-    // [portal] toybox_auto_open: on by default, launcher.ini turns it off, SSA_TOYBOX_AUTO_OPEN overrides, bad values warn.
+    // [portal] toybox_auto_open: on by default, launcher.ini turns it off, SKY_TOYBOX_AUTO_OPEN overrides, bad values warn.
     CHECK(Parse({}, {}, {}).settings.toyboxAutoOpen);
     LauncherConfig portal;
     portal["portal"] = { { "mode", "auto" }, { "toybox_auto_open", "0" } };
@@ -163,7 +195,7 @@ int main()
     CHECK(run.ok && run.warnings.empty() && !run.settings.toyboxAutoOpen);
     CHECK(DescribeSettings(run.settings).find("toybox auto-open off") != std::string::npos);
     CHECK(DescribeSettings(Parse({}, {}, {}).settings).find("auto-open") == std::string::npos);
-    run = Parse(portal, { { "SSA_TOYBOX_AUTO_OPEN", "1" } }, {});
+    run = Parse(portal, { { "SKY_TOYBOX_AUTO_OPEN", "1" } }, {});
     CHECK(run.warnings.empty() && run.settings.toyboxAutoOpen);
     portal["portal"]["toybox_auto_open"] = "maybe";
     run = Parse(portal, {}, {});

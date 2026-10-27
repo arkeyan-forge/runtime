@@ -1,5 +1,5 @@
 // Audio output through XAudio2 2.9, for the UWP build (Xbox), which has no SDL. Same contract as host/audio.cpp: the
-// 5.1 mix is downmixed to stereo the same way, and SSA_AUDIO_DUMP works the same.
+// 5.1 mix is downmixed to stereo the same way, and SKY_AUDIO_DUMP works the same.
 #include "host/audio.h"
 #include <windows.h>
 #include <xaudio2.h>
@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
+#include "env.h"
 
 namespace
 {
@@ -53,8 +54,8 @@ void HostAudioInit()
 
 void HostAudioSubmit(const float* planarFrame)
 {
-    // SSA_AUDIO_DUMP=<path> also writes the stereo output there as raw float32, 48 kHz, to check it without speakers.
-    static FILE* dump = getenv("SSA_AUDIO_DUMP") ? fopen(getenv("SSA_AUDIO_DUMP"), "wb") : nullptr;
+    // SKY_AUDIO_DUMP=<path> also writes the stereo output there as raw float32, 48 kHz, to check it without speakers.
+    static FILE* dump = skyenv::Get("SKY_AUDIO_DUMP") ? fopen(skyenv::Get("SKY_AUDIO_DUMP"), "wb") : nullptr;
     IXAudio2SourceVoice* voice = g_voice;
     if (voice == nullptr && dump == nullptr)
         return;

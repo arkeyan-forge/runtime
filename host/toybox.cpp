@@ -15,6 +15,7 @@
 #include <cstdlib>
 #include <string>
 #include <vector>
+#include "env.h"
 
 // The Toy Box's input and frame (docs/runtime/host/toybox_ux.md): the logic is host/toybox/model.*, the look host/toybox/draw.*.
 // Gamepad: hold View 0.25 s for the quick swap wheel (a tap still reaches the game, sent on release), View + Y for the
@@ -54,7 +55,7 @@ namespace
     bool g_pinKey;
     bool g_mouseHeld;          // a hold button pressed with the mouse             // F2 held on the wheel: pin
 
-    // SSA_TOYBOX_SCRIPT.
+    // SKY_TOYBOX_SCRIPT.
     struct ScriptStep
     {
         uint64_t at;
@@ -225,11 +226,11 @@ namespace
 
     // --- Script ----------------------------------------------------------------------------------------------------
 
-    // Screenshot of what was last presented (offscreen output only): <SSA_TOYBOX_SHOTS>_<n>.png, or _<name>.png.
+    // Screenshot of what was last presented (offscreen output only): <SKY_TOYBOX_SHOTS>_<n>.png, or _<name>.png.
     void SaveShot(const std::string& name)
     {
         static int count;
-        const char* prefix = getenv("SSA_TOYBOX_SHOTS");
+        const char* prefix = skyenv::Get("SKY_TOYBOX_SHOTS");
         std::vector<uint32_t> rgba;
         uint32_t width, height;
         if (!gpu::ReadbackOutput(rgba, width, height))
@@ -259,14 +260,14 @@ namespace
         return 0;
     }
 
-    // SSA_TOYBOX_SCRIPT="F6:100,Right:101,type=Ace:103,shot:104,pad=back*0.8:110": items at times in seconds since
+    // SKY_TOYBOX_SCRIPT="F6:100,Right:101,type=Ace:103,shot:104,pad=back*0.8:110": items at times in seconds since
     // launch. A key name (SDL_GetKeyFromName; "shift+Right") is pressed and released; "down=Tab" / "up=Tab" press or
     // release only; "type=<text>" types; "shot" or "shot=<name>" saves a screenshot; "pad=back+lright*0.8" holds pad
     // buttons (a b x y back start lb rb up down left right, lup ldown lleft lright for the stick) for 0.8 s (0.15 s
     // without "*"), as the Toy Box sees the pad; "click=x/y" and "rclick=x/y" click at canvas pixels.
     void LoadScript()
     {
-        const char* script = getenv("SSA_TOYBOX_SCRIPT");
+        const char* script = skyenv::Get("SKY_TOYBOX_SCRIPT");
         if (script == nullptr)
             return;
         std::string text = script;
@@ -397,8 +398,8 @@ void ToyboxInit(SDL_Window* window)
         fprintf(stderr, "[toybox] unavailable: the fonts did not load\n");
         return;
     }
-    // SSA_TOYBOX_REAL_VIEW=1 (test aid): the real portal's read-only seats, from the emulated portal's traffic.
-    const char* realView = getenv("SSA_TOYBOX_REAL_VIEW");
+    // SKY_TOYBOX_REAL_VIEW=1 (test aid): the real portal's read-only seats, from the emulated portal's traffic.
+    const char* realView = skyenv::Get("SKY_TOYBOX_REAL_VIEW");
     M().Init(!PortalIsEmulated() || (realView != nullptr && *realView != '\0'));
     g_enabled = true;
     LoadScript();

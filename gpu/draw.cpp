@@ -22,6 +22,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include "../host/env.h"
 
 #define XXH_INLINE_ALL
 #include <xxhash.h>
@@ -617,7 +618,7 @@ namespace
     // A pipeline the system's shader cache does not have takes ~20 ms to build on Metal (first run, a changed shader
     // cache, an app bundle with its own cache), more from DXIL on D3D12, and the game asks for ~120 at once when a level
     // starts. The list is the built-in baseline (games/<game>/pipelines, made by touring the game: docs/history/handoffs/handoff_pipelines.md)
-    // merged with pipelines.bin, in SSA_SAVE_DIR or the app's data folder, where every pipeline the game uses that the
+    // merged with pipelines.bin, in SKY_SAVE_DIR or the app's data folder, where every pipeline the game uses that the
     // list lacks is appended. At startup, threads build the listed ones while the intro movies play; every loading screen
     // waits until they are all built (WaitForPipelineList), so only unlisted pipelines are built at draw time.
 
@@ -658,7 +659,7 @@ namespace
     std::filesystem::path PipelineListPath()
     {
         std::string directory;
-        if (const char* saves = getenv("SSA_SAVE_DIR"))
+        if (const char* saves = skyenv::Get("SKY_SAVE_DIR"))
         {
             directory = std::string(saves) + "/";
         }

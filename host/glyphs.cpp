@@ -18,6 +18,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include "env.h"
 
 namespace glyphs
 {
@@ -809,7 +810,7 @@ void RunTestScript()
     if (!loaded)
     {
         loaded = true;
-        if (const char* script = getenv("SSA_GLYPHS_SCRIPT"))
+        if (const char* script = skyenv::Get("SKY_GLYPHS_SCRIPT"))
             for (std::string text = script; !text.empty();)
             {
                 size_t comma = std::min(text.find(','), text.size());

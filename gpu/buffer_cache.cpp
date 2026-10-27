@@ -8,6 +8,7 @@
 #include <memory>
 #include <unordered_map>
 #include <vector>
+#include "../host/env.h"
 
 #define XXH_INLINE_ALL
 #include <xxhash.h>
@@ -157,7 +158,7 @@ namespace
     std::vector<Key> g_stagedPrevious, g_stagedCurrent;
     uint64_t g_frame = 1;
 
-    // SSA_BUFFER_STATS: cache activity every 60 submissions.
+    // SKY_BUFFER_STATS: cache activity every 60 submissions.
     struct Stats
     {
         uint64_t acquire, staged, stagedBytes, promoted, hashed, hashedBytes, rewritten, evicted;
@@ -362,7 +363,7 @@ void gpu::BufferCacheFrameDone(uint64_t completed)
         }
     }
 
-    static bool stats = getenv("SSA_BUFFER_STATS") != nullptr;
+    static bool stats = skyenv::Get("SKY_BUFFER_STATS") != nullptr;
     if (stats && g_frame % 60 == 0)
     {
         fprintf(stderr, "[buffers] frame %llu, per frame: acquire %.0f staged %.1f (%.2f MB) promoted %.1f hashed %.0f (%.2f MB) "

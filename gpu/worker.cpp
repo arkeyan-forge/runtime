@@ -2,7 +2,7 @@
 // their command list work here, so recording and submitting overlap the next draws' state translation. The callers
 // ("producers") keep what must read guest memory at the call (texture and vertex data, which they copy into upload
 // memory of their own) and copy the rest of a draw into a per-frame arena. Present ends a producer frame; producers
-// run at most one frame ahead of the GPU thread. SSA_GPU_THREAD=0 runs everything on the caller, as before.
+// run at most one frame ahead of the GPU thread. SKY_GPU_THREAD=0 runs everything on the caller, as before.
 #include "gpu/context.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
@@ -13,6 +13,7 @@
 #include <deque>
 #include <utility>
 #include <thread>
+#include "../host/env.h"
 
 using namespace plume;
 
@@ -167,10 +168,10 @@ bool gpu::detail::WorkerRunning()
 
 void gpu::detail::StartWorker()
 {
-    const char* value = getenv("SSA_GPU_THREAD");
+    const char* value = skyenv::Get("SKY_GPU_THREAD");
     if (value != nullptr && atoi(value) == 0)
     {
-        fprintf(stderr, "[gpu] no GPU thread (SSA_GPU_THREAD=0)\n");
+        fprintf(stderr, "[gpu] no GPU thread (SKY_GPU_THREAD=0)\n");
         return;
     }
     if (!gpu::g_settings.gpuThread)

@@ -8,6 +8,7 @@
 #include "host/log.h"
 #include "host/portal.h"
 #include "host/settings.h"
+#include "host/xex_title.h"
 #include "host/texture_pack.h"
 #include "host/toybox.h"
 #include "gpu/gpu.h"
@@ -21,12 +22,15 @@
 #include "thread.h"
 #include "vfs.h"
 #include <SDL3/SDL.h>
+#include <stb_image.h>
 #include <cstdio>
 #include <cstdlib>
 #include <utility>
+#include <vector>
 #ifdef __APPLE__
 #include <objc/message.h>
 #include <objc/runtime.h>
+#include "host/env.h"
 #endif
 
 // The window went away without a close request (SDL_EVENT_WINDOW_HIDDEN: on macOS an NSWindow closed or ordered out
@@ -186,8 +190,8 @@ int main(int argc, char** argv)
     std::vector<char*> arguments{ argv[0] };
     for (std::string& argument : settings.arguments)
         arguments.push_back(argument.data());
-    std::string discPath = ResolveGameSource(int(arguments.size()), arguments.data(), game, getenv("SSA_HEADLESS") == nullptr);
-    if (getenv("SSA_LAUNCHER_SHOTS") != nullptr)
+    std::string discPath = ResolveGameSource(int(arguments.size()), arguments.data(), game, skyenv::Get("SKY_HEADLESS") == nullptr);
+    if (skyenv::Get("SKY_LAUNCHER_SHOTS") != nullptr)
         return 0; // screenshot test run: the launcher already quit
     if (discPath.empty())
         return 1;
@@ -220,13 +224,13 @@ int main(int argc, char** argv)
     g_memory.Reserve();
     g_module = LoadXex(g_disc.ReadAll("default.xex"));
 
-    if (const char* script = getenv("SSA_PRESS"))
+    if (const char* script = skyenv::Get("SKY_PRESS"))
         LoadInputScript(script);
-    if (const char* script = getenv("SSA_PRESS2")) // the same for the second controller (Player 2)
+    if (const char* script = skyenv::Get("SKY_PRESS2")) // the same for the second controller (Player 2)
         LoadInputScript(script, 1);
 
     // The host's main thread owns the window and input (macOS requires it); the title runs on its own threads.
-    bool headless = getenv("SSA_HEADLESS") != nullptr;
+    bool headless = skyenv::Get("SKY_HEADLESS") != nullptr;
     // The 3D at the frame's size where the game renders it smaller (Swap Force), unless original_resolution.
     if (::game::Current().fullScene.width != 0 && !settings.originalResolution)
         ultrawide::SetScene16x9(::game::Current().fullScene.width, ::game::Current().fullScene.height, false);
@@ -238,6 +242,22 @@ int main(int argc, char** argv)
         gpu::g_settings = { .resolutionScale = settings.resolutionScale, .anisotropy = settings.anisotropy, .vsync = settings.vsync,
             .fpsLimit = settings.fpsLimit };
         window = CreateDisplayWindow("Skylanders Native", 1280, 720, settings.fullscreen); // the product name, for every game
+#ifndef __APPLE__ // macOS: the bundle's icon (SSABuild's BundleIcon)
+        if (window != nullptr) // the game's own icon from its default.xex; without one, the system's
+        {
+            std::vector<uint8_t> png = ReadTitleMetadata(g_disc.ReadAll("default.xex")).iconPng;
+            int iconWidth = 0, iconHeight = 0, channels = 0;
+            if (unsigned char* rgba = stbi_load_from_memory(png.data(), int(png.size()), &iconWidth, &iconHeight, &channels, 4))
+            {
+                if (SDL_Surface* icon = SDL_CreateSurfaceFrom(iconWidth, iconHeight, SDL_PIXELFORMAT_RGBA32, rgba, iconWidth * 4))
+                {
+                    SDL_SetWindowIcon(window, icon);
+                    SDL_DestroySurface(icon);
+                }
+                stbi_image_free(rgba);
+            }
+        }
+#endif
         if (window != nullptr)
         {
             int windowWidth = 0, windowHeight = 0;

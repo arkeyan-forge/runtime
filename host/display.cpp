@@ -9,6 +9,7 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include "env.h"
 
 namespace
 {
@@ -39,27 +40,27 @@ static void WritePpm(const std::string& path, const std::vector<uint32_t>& rgba,
     }
 }
 
-// SSA_SNAPSHOT=<prefix> saves every 100th frame as <prefix>_<n>.ppm (up to 20), to check output without a window.
+// SKY_SNAPSHOT=<prefix> saves every 100th frame as <prefix>_<n>.ppm (up to 20), to check output without a window.
 static void Snapshot(const std::vector<uint32_t>& rgba, int width, int height)
 {
-    static const char* prefix = getenv("SSA_SNAPSHOT");
+    static const char* prefix = skyenv::Get("SKY_SNAPSHOT");
     static int frame;
     if (prefix == nullptr || frame++ % 100 != 0 || frame > 2000)
         return;
     WritePpm(std::string(prefix) + "_" + std::to_string(frame / 100) + ".ppm", rgba, width, height);
 }
 
-// SSA_GPU_SNAPSHOT=<prefix> saves every 300th presented image (SSA_GPU_SNAPSHOT_EVERY=<n>: every nth; starting at
-// frame SSA_GPU_SNAPSHOT_FROM=<n>, default 0) for 36000 frames, read back from the GPU. Offscreen output only
+// SKY_GPU_SNAPSHOT=<prefix> saves every 300th presented image (SKY_GPU_SNAPSHOT_EVERY=<n>: every nth; starting at
+// frame SKY_GPU_SNAPSHOT_FROM=<n>, default 0) for 36000 frames, read back from the GPU. Offscreen output only
 // (SDL_VIDEO_DRIVER=offscreen), as swapchain images cannot be read.
-// SSA_GPU_SNAPSHOT_SECONDS=<s>,<s>,... also saves the first image presented at or after each of these seconds since
+// SKY_GPU_SNAPSHOT_SECONDS=<s>,<s>,... also saves the first image presented at or after each of these seconds since
 // the start, as <prefix>_t<s>.ppm: the same moments at any frame rate (the game speed check, docs/engines/lux/frame_pacing.md).
 void SnapshotPresentedFrame()
 {
-    static const char* prefix = getenv("SSA_GPU_SNAPSHOT");
+    static const char* prefix = skyenv::Get("SKY_GPU_SNAPSHOT");
     static std::vector<double> seconds = [] {
         std::vector<double> list;
-        if (const char* text = getenv("SSA_GPU_SNAPSHOT_SECONDS"))
+        if (const char* text = skyenv::Get("SKY_GPU_SNAPSHOT_SECONDS"))
             for (const char* at = text; *at != '\0';)
             {
                 char* end;
@@ -86,8 +87,8 @@ void SnapshotPresentedFrame()
         }
         nextSecond++;
     }
-    static const int every = std::max(getenv("SSA_GPU_SNAPSHOT_EVERY") != nullptr ? atoi(getenv("SSA_GPU_SNAPSHOT_EVERY")) : 300, 1);
-    static const int from = getenv("SSA_GPU_SNAPSHOT_FROM") != nullptr ? atoi(getenv("SSA_GPU_SNAPSHOT_FROM")) : 0;
+    static const int every = std::max(skyenv::Get("SKY_GPU_SNAPSHOT_EVERY") != nullptr ? atoi(skyenv::Get("SKY_GPU_SNAPSHOT_EVERY")) : 300, 1);
+    static const int from = skyenv::Get("SKY_GPU_SNAPSHOT_FROM") != nullptr ? atoi(skyenv::Get("SKY_GPU_SNAPSHOT_FROM")) : 0;
     static int frame = -from;
     if (prefix == nullptr || frame < 0 || frame++ % every != 0 || frame > 36000)
     {
@@ -112,9 +113,9 @@ void SubmitDisplayFrame(std::vector<uint32_t> rgba, int width, int height)
 
 SDL_Window* CreateDisplayWindow(const char* title, int width, int height, bool fullscreen)
 {
-    // SSA_WINDOW_SIZE=<width>x<height>: the window at that size (test runs on a display of another shape, e.g.
+    // SKY_WINDOW_SIZE=<width>x<height>: the window at that size (test runs on a display of another shape, e.g.
     // 2560x1080 offscreen); the settings decide the normal size.
-    if (const char* size = getenv("SSA_WINDOW_SIZE"))
+    if (const char* size = skyenv::Get("SKY_WINDOW_SIZE"))
         if (int w = 0, h = 0; sscanf(size, "%dx%d", &w, &h) == 2 && w > 0 && h > 0)
         {
             width = w;

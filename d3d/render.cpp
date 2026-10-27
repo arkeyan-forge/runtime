@@ -37,6 +37,7 @@
 #include <vector>
 #include <ppc_config.h>
 #include <ppc_context.h>
+#include "../host/env.h"
 
 #define XXH_INLINE_ALL
 #include <xxhash.h>
@@ -53,7 +54,7 @@ namespace
 
     std::recursive_mutex g_mutex;
     uint64_t g_frame = 1;
-    std::chrono::steady_clock::time_point g_swapEnd; // SSA_FRAME_TIMES
+    std::chrono::steady_clock::time_point g_swapEnd; // SKY_FRAME_TIMES
 
     // Resolution scale (settings): host render targets, and the textures resolved from them, are this many times the
     // guest's surfaces, so guest pixel coordinates (viewports, scissors, resolve and clear rectangles) are scaled by it.
@@ -254,7 +255,7 @@ namespace
     // Checking a big texture every frame (docs/runtime/gpu/renderer_threads.md, "Textures"): from SampledBytes, a frame
     // hashes 64 lines of 64 bytes spread over the storage (one in each 1/64th, at a place that differs from one 1/64th to
     // the next), and the whole storage only when that sample changed, every FullCheckFrames frames (staggered per
-    // texture) and the frame after a change. A write the sample misses shows at most FullCheckFrames frames late. SSA_TEXTURE_STATS=1 also hashes the
+    // texture) and the frame after a change. A write the sample misses shows at most FullCheckFrames frames late. SKY_TEXTURE_STATS=1 also hashes the
     // whole storage at every sampled check and counts the changes the sample missed.
     constexpr uint64_t SampledBytes = 64 * 1024;
     constexpr uint64_t FullCheckFrames = 8;
@@ -274,7 +275,7 @@ namespace
     {
         uint64_t checks = 0, full = 0, bytes = 0, sampled = 0, missed = 0, changed = 0;
     } g_textureStats;
-    const bool g_textureStatsOn = getenv("SSA_TEXTURE_STATS") != nullptr;
+    const bool g_textureStatsOn = skyenv::Get("SKY_TEXTURE_STATS") != nullptr;
 
     // The texture's guest hash this frame: GuestContentHash, or the last one when its sample says it did not change.
     uint64_t CheckGuestContent(HostTexture& host, uint64_t key, const xenos::TextureFetch& fetch, const xenos::TextureFormatInfo& info)
@@ -445,7 +446,7 @@ namespace
                     data = std::move(rgba);
                 }
                 // Finding a game's glyph textures (host/glyphs.h): the dump file's name next to the guest hash.
-                static const bool logGuest = getenv("SSA_TEXTURE_DUMP_LOG") != nullptr;
+                static const bool logGuest = skyenv::Get("SKY_TEXTURE_DUMP_LOG") != nullptr;
                 if (logGuest)
                     fprintf(stderr, "[texpack] dumped %016llx: guest hash %016llX, %ux%u\n", (unsigned long long)hash,
                         (unsigned long long)guestHash, fetch.Width(), fetch.Height());
@@ -580,9 +581,9 @@ namespace
         return state;
     }
 
-    // SSA_DUMP_FRAME=<seconds> (or f<N>: the frame after the N-th swap) and SSA_DUMP_PREFIX=<prefix>: saves every texture
+    // SKY_DUMP_FRAME=<seconds> (or f<N>: the frame after the N-th swap) and SKY_DUMP_PREFIX=<prefix>: saves every texture
     // resolved during the first frame after that time, then the presented one, as <prefix>_<n>_<width>x<height>.ppm
-    // (with SSA_DUMP_DRAWS, also the target after every draw; R32_FLOAT ones as grey from their minimum to their maximum,
+    // (with SKY_DUMP_DRAWS, also the target after every draw; R32_FLOAT ones as grey from their minimum to their maximum,
     // with the values logged). A debugging aid.
     struct FrameDump
     {
@@ -594,8 +595,8 @@ namespace
 
     void DumpResolve(const gpu::Texture* texture, char tag = 'r')
     {
-        static const char* prefix = getenv("SSA_DUMP_PREFIX");
-        static const bool draws = getenv("SSA_DUMP_DRAWS") != nullptr;
+        static const char* prefix = skyenv::Get("SKY_DUMP_PREFIX");
+        static const bool draws = skyenv::Get("SKY_DUMP_DRAWS") != nullptr;
         if (!g_dump.active || prefix == nullptr || (tag == 'd' && !draws))
             return;
         std::vector<uint32_t> rgba;
@@ -635,8 +636,8 @@ namespace
             }
             fclose(file);
         }
-        // SSA_DUMP_ALPHA=1: the alpha channel too, as grey (<file>a.ppm).
-        static const bool alpha = getenv("SSA_DUMP_ALPHA") != nullptr;
+        // SKY_DUMP_ALPHA=1: the alpha channel too, as grey (<file>a.ppm).
+        static const bool alpha = skyenv::Get("SKY_DUMP_ALPHA") != nullptr;
         path[strlen(path) - 4] = 0;
         strcat(path, "a.ppm");
         if (FILE* file = alpha ? fopen(path, "wb") : nullptr)
@@ -755,8 +756,8 @@ namespace
         }
         for (uint32_t i = 0; i < 4; i++)
             draw.blendFactor[i] = std::bit_cast<float>(GpuRegister(device, Reg::RB_BLEND_RED + i));
-        // SSA_LOG_SHADER=<hex hash>: says once where a pixel shader is first used (a test aid for shaders built at run time).
-        static const uint64_t logShader = getenv("SSA_LOG_SHADER") != nullptr ? strtoull(getenv("SSA_LOG_SHADER"), nullptr, 16) : 0;
+        // SKY_LOG_SHADER=<hex hash>: says once where a pixel shader is first used (a test aid for shaders built at run time).
+        static const uint64_t logShader = skyenv::Get("SKY_LOG_SHADER") != nullptr ? strtoull(skyenv::Get("SKY_LOG_SHADER"), nullptr, 16) : 0;
         static bool logged = false;
         if (logShader != 0 && !logged && ps != nullptr && ps->hash == logShader)
         {
@@ -1340,7 +1341,7 @@ namespace
 
     void AdvanceFrameDump()
     {
-        static const char* value = getenv("SSA_DUMP_FRAME");
+        static const char* value = skyenv::Get("SKY_DUMP_FRAME");
         if (value == nullptr || g_dump.done)
             return;
         if (g_dump.active)
@@ -1785,7 +1786,7 @@ PPC_FUNC(GAME_HOOK(D3DDevice_Swap))
             timer.Exclude([&] { gpu::Present(it->second.texture); });
             SnapshotPresentedFrame();
         }
-        if (getenv("SSA_RENDER_STATS") != nullptr && g_frame % 60 == 0)
+        if (skyenv::Get("SKY_RENDER_STATS") != nullptr && g_frame % 60 == 0)
         {
             // Frames per second over the last 60 frames.
             static auto last = std::chrono::steady_clock::now();
@@ -1796,9 +1797,9 @@ PPC_FUNC(GAME_HOOK(D3DDevice_Swap))
                 (unsigned long long)g_frame, g_stats.draws, g_stats.resolves, g_stats.skippedShader, g_stats.skippedTarget, fps,
                 TakeRingJumps());
         }
-        // SSA_FRAME_TIMES=<file>: one line per frame: milliseconds since start at the present, the frame's work (from
+        // SKY_FRAME_TIMES=<file>: one line per frame: milliseconds since start at the present, the frame's work (from
         // the previous swap's end to this swap, without the vblank wait), its draws. tools/perf/frames.py reads it.
-        static FILE* frameTimes = getenv("SSA_FRAME_TIMES") != nullptr ? fopen(getenv("SSA_FRAME_TIMES"), "w") : nullptr;
+        static FILE* frameTimes = skyenv::Get("SKY_FRAME_TIMES") != nullptr ? fopen(skyenv::Get("SKY_FRAME_TIMES"), "w") : nullptr;
         static const auto start = std::chrono::steady_clock::now();
         if (frameTimes != nullptr)
         {

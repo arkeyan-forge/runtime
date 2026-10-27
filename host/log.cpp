@@ -17,6 +17,7 @@
 #include <fcntl.h>
 #include <sys/utsname.h>
 #include <unistd.h>
+#include "env.h"
 #endif
 #ifdef __APPLE__
 #include <sys/sysctl.h>
@@ -138,7 +139,7 @@ namespace
 
 void LogInit()
 {
-    if (const char* chosen = getenv("SSA_LOG"))
+    if (const char* chosen = skyenv::Get("SKY_LOG"))
         g_path = chosen;
     else if (std::filesystem::path folder = datadir::Game(SSA_GAME_ID); !folder.empty())
     {

@@ -1,4 +1,5 @@
 #include "datadir.h"
+#include "../env.h"
 #include <algorithm>
 #include <cctype>
 #include <chrono>
@@ -24,7 +25,7 @@ namespace datadir
     {
         bool Set(const char* name)
         {
-            const char* value = std::getenv(name);
+            const char* value = skyenv::Get(name);
             return value != nullptr && *value != '\0';
         }
 
@@ -552,7 +553,7 @@ namespace datadir
         if (done)
             return {};
         done = true;
-        for (const char* name : { "SKYLANDERS_DATA", "SKYLAUNCHER_DATA", "SSA_SAVE_DIR", "SSA_SETTINGS", "SSA_LAUNCHER_INI", "SSA_COLLECTION" })
+        for (const char* name : { "SKYLANDERS_DATA", "SKY_LAUNCHER_DATA", "SKY_SAVE_DIR", "SKY_SETTINGS", "SKY_LAUNCHER_INI", "SKY_COLLECTION" })
             if (Set(name))
                 return {};
         return Migrate(RealOldRoots(), Root());

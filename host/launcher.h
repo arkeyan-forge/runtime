@@ -65,7 +65,7 @@ std::string LauncherConfigPath();
 LauncherConfig LoadLauncherConfig(const std::string& path);
 bool SaveLauncherConfig(const std::string& path, const LauncherConfig& config);
 
-// The game's text and voice language codes (see language.h): SSA_LANGUAGE and SSA_VOICE_LANGUAGE, else the
+// The game's text and voice language codes (see language.h): SKY_LANGUAGE and SKY_VOICE_LANGUAGE, else the
 // "language" and "voice_language" keys of the game's section in the settings file. Empty where neither picks one.
 struct LanguageChoice
 {

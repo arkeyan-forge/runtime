@@ -20,7 +20,7 @@ void PresentDisplayFrame();
 // `timeoutMs` for one.
 void ServiceGamePresents(uint32_t timeoutMs);
 
-// After presenting a frame: SSA_GPU_SNAPSHOT=<prefix> saves every 100th one (offscreen output only).
+// After presenting a frame: SKY_GPU_SNAPSHOT=<prefix> saves every 100th one (offscreen output only).
 void SnapshotPresentedFrame();
 
 // The game's Direct3D frames are presented by the renderer (d3d/render.cpp) from now on.

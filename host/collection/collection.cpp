@@ -9,6 +9,7 @@
 #include <cstring>
 #include <ctime>
 #include <map>
+#include "../env.h"
 #ifdef _WIN32
 #define NOMINMAX
 #include <windows.h>
@@ -323,9 +324,9 @@ namespace collection
     {
         static const std::string folder = [] {
             std::string chosen;
-            if (const char* path = getenv("SSA_COLLECTION"); path != nullptr && *path != '\0')
+            if (const char* path = skyenv::Get("SKY_COLLECTION"); path != nullptr && *path != '\0')
                 chosen = path;
-            else if (const char* old = getenv("SSA_FIGURES"); old != nullptr && *old != '\0')
+            else if (const char* old = skyenv::Get("SKY_FIGURES"); old != nullptr && *old != '\0')
                 chosen = old;
             else
                 chosen = DefaultFolder();
@@ -1645,9 +1646,9 @@ namespace collection
 
     std::string LegacyFolder()
     {
-        if (const char* from = getenv("SSA_MIGRATE_FROM"))
+        if (const char* from = skyenv::Get("SKY_MIGRATE_FROM"))
             return from;
-        if (getenv("SSA_COLLECTION") != nullptr || getenv("SSA_FIGURES") != nullptr)
+        if (skyenv::Get("SKY_COLLECTION") != nullptr || skyenv::Get("SKY_FIGURES") != nullptr)
             return {};
         // Where the game's own figures folder is now; the datadir migration moved it there from SSARecomp/figures.
         std::filesystem::path folder = datadir::Game("ssa");

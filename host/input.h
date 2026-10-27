@@ -23,7 +23,7 @@ namespace Button
 }
 
 // Two controllers: user 0 (the keyboard, the first gamepad) and user 1 (the second gamepad, Player 2). User 1 is
-// reported to the title only once it has a device (SetHostGamepad for it, or a SSA_PRESS2 script).
+// reported to the title only once it has a device (SetHostGamepad for it, or a SKY_PRESS2 script).
 constexpr int MaxUsers = 2;
 
 // Called on the host's main thread with the latest physical state (gamepad, keyboard) of a user. `connected` false removes
@@ -36,7 +36,7 @@ bool GamepadConnected(int user);
 // The state the title reads for a controller, and a counter that changes whenever it does.
 GamepadState GetGamepad(uint32_t& packetNumber, int user = 0);
 
-// SSA_PRESS="start:6,a:9,lup:20:3" presses a button for 150 ms at each time (seconds since launch), for unattended
-// runs; a third field holds it that many seconds. lup/ldown/lleft/lright push the left stick all the way. SSA_PRESS2 is
+// SKY_PRESS="start:6,a:9,lup:20:3" presses a button for 150 ms at each time (seconds since launch), for unattended
+// runs; a third field holds it that many seconds. lup/ldown/lleft/lright push the left stick all the way. SKY_PRESS2 is
 // the same script for the second controller (user 1), which then exists.
 void LoadInputScript(const char* script, int user = 0);

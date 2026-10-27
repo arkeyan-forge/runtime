@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
+#include "env.h"
 
 namespace
 {
@@ -23,8 +24,8 @@ void HostAudioInit()
 
 void HostAudioSubmit(const float* planarFrame)
 {
-    // SSA_AUDIO_DUMP=<path> also writes the stereo output there as raw float32, 48 kHz, to check it without speakers.
-    static FILE* dump = getenv("SSA_AUDIO_DUMP") ? fopen(getenv("SSA_AUDIO_DUMP"), "wb") : nullptr;
+    // SKY_AUDIO_DUMP=<path> also writes the stereo output there as raw float32, 48 kHz, to check it without speakers.
+    static FILE* dump = skyenv::Get("SKY_AUDIO_DUMP") ? fopen(skyenv::Get("SKY_AUDIO_DUMP"), "wb") : nullptr;
     SDL_AudioStream* stream = g_stream;
     if (stream == nullptr && dump == nullptr)
         return;

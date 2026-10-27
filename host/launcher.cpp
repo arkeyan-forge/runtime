@@ -1,5 +1,6 @@
 #include "launcher.h"
 #include "launcher_ui.h"
+#include "env.h"
 #include "vfs.h"
 #include "collection/datadir.h"
 #include "collection/game_data.h"
@@ -226,10 +227,10 @@ GameSourceCheck CheckGameSource(const std::string& path, const GameInfo& game, c
 
 std::string LauncherConfigPath()
 {
-    // SSA_SETTINGS=<file> (or SSA_LAUNCHER_INI): settings from that file instead (a test run's own; a missing or empty
+    // SKY_SETTINGS=<file> (or SKY_LAUNCHER_INI): settings from that file instead (a test run's own; a missing or empty
     // value means none), so test runs do not read the player's launcher.ini.
-    for (const char* name : { "SSA_SETTINGS", "SSA_LAUNCHER_INI" })
-        if (const char* file = getenv(name))
+    for (const char* name : { "SKY_SETTINGS", "SKY_LAUNCHER_INI" })
+        if (const char* file = skyenv::Get(name))
             return file;
     return datadir::Text(datadir::LauncherIni());
 }
@@ -285,10 +286,10 @@ LanguageChoice ResolveLanguages(const GameInfo& game)
     LauncherConfig config = LoadLauncherConfig(LauncherConfigPath());
     auto pick = [&](const char* variable, const char* key)
     {
-        const char* value = getenv(variable);
+        const char* value = skyenv::Get(variable);
         return value != nullptr ? std::string(value) : config[game.id][key];
     };
-    return { pick("SSA_LANGUAGE", "language"), pick("SSA_VOICE_LANGUAGE", "voice_language") };
+    return { pick("SKY_LANGUAGE", "language"), pick("SKY_VOICE_LANGUAGE", "voice_language") };
 }
 
 // The folder of the copied game data when it is complete, intact and of a disc this game knows; else empty (a damaged copy is

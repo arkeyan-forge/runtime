@@ -15,6 +15,7 @@
 #include <string>
 #include <thread>
 #include <utility>
+#include "../host/env.h"
 
 #if defined(__APPLE__)
 #include "shaders/present_metallib.h"
@@ -587,8 +588,8 @@ bool gpu::Init(SDL_Window* window, uint32_t width, uint32_t height)
     D3D12EnableDred();
     c.renderInterface = CreateD3D12Interface();
 #else
-    // Desktop Windows: Vulkan, then D3D12 when there is no Vulkan device. SSA_GPU_BACKEND=vulkan or d3d12 picks one.
-    const char* requested = getenv("SSA_GPU_BACKEND");
+    // Desktop Windows: Vulkan, then D3D12 when there is no Vulkan device. SKY_GPU_BACKEND=vulkan or d3d12 picks one.
+    const char* requested = skyenv::Get("SKY_GPU_BACKEND");
 #if defined(_WIN32)
     bool tryVulkan = requested == nullptr || SDL_strcasecmp(requested, "d3d12") != 0;
 #else
@@ -880,14 +881,14 @@ namespace
         return c.swapChain->present(index, &rendered, 1);
     }
 
-    // Every 10 s for the whole session (SSA_PERF_LOG=0 turns it off): frame rate, frame time median and p95,
+    // Every 10 s for the whole session (SKY_PERF_LOG=0 turns it off): frame rate, frame time median and p95,
     // and where a frame's time goes on average, on the GPU thread (worker.cpp) when there is one: "rest" is then its idle
     // time and its other commands; without it, the guest's CPU work, the renderer's state translation and the guest's
     // waits. A second line gives the GPU thread's busy share and how long the game's render thread waited for it.
     void LogPerf()
     {
         Context& c = *g_context;
-        static const bool enabled = getenv("SSA_PERF_LOG") == nullptr || atoi(getenv("SSA_PERF_LOG")) != 0;
+        static const bool enabled = skyenv::Get("SKY_PERF_LOG") == nullptr || atoi(skyenv::Get("SKY_PERF_LOG")) != 0;
         static uint32_t slowWindows = 0; // consecutive windows under the frame rate with the GPU as the limit
         static uint64_t windowStart = SDL_GetTicksNS(), lastFrame = windowStart;
         static std::vector<uint64_t> frameNs;

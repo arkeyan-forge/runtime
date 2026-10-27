@@ -36,6 +36,7 @@
 #include <cstdlib>
 #include <string>
 #include <vector>
+#include "../env.h"
 
 using namespace ABI::Windows;
 using ApplicationModel::Core::ICoreApplication;
@@ -444,14 +445,14 @@ namespace
             HostAudioInit();
             // Figures: the publisher's shared collection, with LocalState\figures (older builds) copied into it once;
             // LocalState\figures itself when the publisher folder is unavailable.
-            if (getenv("SSA_COLLECTION") == nullptr)
+            if (skyenv::Get("SKY_COLLECTION") == nullptr)
             {
                 std::string localFigures = Utf8(LocalStatePath()) + "\\figures";
                 std::wstring publisher = PublisherFolder();
-                _putenv_s("SSA_COLLECTION", publisher.empty() ? localFigures.c_str() : (Utf8(publisher) + "\\Collection").c_str());
+                _putenv_s("SKY_COLLECTION", publisher.empty() ? localFigures.c_str() : (Utf8(publisher) + "\\Collection").c_str());
                 if (!publisher.empty())
-                    _putenv_s("SSA_MIGRATE_FROM", localFigures.c_str());
-                fprintf(stderr, "[uwp] figure collection %s\n", getenv("SSA_COLLECTION"));
+                    _putenv_s("SKY_MIGRATE_FROM", localFigures.c_str());
+                fprintf(stderr, "[uwp] figure collection %s\n", skyenv::Get("SKY_COLLECTION"));
             }
             PortalInit();
             ToyboxInit(window);

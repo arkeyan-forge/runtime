@@ -16,6 +16,7 @@
 #include <string>
 #include <ppc_config.h>
 #include <ppc_context.h>
+#include "../host/env.h"
 
 namespace
 {
@@ -115,12 +116,12 @@ PPC_FUNC(GAME_HOOK(BinkDoFrame))
 #ifdef GAME_HOOK_BinkOpen
 PPC_FUNC_IMPL(GAME_IMP(BinkOpen));
 // BinkOpen(name, flags) -> HBINK (Width, Height, Frames, FrameNum...). A movie made one frame long ends at once and the
-// game goes on (as tsapZ/GiantsRecomp does with the header's frame count): every movie with SSA_SKIP_MOVIES=1 (test
+// game goes on (as tsapZ/GiantsRecomp does with the header's frame count): every movie with SKY_SKIP_MOVIES=1 (test
 // aid), the game's start-up logos with [video] skip_intro_movies=1 (game::IsIntroMovie; the story movies still play).
 // Each skipped logo is logged as "[movie] skipped <name>".
 PPC_FUNC(GAME_HOOK(BinkOpen))
 {
-    static const bool skipAll = getenv("SSA_SKIP_MOVIES") != nullptr && atoi(getenv("SSA_SKIP_MOVIES")) != 0;
+    static const bool skipAll = skyenv::Get("SKY_SKIP_MOVIES") != nullptr && atoi(skyenv::Get("SKY_SKIP_MOVIES")) != 0;
     std::string path;
     if (ctx.r3.u32 >= 0x10000)
         for (uint32_t i = 0; i < 260; i++)
@@ -143,12 +144,12 @@ PPC_FUNC(GAME_HOOK(BinkOpen))
         g_memory.Write<uint32_t>(bink + 8, 1);
     ultrawide::MovieOpened();
 
-    // SSA_BINK_LOG=1 (test aid): once a second, the last opened movie's frame number (HBINK+12) against the wall clock,
+    // SKY_BINK_LOG=1 (test aid): once a second, the last opened movie's frame number (HBINK+12) against the wall clock,
     // to check that movies play at their own rate (Bink paces the picture on its sound track).
     static std::atomic<uint32_t> s_current{ 0 };
     s_current = bink;
     static std::once_flag started;
-    if (getenv("SSA_BINK_LOG") != nullptr)
+    if (skyenv::Get("SKY_BINK_LOG") != nullptr)
         std::call_once(started, [] {
             std::thread([] {
                 auto start = std::chrono::steady_clock::now();

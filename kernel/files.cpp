@@ -19,6 +19,7 @@
 #include <unordered_map>
 #include <ppc_config.h>
 #include <ppc_context.h>
+#include "../host/env.h"
 
 namespace fs = std::filesystem;
 
@@ -201,7 +202,7 @@ namespace
     bool IsGiants() { return std::string_view(::game::Current().info.id) == "giants"; }
     bool IsSwapForce() { return std::string_view(::game::Current().info.id) == "swapforce"; }
 
-    // SSA_LEVEL=<level> (test aid): the files of the game's first level (game::Adapter::firstLevel) are those of
+    // SKY_LEVEL=<level> (test aid): the files of the game's first level (game::Adapter::firstLevel) are those of
     // <level>, so a new game starts there. [SSA] level_027 (levels\level_027\..., audio\levels\level_027.bnk,
     // audio\level_027.lxb, text\<lang>\level_027.lxb) -> e.g. level_001, challenge_level_005, pvp_level_002, level_hub.
     // [Giants] level\level_213_tutotial.arc and .bld -> e.g. level_203_the_machine, pvp_level_200_two_towers, title.
@@ -210,7 +211,7 @@ namespace
     std::string RedirectLevel(std::string path)
     {
         static const std::string level = [] {
-            const char* value = getenv("SSA_LEVEL");
+            const char* value = skyenv::Get("SKY_LEVEL");
             std::string name = value != nullptr ? value : "";
             for (char& c : name)
                 c = char(tolower(c));
@@ -512,7 +513,7 @@ namespace
 
     bool TraceFiles()
     {
-        static const bool trace = getenv("SSA_TRACE_FILES") != nullptr;
+        static const bool trace = skyenv::Get("SKY_TRACE_FILES") != nullptr;
         return trace;
     }
 }

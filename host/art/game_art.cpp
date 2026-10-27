@@ -20,6 +20,7 @@
 #include <map>
 #include <optional>
 #include <set>
+#include "../env.h"
 
 extern const unsigned char g_embeddedArtManifests[];
 extern const size_t g_embeddedArtManifestsSize;
@@ -679,7 +680,7 @@ namespace art
 
     std::filesystem::path PortraitFolder(std::string_view game)
     {
-        if (const char* folder = getenv("SSA_PORTRAITS"))
+        if (const char* folder = skyenv::Get("SKY_PORTRAITS"))
             return datadir::FromText(folder);
         std::filesystem::path data = datadir::Game(game);
         return data.empty() ? std::filesystem::path() : data / "portraits";

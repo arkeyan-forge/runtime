@@ -1,6 +1,6 @@
 #pragma once
 
-// SSA_D3D_CAPTURE=<seconds> or f<N>: logs one frame's draws, clears, resolves and swap with the device state
+// SKY_D3D_CAPTURE=<seconds> or f<N>: logs one frame's draws, clears, resolves and swap with the device state
 // (d3d/capture.cpp). The renderer's hooks call these on entry, with the guest arguments.
 #include <ppc_config.h>
 #include <ppc_context.h>

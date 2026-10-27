@@ -32,7 +32,7 @@ namespace collection
     // A toy's picture from one game's disc, as cached by art::Extract (art/game_art.h): the picture of its variant
     // (`variant`: the variant id, 0 for the plain toy) if the game has one, else the toy's. `large`: the game's biggest
     // (SSA: the 512 px "versus" picture; Giants has one size, 256 px). Empty when that game has none cached.
-    // Folders: SSA_PORTRAITS, else "portraits" in the game's data folder.
+    // Folders: SKY_PORTRAITS, else "portraits" in the game's data folder.
     std::string GamePortraitPath(const std::string& gameId, const Toy& toy, uint16_t variant = 0, bool large = false);
 
     // A toy family's picture from one game's disc (Game::kindPictures: SSA's magic item, location and sidekick icons),

@@ -2,7 +2,7 @@
 
 // Host renderer over plume: Metal on Apple, D3D12 on Windows (and later Xbox), Vulkan elsewhere. Today it only presents
 // CPU-made images (Bink movies) and, through gpu/draw.h, the game's own draws. Thread-safe. The command list work runs on
-// a GPU thread of its own (worker.cpp), in call order: the calls queue it and return (SSA_GPU_THREAD=0: on the caller).
+// a GPU thread of its own (worker.cpp), in call order: the calls queue it and return (SKY_GPU_THREAD=0: on the caller).
 #include <SDL3/SDL_video.h>
 #include <plume_render_interface_types.h>
 #include <cstdint>
@@ -64,7 +64,7 @@ namespace gpu
                                       // and Apple's)
         uint32_t anisotropy = 1;      // samplers with linear filtering
         bool vsync = true;            // off: presents don't wait for the display (nor the offscreen output's 60 Hz)
-        bool gpuThread = true;        // the GPU thread (worker.cpp); off: the callers record and submit (SSA_GPU_THREAD=0)
+        bool gpuThread = true;        // the GPU thread (worker.cpp); off: the callers record and submit (SKY_GPU_THREAD=0)
         bool pipelineLibrary = true;  // D3D12: the persistent pipeline cache (d3d12_pipeline_cache.cpp)
         uint32_t fpsLimit = 30;       // the game's frame rate (fps_limit), for the [perf] log's GPU-bound hint
     };

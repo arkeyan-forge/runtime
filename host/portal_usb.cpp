@@ -20,6 +20,7 @@
 #include <thread>
 #include <type_traits>
 #include <vector>
+#include "env.h"
 
 namespace
 {
@@ -60,7 +61,7 @@ namespace
 
     bool LoadLibusb(Libusb& usb)
     {
-        const char* names[] = { getenv("SSA_LIBUSB"), "libusb-1.0.dylib", "/opt/homebrew/lib/libusb-1.0.dylib",
+        const char* names[] = { skyenv::Get("SKY_LIBUSB"), "libusb-1.0.dylib", "/opt/homebrew/lib/libusb-1.0.dylib",
             "/usr/local/lib/libusb-1.0.dylib", "libusb-1.0.so.0", "libusb-1.0.dll" };
         SDL_SharedObject* library = nullptr;
         for (const char* name : names)
@@ -111,7 +112,7 @@ namespace
     // Xbox 360 portals (Xenia's list; the first one is the portal sold with Spyro's Adventure).
     constexpr KnownPortal Xbox360Portals[] = { { 0x1430, 0x1F17 }, { 0x24C6, 0xFA00 } };
     // Xbox One portals: any Activision device with a GIP interface (the product id is not known yet).
-    // SSA_PORTAL_USB=VVVV:PPPP selects another device.
+    // SKY_PORTAL_USB=VVVV:PPPP selects another device.
     constexpr uint16_t ActivisionVendor = 0x1430;
 
     constexpr uint8_t Xbox360Header[2] = { 0x0B, 0x14 };
@@ -175,7 +176,7 @@ namespace
     public:
         explicit UsbPortal(const Libusb& usb) : m_usb(usb)
         {
-            if (const char* selected = getenv("SSA_PORTAL_USB"))
+            if (const char* selected = skyenv::Get("SKY_PORTAL_USB"))
             {
                 unsigned vendor = 0, product = 0;
                 if (sscanf(selected, "%x:%x", &vendor, &product) == 2)
@@ -467,7 +468,7 @@ std::string ProbeUsbPortals(std::vector<PortalProbe>& portals)
 {
     Libusb usb{};
     if (!LoadLibusb(usb))
-        return "libusb-1.0 not found (set SSA_LIBUSB to its path)";
+        return "libusb-1.0 not found (set SKY_LIBUSB to its path)";
 
     libusb_device** devices = nullptr;
     ptrdiff_t count = usb.get_device_list(usb.context, &devices);

@@ -32,6 +32,6 @@ One line per file: [docs/architecture/layout.md](https://github.com/arkeyan-forg
 
 ## Gotchas
 
-Every game run isolates the user's files (`SSA_SETTINGS`, `SSA_LAUNCHER_INI`, `SSA_COLLECTION`, `SSA_SAVE_DIR`,
-`SKYLANDERS_DATA`, `SSA_LOG`), see testing.md. Settings and environment variables:
+Every game run isolates the user's files (`SKY_SETTINGS`, `SKY_LAUNCHER_INI`, `SKY_COLLECTION`, `SKY_SAVE_DIR`,
+`SKYLANDERS_DATA`, `SKY_LOG`), see testing.md. Settings and environment variables:
 [settings.md](https://github.com/arkeyan-forge/forge/blob/main/docs/getting-started/settings.md), [debugging.md](https://github.com/arkeyan-forge/forge/blob/main/docs/porting/debugging.md).

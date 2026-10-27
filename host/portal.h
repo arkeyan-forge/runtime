@@ -12,10 +12,10 @@
 
 constexpr size_t PortalReportSize = 32;
 
-// Picks the portal (SSA_PORTAL=auto|real|hid|usb|emulated|none, default auto: a real portal plugged in at launch,
+// Picks the portal (SKY_PORTAL=auto|real|hid|usb|emulated|none, default auto: a real portal plugged in at launch,
 // otherwise the emulated one; real waits for a real portal to be plugged in) and installs the figure hotkeys. The
 // emulated portal starts as the last session left it (portal.txt in the save folder; empty the first time), or with
-// the figures listed in SSA_PORTAL_PLACE instead. Call after SDL_Init.
+// the figures listed in SKY_PORTAL_PLACE instead. Call after SDL_Init.
 void PortalInit();
 
 // False when no portal is attached; the title then asks the player to connect one.
@@ -42,7 +42,7 @@ constexpr int PortalSlotCount = 16;
 bool PortalIsEmulated();
 // Path of the dump in `slot`, empty if the slot is free.
 std::string PortalSlotFigure(int slot);
-// Where figure dumps live: the shared collection (collection::Folder(): SSA_COLLECTION, SSA_FIGURES, else
+// Where figure dumps live: the shared collection (collection::Folder(): SKY_COLLECTION, SKY_FIGURES, else
 // <user data>/Skylanders/Collection; docs/runtime/host/collection.md).
 std::string PortalFigureFolder();
 
@@ -76,5 +76,5 @@ inline bool PortalLightOn(const PortalLightState& light) { return light.set && (
 // object per line on stdout, then {"done":true,"count":N}. Returns the exit code (0). Contract: docs/runtime/host/portal_probe.md.
 int PortalProbeMain();
 
-// SSA_PORTAL_LOG=1 traces portal traffic and the title's own portal log.
+// SKY_PORTAL_LOG=1 traces portal traffic and the title's own portal log.
 bool PortalLogEnabled();

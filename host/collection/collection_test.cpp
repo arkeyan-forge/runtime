@@ -19,6 +19,7 @@
 #include <cstring>
 #include <set>
 #include <string>
+#include "../env.h"
 
 namespace
 {
@@ -575,7 +576,7 @@ namespace
         SDL_SaveFile((legacy + "/short.bin").c_str(), "abc", 3);
         std::string before = ReadText(legacy + "/016 Spyro.sky");
 
-        CHECK(LegacyFolder().empty()); // SSA_COLLECTION is set and SSA_MIGRATE_FROM is not
+        CHECK(LegacyFolder().empty()); // SKY_COLLECTION is set and SKY_MIGRATE_FROM is not
         Migration result = Migrate(legacy);
         CHECK(result.copied == 2 && result.matched == 1 && result.failed == 1);
         CHECK(ReadText(PathOf("016 Spyro.sky")) == before && ReadText(legacy + "/016 Spyro.sky") == before);
@@ -1187,14 +1188,14 @@ int main(int argc, char** argv)
     g_scratch = (data != nullptr && *data ? std::string(data) : std::filesystem::temp_directory_path().string()) + "/SSACollectionTest";
     RemoveTree(g_scratch);
     SDL_CreateDirectory(g_scratch.c_str());
-    SetVariable("SSA_COLLECTION", g_scratch + "/Collection");
-    SetVariable("SSA_PORTRAITS", g_scratch + "/portraits");
+    SetVariable("SKY_COLLECTION", g_scratch + "/Collection");
+    SetVariable("SKY_PORTRAITS", g_scratch + "/portraits");
 #ifdef _WIN32
-    _putenv_s("SSA_MIGRATE_FROM", "");
-    _putenv_s("SSA_FIGURES", "");
+    _putenv_s("SKY_MIGRATE_FROM", "");
+    _putenv_s("SKY_FIGURES", "");
 #else
-    unsetenv("SSA_MIGRATE_FROM");
-    unsetenv("SSA_FIGURES");
+    unsetenv("SKY_MIGRATE_FROM");
+    unsetenv("SKY_FIGURES");
 #endif
 
     TestJson();
@@ -1211,7 +1212,7 @@ int main(int argc, char** argv)
     TestGiants();
     TestUpgrades();
 
-    if (getenv("SSA_KEEP_COLLECTION") == nullptr)
+    if (skyenv::Get("SKY_KEEP_COLLECTION") == nullptr)
         RemoveTree(g_scratch);
     else
         printf("kept in %s\n", g_scratch.c_str());

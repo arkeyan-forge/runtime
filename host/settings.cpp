@@ -1,4 +1,5 @@
 #include "host/settings.h"
+#include "host/env.h"
 #include <SDL3/SDL.h>
 #include <charconv>
 #include <fmt/format.h>
@@ -162,11 +163,11 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
     if (auto it = game.find("voice_language"); it != game.end()) s.voiceLanguage = it->second;
 
     // Environment
-    if (const char* value = getEnv("SSA_LANGUAGE")) s.language = value;
-    if (const char* value = getEnv("SSA_VOICE_LANGUAGE")) s.voiceLanguage = value;
-    if (const char* value = getEnv("SSA_TOYBOX_AUTO_OPEN")) set.Bool("SSA_TOYBOX_AUTO_OPEN", "toybox_auto_open", value, s.toyboxAutoOpen);
-    if (const char* value = getEnv("SSA_TEXTURE_DUMP")) set.Bool("SSA_TEXTURE_DUMP", "SSA_TEXTURE_DUMP", value, s.textureDump);
-    if (const char* value = getEnv("SSA_TEXTURE_PACKS")) set.Bool("SSA_TEXTURE_PACKS", "SSA_TEXTURE_PACKS", value, s.texturePacks);
+    if (const char* value = skyenv::Get("SKY_LANGUAGE", getEnv)) s.language = value;
+    if (const char* value = skyenv::Get("SKY_VOICE_LANGUAGE", getEnv)) s.voiceLanguage = value;
+    if (const char* value = skyenv::Get("SKY_TOYBOX_AUTO_OPEN", getEnv)) set.Bool("SKY_TOYBOX_AUTO_OPEN", "toybox_auto_open", value, s.toyboxAutoOpen);
+    if (const char* value = skyenv::Get("SKY_TEXTURE_DUMP", getEnv)) set.Bool("SKY_TEXTURE_DUMP", "SKY_TEXTURE_DUMP", value, s.textureDump);
+    if (const char* value = skyenv::Get("SKY_TEXTURE_PACKS", getEnv)) set.Bool("SKY_TEXTURE_PACKS", "SKY_TEXTURE_PACKS", value, s.texturePacks);
 
     // Command line: "--option value" or "--option=value".
     const char* cli = "command line";

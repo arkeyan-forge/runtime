@@ -377,7 +377,7 @@ namespace toybox
 
     Model& Get();
     bool French();
-    // English or French by the game's text language (SSA_LANGUAGE, [ssa] language).
+    // English or French by the game's text language (SKY_LANGUAGE, [ssa] language).
     inline const char* L(const char* english, const char* french) { return French() ? french : english; }
     std::string ElementLabel(collection::Element element);
     std::string CategoryLabel(collection::Category category);

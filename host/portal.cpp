@@ -15,13 +15,14 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include "env.h"
 
 namespace
 {
     std::mutex g_mutex;
     PortalBackend* g_backend;   // chosen once by PortalInit, kept until exit
     EmulatedPortal* g_emulated; // g_backend when the portal is emulated
-    const bool g_log = getenv("SSA_PORTAL_LOG") != nullptr;
+    const bool g_log = skyenv::Get("SKY_PORTAL_LOG") != nullptr;
 
     // The traffic as the title sees it (PortalSeen). Under g_mutex.
     PortalSlotSeen g_seen[PortalSlotCount];
@@ -111,7 +112,7 @@ namespace
     int g_hotkeyFigure = -1;
     int g_hotkeySlot = -1;
 
-    // The collection shared with the launcher and the other games (docs/runtime/host/collection.md): SSA_COLLECTION, SSA_FIGURES,
+    // The collection shared with the launcher and the other games (docs/runtime/host/collection.md): SKY_COLLECTION, SKY_FIGURES,
     // else <user data>/Skylanders/Collection.
     std::string FigureFolder()
     {
@@ -153,13 +154,13 @@ namespace
     }
 
     // The emulated portal's figures from one session to the next: "<slot> <path>" lines in portal.txt in the save
-    // folder (SSA_SAVE_DIR, else the user's data folder: LocalState on the Xbox), rewritten at every change.
+    // folder (SKY_SAVE_DIR, else the user's data folder: LocalState on the Xbox), rewritten at every change.
     bool g_restoring;
 
     std::string StatePath()
     {
         std::string folder;
-        if (const char* saves = getenv("SSA_SAVE_DIR"))
+        if (const char* saves = skyenv::Get("SKY_SAVE_DIR"))
             folder = std::string(saves) + "/";
         else if (std::filesystem::path game = datadir::Game(SSA_GAME_ID); !game.empty())
             folder = datadir::Text(game) + "/";
@@ -301,9 +302,9 @@ namespace
 
 void PortalInit()
 {
-    const char* modeVariable = getenv("SSA_PORTAL");
+    const char* modeVariable = skyenv::Get("SKY_PORTAL");
     std::string mode = modeVariable != nullptr ? modeVariable : "auto";
-    fprintf(stderr, "[portal] mode %s%s\n", mode.c_str(), modeVariable != nullptr ? " (SSA_PORTAL)" : "");
+    fprintf(stderr, "[portal] mode %s%s\n", mode.c_str(), modeVariable != nullptr ? " (SKY_PORTAL)" : "");
     if (mode == "none")
     {
         fprintf(stderr, "[portal] disabled\n");
@@ -329,7 +330,7 @@ void PortalInit()
     {
         backend = CreateUsbPortal();
         if (backend == nullptr)
-            fprintf(stderr, "[portal] usb: libusb-1.0 not found, no Xbox 360 or Xbox One portal (set SSA_LIBUSB to its path)\n");
+            fprintf(stderr, "[portal] usb: libusb-1.0 not found, no Xbox 360 or Xbox One portal (set SKY_LIBUSB to its path)\n");
         if (backend != nullptr && (mode == "auto" || (mode == "real" && waiting != nullptr)) && !backend->IsConnected())
             backend.reset();
     }
@@ -344,7 +345,7 @@ void PortalInit()
         g_emulated = new EmulatedPortal;
         g_emulated->SetModel(EmulatedPortalModel(GameId));
         // Tests: another model from the table, by its id ("01 28", "0128"), to see what the game does with it.
-        if (const char* wanted = getenv("SSA_PORTAL_MODEL"))
+        if (const char* wanted = skyenv::Get("SKY_PORTAL_MODEL"))
         {
             uint8_t id[4];
             size_t length = 0;
@@ -358,7 +359,7 @@ void PortalInit()
             if (const PortalModel* model = FindPortalModel(id, length))
                 g_emulated->SetModel(*model);
             else
-                fprintf(stderr, "[portal] SSA_PORTAL_MODEL=%s is not in the table, kept the default\n", wanted);
+                fprintf(stderr, "[portal] SKY_PORTAL_MODEL=%s is not in the table, kept the default\n", wanted);
         }
         backend.reset(g_emulated);
     }
@@ -386,8 +387,8 @@ void PortalInit()
         for (int slot = 0; slot < EmulatedPortal::SlotCount; slot++)
             collection::Unlock(g_emulated->SlotPath(slot));
     });
-    // Tests: exactly the figures of SSA_PORTAL_PLACE, whatever the last session left.
-    if (const char* list = getenv("SSA_PORTAL_PLACE"))
+    // Tests: exactly the figures of SKY_PORTAL_PLACE, whatever the last session left.
+    if (const char* list = skyenv::Get("SKY_PORTAL_PLACE"))
     {
         std::string entries = list;
         for (size_t begin = 0; begin <= entries.size();)

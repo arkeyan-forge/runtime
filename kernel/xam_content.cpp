@@ -1,4 +1,4 @@
-// XAM storage devices and content packages. The console has one hard drive, backed by a host folder (SSA_SAVE_DIR,
+// XAM storage devices and content packages. The console has one hard drive, backed by a host folder (SKY_SAVE_DIR,
 // or SDL's per-user preference folder). A content package (save game...) is a subdirectory, <type>\<file name>, that
 // XamContentCreateEx mounts under the title's drive name ("lux:" for this game) for kernel/files.cpp to read and write.
 #include "kernel/files.h"

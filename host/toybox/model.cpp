@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include "../env.h"
 
 using namespace collection;
 
@@ -463,7 +464,7 @@ namespace toybox
                 s.slot2 = -1;
             }
         }
-        // Figures placed elsewhere (the last session, F7, SSA_PORTAL_PLACE): the first free seat they fit. A swapper's
+        // Figures placed elsewhere (the last session, F7, SKY_PORTAL_PLACE): the first free seat they fit. A swapper's
         // two tags (linked in the collection) go to one seat; a bottom waits for its top's turn.
         auto slotOf = [&](const std::string& path) {
             for (int slot = 0; slot < PortalSlotCount; slot++)
@@ -2972,7 +2973,7 @@ namespace toybox
                 manage.unknown.push_back(int(i));
         }
         manage.starters = UntouchedStarters();
-        const char* import = getenv("SSA_IMPORT_FOLDER");
+        const char* import = skyenv::Get("SKY_IMPORT_FOLDER");
         manage.importFolder = import != nullptr ? import : collection::Folder() + "/Import";
         manage.exportFolder = collection::Folder() + "/Export";
         m_dirty = true;

@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include "../env.h"
 
 namespace collection
 {
@@ -320,11 +321,11 @@ namespace collection
 
     namespace
     {
-        // The first of `names` cached in the game's portraits folder (SSA_PORTRAITS, else <data>/<Game>/portraits).
+        // The first of `names` cached in the game's portraits folder (SKY_PORTRAITS, else <data>/<Game>/portraits).
         std::string FirstCached(const Game& game, const std::vector<std::string>& names)
         {
             std::string folder;
-            if (const char* portraits = getenv("SSA_PORTRAITS"))
+            if (const char* portraits = skyenv::Get("SKY_PORTRAITS"))
                 folder = std::string(portraits) + "/";
             else if (std::filesystem::path data = datadir::Game(game.id); !data.empty())
                 folder = datadir::Text(data / "portraits") + "/";
@@ -405,7 +406,7 @@ namespace collection
             if (it == pictures.end())
                 return {};
             std::string folder;
-            if (const char* portraits = getenv("SSA_PORTRAITS"))
+            if (const char* portraits = skyenv::Get("SKY_PORTRAITS"))
                 folder = std::string(portraits) + "/";
             else if (std::filesystem::path data = datadir::Game(game.id); !data.empty())
                 folder = datadir::Text(data / "portraits") + "/";

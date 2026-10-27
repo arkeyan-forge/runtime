@@ -11,6 +11,7 @@
 #include <vector>
 #include <ppc_config.h>
 #include <ppc_context.h>
+#include "../host/env.h"
 
 #define XXH_INLINE_ALL
 #include <xxhash.h>
@@ -35,9 +36,9 @@ namespace d3d
             memcpy(bytes.data() + virtualSize, g_memory.Translate(physical), size - virtualSize);
             GuestShader shader{ container, size, HashBytes(bytes.data(), size), vertex, 0, 0, 0, 0 };
 
-            // SSA_DUMP_SHADERS=<dir>: keep every container the game creates (some are built at run time, so the disc
+            // SKY_DUMP_SHADERS=<dir>: keep every container the game creates (some are built at run time, so the disc
             // archives lack them); tools/shaders/build_cache.sh translates them too.
-            static const char* dumpDirectory = getenv("SSA_DUMP_SHADERS");
+            static const char* dumpDirectory = skyenv::Get("SKY_DUMP_SHADERS");
             if (dumpDirectory != nullptr)
             {
                 char path[1024];

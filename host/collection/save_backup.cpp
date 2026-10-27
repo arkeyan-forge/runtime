@@ -9,6 +9,7 @@
 #include <fstream>
 #include <set>
 #include <system_error>
+#include "../env.h"
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
@@ -96,7 +97,7 @@ namespace savebackup
 
     fs::path Root(std::string_view game)
     {
-        if (const char* directory = std::getenv("SSA_SAVE_DIR"); directory != nullptr && *directory != '\0')
+        if (const char* directory = skyenv::Get("SKY_SAVE_DIR"); directory != nullptr && *directory != '\0')
             return datadir::FromText(directory);
 
         fs::path path = datadir::Game(game);

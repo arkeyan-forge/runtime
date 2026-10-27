@@ -1,4 +1,4 @@
-// SSA_D3D_CAPTURE=<seconds> (or f<N>: after the N-th swap): logs every draw, clear, resolve and swap of the first frame
+// SKY_D3D_CAPTURE=<seconds> (or f<N>: after the N-th swap): logs every draw, clear, resolve and swap of the first frame
 // that starts after that time ("[capture]" lines): bound shaders, render targets, vertex declaration and streams, textures and the main render
 // registers, as the game's device holds them. A development aid for the Direct3D replacement.
 #include "d3d/capture.h"
@@ -13,6 +13,7 @@
 #include <set>
 #include <ppc_config.h>
 #include <ppc_context.h>
+#include "../host/env.h"
 
 namespace
 {
@@ -26,14 +27,14 @@ namespace
 
     double CaptureTime()
     {
-        static const char* value = getenv("SSA_D3D_CAPTURE");
+        static const char* value = skyenv::Get("SKY_D3D_CAPTURE");
         return value != nullptr ? atof(value[0] == 'f' ? "0" : value) : -1.0;
     }
 
     // "f<N>": the frame that starts after the N-th swap instead of a time.
     uint64_t CaptureFrame()
     {
-        static const char* value = getenv("SSA_D3D_CAPTURE");
+        static const char* value = skyenv::Get("SKY_D3D_CAPTURE");
         return value != nullptr && value[0] == 'f' ? strtoull(value + 1, nullptr, 10) : 0;
     }
 

@@ -22,7 +22,7 @@ namespace
     constexpr uint8_t Header[2] = { 0x0B, 0x14 };
     constexpr size_t HeaderSize = sizeof(Header);
 
-    // SSA_PORTAL_LOG: one line per command and answer; status reports only when the figures change.
+    // SKY_PORTAL_LOG: one line per command and answer; status reports only when the figures change.
     void LogReport(const char* direction, const uint8_t* report, size_t size)
     {
         static uint8_t lastStatus[5];
@@ -151,7 +151,7 @@ PPC_FUNC(__imp__XamInputNonControllerSetRaw)
     ctx.r3.u64 = sent ? ErrorSuccess : ErrorDeviceNotConnected;
 }
 
-// The title's portal log (printf-like, format in r3), silent in retail builds: echoed with SSA_PORTAL_LOG.
+// The title's portal log (printf-like, format in r3), silent in retail builds: echoed with SKY_PORTAL_LOG.
 #ifdef GAME_HOOK_Portal_Log
 PPC_FUNC_IMPL(GAME_IMP(Portal_Log));
 PPC_FUNC(GAME_HOOK(Portal_Log))

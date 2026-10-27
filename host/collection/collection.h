@@ -12,7 +12,7 @@
 
 namespace collection
 {
-    // The collection folder, without a trailing slash: SSA_COLLECTION, else SSA_FIGURES (the old variable), else
+    // The collection folder, without a trailing slash: SKY_COLLECTION, else SKY_FIGURES (the old variable), else
     // DefaultFolder(). Created when first written to.
     std::string Folder();
     // <data root>/Collection (datadir.h): ~/Library/Application Support/Skylanders/Collection on macOS,
@@ -316,7 +316,7 @@ namespace collection
 
     // --- Migration from the per-game folders ---------------------------------------------------------------------------
 
-    // Where an older build kept the figures: SSA_MIGRATE_FROM, else (only when neither SSA_COLLECTION nor SSA_FIGURES
+    // Where an older build kept the figures: SKY_MIGRATE_FROM, else (only when neither SKY_COLLECTION nor SKY_FIGURES
     // is set) "figures" in the SSA game folder (datadir.h). Empty: nothing to migrate.
     std::string LegacyFolder();
 

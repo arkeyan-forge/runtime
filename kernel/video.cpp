@@ -12,6 +12,7 @@
 #include <deque>
 #include <mutex>
 #include <vector>
+#include "../host/env.h"
 
 namespace
 {
@@ -33,7 +34,7 @@ namespace
 
     uint32_t g_fpsLimit = 30;
 
-    // SSA_VBLANK_LOG=1: every 600 vertical blanks, how late the interrupt thread delivered them and how long the guest's
+    // SKY_VBLANK_LOG=1: every 600 vertical blanks, how late the interrupt thread delivered them and how long the guest's
     // interrupt callback took (median, p95, max), to tell the emulated blanks' jitter from the game's.
     struct VBlankLog
     {
@@ -60,7 +61,7 @@ namespace
     void InterruptThread(PPCContext& ctx)
     {
         PlatformSetThreadTimingCritical(uint32_t(VBlankPeriod.count()));
-        static const bool logVBlanks = getenv("SSA_VBLANK_LOG") != nullptr;
+        static const bool logVBlanks = skyenv::Get("SKY_VBLANK_LOG") != nullptr;
         VBlankLog log;
         auto nextVBlank = std::chrono::steady_clock::now() + VBlankPeriod;
         while (true)

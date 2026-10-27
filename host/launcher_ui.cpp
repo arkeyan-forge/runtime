@@ -19,6 +19,7 @@
 #include <stb_image_write.h>
 #include <thread>
 #include <vector>
+#include "env.h"
 
 using namespace LauncherTheme;
 
@@ -283,8 +284,8 @@ namespace
         SDL_ShowCursor();
         fullscreen = LauncherFullscreen(config);
         if (fullscreen) SDL_SetWindowFullscreen(win, true);
-        if (const char* s = SDL_getenv("SSA_LAUNCHER_SHOTS")) { testMode = true; shotsDir = s; std::error_code ec; std::filesystem::create_directories(shotsDir,ec); }
-        if (const char* d = SDL_getenv("SSA_LAUNCHER_TEST_DROP")) testDrop = d;
+        if (const char* s = skyenv::Get("SKY_LAUNCHER_SHOTS")) { testMode = true; shotsDir = s; std::error_code ec; std::filesystem::create_directories(shotsDir,ec); }
+        if (const char* d = skyenv::Get("SKY_LAUNCHER_TEST_DROP")) testDrop = d;
         now = last = NowSeconds(); testStart = now; testDropAt = now+1.25; phaseStart = now;
         int ng=0; SDL_JoystickID* ids = SDL_GetGamepads(&ng);
         if (ids){ if (ng>0) pad = SDL_OpenGamepad(ids[0]); SDL_free(ids); }

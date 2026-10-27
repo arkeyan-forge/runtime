@@ -4,7 +4,7 @@
 // Shared by the game and Skylauncher (tools/sync_collection.sh, next to datadir); plain C++ and the C library only, so
 // no SDL and no game data.
 //
-// Layout, for a saves folder <saves> (<root>/SSA/saves, or SSA_SAVE_DIR):
+// Layout, for a saves folder <saves> (<root>/SSA/saves, or SKY_SAVE_DIR):
 //
 //   <saves>/<type>/<name>/GLOBAL.DAT   the game's saves, as the title writes them
 //   <saves>-backup/<time>/GLOBAL.DAT   the previous version of every file the game overwrote, same relative paths
@@ -26,7 +26,7 @@
 
 namespace savebackup
 {
-    // The game's saves folder: SSA_SAVE_DIR when set, else <root>/<Game>/saves. Empty when there is no data folder.
+    // The game's saves folder: SKY_SAVE_DIR when set, else <root>/<Game>/saves. Empty when there is no data folder.
     std::filesystem::path Root(std::string_view game = "ssa");
     // "<saves>-backup" for a saves folder ("<root>/SSA/saves" -> "<root>/SSA/saves-backup"). Root() when `saveDir` is
     // empty.

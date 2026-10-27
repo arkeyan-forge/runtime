@@ -6,7 +6,7 @@
 #include <vector>
 
 // A default.xex's execution info and dashboard resources, read from the player's own file (the launcher checks a disc with
-// them, SSABuild takes the game's icon from them). Bounds-checked: the file comes from the player.
+// them, SkyBuild takes the game's icon from them). Bounds-checked: the file comes from the player.
 struct ExecutionInfo
 {
     uint32_t mediaId;

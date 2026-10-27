@@ -318,7 +318,7 @@ bool SDL_AddEventWatch(SDL_EventFilter, void*)
     return true;
 }
 
-// No keyboard: the Toy Box's nickname field only keeps the name it had, and SSA_TOYBOX_SCRIPT finds no key.
+// No keyboard: the Toy Box's nickname field only keeps the name it had, and SKY_TOYBOX_SCRIPT finds no key.
 bool SDL_StartTextInput(SDL_Window*)
 {
     return true;

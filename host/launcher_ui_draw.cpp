@@ -6,6 +6,7 @@
 #include <cstring>
 #include <stb_image.h>
 #include <stb_truetype.h>
+#include "env.h"
 
 namespace
 {
@@ -160,7 +161,7 @@ void LauncherPainter::Shutdown()
 bool LauncherPainter::LoadFonts()
 {
     std::vector<std::string> directories;
-    if (const char* overrideDirectory = SDL_getenv("SSA_LAUNCHER_FONT_DIR"))
+    if (const char* overrideDirectory = skyenv::Get("SKY_LAUNCHER_FONT_DIR"))
         directories.emplace_back(overrideDirectory);
 
     if (const char* base = SDL_GetBasePath())
