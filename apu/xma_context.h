@@ -90,8 +90,15 @@ private:
     uint32_t m_loopFrameBlockLimit = 0; // the loop end frame only outputs up to loop_subframe_end
     bool m_loopStartSkipPending = false;
     bool m_errorReported = false;
+    uint32_t m_loopWraps = 0; // SKY_XMA_TRACE only
+    bool m_loopLogged = false;
+    bool m_traceWrap = false, m_measureNext = false;
+    float m_lastSample = 0, m_avgStep = 0, m_wrapBefore = 0, m_wrapStep = 0, m_wrapFirst = 0;
+    uint32_t m_zeroRun = 0;
+    bool m_zeroCounting = false;
 
     void Decode(XmaContextData& data);
     void Consume(XmaContextData& data, uint8_t* output, uint32_t& write, int32_t& blocksLeft);
+    void TraceWrapStep(const int16_t* block, uint32_t stride);
     bool UpdateLoop(XmaContextData& data);
 };

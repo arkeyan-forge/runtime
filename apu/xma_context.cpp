@@ -7,9 +7,11 @@
 // - a frame the codec can't output still takes its place as silence, so every frame gives 512 samples;
 // - a starved context keeps the output it already wrote.
 #include "apu/xma_context.h"
+#include "host/env.h"
 #include "memory.h"
 #include <algorithm>
 #include <byteswap.h>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -240,6 +242,14 @@ void XmaContext::Kick(uint8_t* guestData)
     XmaContextData data;
     data.Load(guestData);
     const XmaContextData initial = data;
+    static const bool trace = skyenv::Get("SKY_XMA_TRACE") != nullptr;
+    m_traceWrap = trace;
+    if (trace && data.loop_count != 0 && !m_loopLogged)
+    {
+        m_loopLogged = true;
+        fprintf(stderr, "[xma-loop] ctx=%p armed start=%u end=%u count=%u\n", static_cast<void*>(this),
+            unsigned(data.loop_start), unsigned(data.loop_end), unsigned(data.loop_count));
+    }
 
     // The title sets output_buffer_valid when there is room to decode into; the decoder clears it once the ring is full.
     uint32_t blocks = data.output_buffer_block_count;
@@ -303,6 +313,38 @@ void XmaContext::Kick(uint8_t* guestData)
     fresh.Store(guestData);
 }
 
+// SKY_XMA_TRACE: the step between the last sample before a loop wrap and the first one after it (channel 0), against the
+// average step of the music just before: a ratio far above 1 is a click, a ratio near 1 a seamless wrap.
+void XmaContext::TraceWrapStep(const int16_t* block, uint32_t stride)
+{
+    for (uint32_t i = 0; i < SamplesPerBlock; i += stride)
+    {
+        float sample = block[i];
+        if (m_measureNext)
+        {
+            m_measureNext = false;
+            m_zeroRun = 0;
+            m_zeroCounting = true;
+            m_wrapBefore = m_lastSample;
+            m_wrapStep = m_avgStep;
+            m_wrapFirst = sample;
+        }
+        if (m_zeroCounting)
+        {
+            if (sample == 0 && m_zeroRun < 100000)
+                m_zeroRun++;
+            else
+            {
+                m_zeroCounting = false;
+                fprintf(stderr, "[xma-wrap] ctx=%p last_before=%.0f first_after=%.0f typical_step=%.1f leading_zero_samples=%u first_nonzero=%.0f\n",
+                    static_cast<void*>(this), m_wrapBefore, m_wrapFirst, m_wrapStep, m_zeroRun, sample);
+            }
+        }
+        m_avgStep += (std::fabs(sample - m_lastSample) - m_avgStep) * (1.0f / 64.0f);
+        m_lastSample = sample;
+    }
+}
+
 // Writes the next blocks of the decoded frame into the output ring.
 void XmaContext::Consume(XmaContextData& data, uint8_t* output, uint32_t& write, int32_t& blocksLeft)
 {
@@ -332,6 +374,8 @@ void XmaContext::Consume(XmaContextData& data, uint8_t* output, uint32_t& write,
         const int16_t* source = m_frame.data() + (done + block) * SamplesPerBlock;
         for (uint32_t i = 0; i < SamplesPerBlock; i++)
             destination[i] = ByteSwap(source[i]);
+        if (m_traceWrap)
+            TraceWrapStep(source, data.is_stereo ? 2 : 1);
         write = (write + 1) % blocks;
     }
 
@@ -345,6 +389,13 @@ bool XmaContext::UpdateLoop(XmaContextData& data)
     if (data.loop_count == 0 || data.input_buffer_read_offset != std::max(PacketHeaderBits, uint32_t(data.loop_end)))
         return false;
 
+    // Test switch (SKY_XMA_TRACE): one line per loop wrap, to find a level's hardware loops and measure them.
+    static const bool trace = skyenv::Get("SKY_XMA_TRACE") != nullptr;
+    if (trace)
+        fprintf(stderr, "[xma-loop] ctx=%p wrap#%u start=%u end=%u count=%u subframe_end=%u skip=%u stereo=%u\n",
+            static_cast<void*>(this), ++m_loopWraps, unsigned(data.loop_start), unsigned(data.loop_end),
+            unsigned(data.loop_count), unsigned(data.loop_subframe_end), unsigned(data.loop_subframe_skip),
+            unsigned(data.is_stereo));
     data.input_buffer_read_offset = std::max(PacketHeaderBits, uint32_t(data.loop_start));
     m_loopStartSkipPending = true;
     if (data.loop_count != InfiniteLoop)
@@ -428,6 +479,20 @@ void XmaContext::Decode(XmaContextData& data)
         data.loop_count != 0 && data.input_buffer_read_offset == std::max(PacketHeaderBits, uint32_t(data.loop_end));
     m_decoder->DecodeFrame(frame, frameStart, frameBits, SampleRates[data.sample_rate], data.is_stereo ? 2 : 1,
         m_frame.data());
+    if (m_traceWrap && (loopEndFrame || m_loopStartSkipPending))
+    {
+        // RMS of each 128-sample subframe (channel 0) of the loop end / start frame
+        char text[96] = {};
+        for (int sub = 0, at = 0; sub < 4; sub++)
+        {
+            double sum = 0;
+            for (int i = 0; i < 128; i++)
+                sum += double(m_frame[(sub * 128 + i) * (data.is_stereo ? 2 : 1)]) * m_frame[(sub * 128 + i) * (data.is_stereo ? 2 : 1)];
+            at += snprintf(text + at, sizeof(text) - at, " %.0f", std::sqrt(sum / 128));
+        }
+        fprintf(stderr, "[xma-frame] ctx=%p %s subframe rms:%s (end=%u skip=%u)\n", static_cast<void*>(this),
+            loopEndFrame ? "loop-end" : "loop-start", text, unsigned(data.loop_subframe_end), unsigned(data.loop_subframe_skip));
+    }
     m_frameBlocksLeft = BlocksPerFrameChannel << data.is_stereo;
     m_loopFrameBlockLimit = loopEndFrame ? (data.loop_subframe_end + 1u) << data.is_stereo : 0;
     if (m_loopStartSkipPending)
@@ -436,6 +501,7 @@ void XmaContext::Decode(XmaContextData& data)
         if (skip < m_frameBlocksLeft)
             m_frameBlocksLeft -= skip;
         m_loopStartSkipPending = false;
+        m_measureNext = m_traceWrap;
     }
 
     if (UpdateLoop(data))

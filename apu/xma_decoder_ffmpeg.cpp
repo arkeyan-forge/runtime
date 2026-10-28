@@ -5,6 +5,7 @@
 // so each XMA frame is wrapped in a packet of its own for the plain WMA Pro decoder, configured with XMA's stream
 // parameters: 512-sample frames, 15-bit frame lengths, the same decode flags.
 #include "apu/xma_decoder.h"
+#include "host/env.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -83,14 +84,25 @@ namespace
 
             int result = avcodec_send_packet(m_context, m_packet);
             av_packet_unref(m_packet);
+            static const bool trace = skyenv::Get("SKY_XMA_TRACE") != nullptr;
             if (result < 0)
+            {
+                if (trace)
+                    fprintf(stderr, "[xma-dec] %p send failed %d bits=%u\n", static_cast<void*>(this), result, bitCount);
                 return false;
+            }
 
+            int received = 0;
             while (avcodec_receive_frame(m_context, m_frame) >= 0)
             {
+                received++;
+                if (trace && m_frame->nb_samples != int(SamplesPerFrame))
+                    fprintf(stderr, "[xma-dec] %p frame of %d samples (seq %u)\n", static_cast<void*>(this), m_frame->nb_samples, m_sequence);
                 Convert(samples, channels);
                 av_frame_unref(m_frame);
             }
+            if (trace && received == 0)
+                fprintf(stderr, "[xma-dec] %p no frame out (seq %u bits=%u)\n", static_cast<void*>(this), m_sequence, bitCount);
             return true;
         }
 
