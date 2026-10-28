@@ -482,25 +482,31 @@ namespace collection
         return Cut(image, x0, y0, x1, y1);
     }
 
-    Image StackHalves(const Image& top, const Image& bottom)
+    Image JoinHalves(const Image& top, const Image& bottom)
     {
-        int box[2][4];
-        if (!VisibleBox(top, 8, box[0][0], box[0][1], box[0][2], box[0][3]) || !VisibleBox(bottom, 8, box[1][0], box[1][1], box[1][2], box[1][3]))
+        int box[4];
+        if (!VisibleBox(top, 8, box[0], box[1], box[2], box[3]) || !VisibleBox(bottom, 8, box[0], box[1], box[2], box[3]))
             return {};
-        Image halves[2] = { Cut(top, box[0][0], box[0][1], box[0][2], box[0][3]), Cut(bottom, box[1][0], box[1][1], box[1][2], box[1][3]) };
-        int width = std::max(halves[0].width, halves[1].width);
-        Image out;
-        out.width = width;
-        for (Image& half : halves)
+        int width = std::max(top.width, bottom.width), height = std::max(top.height, bottom.height);
+        Image upper = Resize(top, width, height), lower = Resize(bottom, width, height);
+        for (size_t i = 0; i < lower.rgba.size(); i++)
         {
-            int height = std::max(1, int(std::lround(double(half.height) * width / half.width)));
-            half = Resize(half, width, height);
-            out.height += height;
+            uint32_t t = upper.rgba[i], b = lower.rgba[i];
+            uint32_t at = t >> 24, ab = b >> 24;
+            uint32_t a = at * 255 + ab * (255 - at); // alpha x 255
+            if (a == 0)
+            {
+                lower.rgba[i] = 0;
+                continue;
+            }
+            uint32_t out = ((a + 127) / 255) << 24;
+            for (int shift = 0; shift < 24; shift += 8)
+                out |= ((((t >> shift) & 255) * at * 255 + ((b >> shift) & 255) * ab * (255 - at)) / a) << shift;
+            lower.rgba[i] = out;
         }
-        out.rgba.reserve(size_t(out.width) * out.height);
-        for (const Image& half : halves)
-            out.rgba.insert(out.rgba.end(), half.rgba.begin(), half.rgba.end());
-        return out;
+        if (!VisibleBox(lower, 0, box[0], box[1], box[2], box[3]))
+            return {};
+        return Cut(lower, box[0], box[1], box[2], box[3]);
     }
 
     Image SwapperPicture(const Toy& top, uint16_t topVariant, const Toy& bottom, uint16_t bottomVariant)
@@ -508,7 +514,7 @@ namespace collection
         std::string upper = HalfPicturePath(top, topVariant), lower = HalfPicturePath(bottom, bottomVariant);
         if (upper.empty() || lower.empty())
             return {};
-        return StackHalves(LoadPng(upper), LoadPng(lower));
+        return JoinHalves(LoadPng(upper), LoadPng(lower));
     }
 
     uint16_t VariantFor(const Toy& toy, VariantKind kind)

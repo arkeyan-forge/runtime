@@ -435,9 +435,9 @@ namespace toybox
             return true;
         }
 
-        std::map<std::string, collection::Image> g_stacks; // swappers' stacked pictures (an empty one: the halves have none)
+        std::map<std::string, collection::Image> g_stacks; // swappers' joined pictures (an empty one: the halves have none)
 
-        // A swapper's two halves stacked, top above bottom, as the game's swap screen (collection::SwapperPicture, the same
+        // A swapper's two halves joined at the waist, as the game's swap screen (collection::SwapperPicture, the same
         // picture as Skylauncher's), fitted into a square of `box` pixels at `center`. False when a half has no such picture
         // from a disc: the caller draws the round portrait with the bottom small in a corner.
         bool SwapperStack(const Toy* top, uint16_t topVariant, const Toy* bottom, uint16_t bottomVariant, ImVec2 center, int box, bool grey = false)
@@ -450,7 +450,7 @@ namespace toybox
             if (found == g_stacks.end())
             {
                 found = g_stacks.emplace(key, collection::SwapperPicture(*top, topVariant, *bottom, bottomVariant)).first;
-                fprintf(stderr, "[toybox] swapper picture %s + %s: %s\n", top->name.c_str(), bottom->name.c_str(), found->second.Empty() ? "no halves from the disc (round portrait)" : "stacked");
+                fprintf(stderr, "[toybox] swapper picture %s + %s: %s\n", top->name.c_str(), bottom->name.c_str(), found->second.Empty() ? "no halves from the disc (round portrait)" : "joined");
             }
             const collection::Image& source = found->second;
             if (source.Empty())
@@ -490,7 +490,7 @@ namespace toybox
             return SwapperStack(top, variant, bottom, bottomVariant, center, box);
         }
 
-        // A figure's round portrait, a swapper's two halves stacked instead (else its top with the bottom small in a corner).
+        // A figure's round portrait, a swapper's two halves joined instead (else its top with the bottom small in a corner).
         bool CardStack(const Model& model, const Figure& f, ImVec2 center, int box, bool grey = false)
         {
             collection::Card card = model.CardFor(f);

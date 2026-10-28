@@ -1006,7 +1006,7 @@ namespace
     }
 
 
-    // A swapper's picture: its two halves cut to their visible pixels and stacked (icons.h), on synthetic images, then through
+    // A swapper's picture: its two halves drawn in place on one frame and joined (icons.h), on synthetic images, then through
     // the catalogue's "halves" with the files in a scratch portraits folder.
     void TestSwapperPicture()
     {
@@ -1027,17 +1027,26 @@ namespace
         Image empty{ 5, 4, std::vector<uint32_t>(20, 0) };
         CHECK(CropToVisible(empty).width == 5 && CropToVisible(empty).height == 4);
 
-        // The stack: both at the wider's width (20), the top (20 x 10) above the bottom (10 x 8 grown to 20 x 16).
-        Image top = make(100, 60, 30, 20, 20, 10, 0x0000FF), bottom = make(64, 64, 10, 40, 10, 8, 0x00FF00);
-        Image stacked = StackHalves(top, bottom);
-        CHECK(stacked.width == 20 && stacked.height == 26 && stacked.rgba.size() == 520);
-        CHECK(stacked.rgba[0] == 0xFF0000FFu && stacked.rgba[size_t(9) * 20 + 19] == 0xFF0000FFu); // the top, to the waist
-        CHECK(stacked.rgba[size_t(10) * 20 + 0] == 0xFF00FF00u && stacked.rgba[size_t(25) * 20 + 19] == 0xFF00FF00u); // the bottom under it
+        // The join: same-size frames, the top over the bottom where they overlap, the union box.
+        Image top = make(64, 64, 10, 8, 20, 20, 0x0000FF), bottom = make(64, 64, 20, 20, 20, 20, 0x00FF00); // overlap (20..30, 20..28)
+        Image joined = JoinHalves(top, bottom);
+        CHECK(joined.width == 30 && joined.height == 32 && joined.rgba.size() == 960); // (10..40) x (8..40)
+        CHECK(joined.rgba[0] == 0xFF0000FFu);                                          // the top's corner (10, 8)
+        CHECK(joined.rgba[size_t(12) * 30 + 10] == 0xFF0000FFu);                       // (20, 20): the top over the bottom
+        CHECK(joined.rgba[size_t(31) * 30 + 29] == 0xFF00FF00u);                       // (39, 39): the bottom alone
+        CHECK(joined.rgba[size_t(31) * 30 + 0] == 0u);                                 // (10, 39): neither
         // A half with nothing visible: no picture (the caller falls back to the inset).
-        CHECK(StackHalves(top, empty).Empty() && StackHalves(empty, bottom).Empty());
-        // The narrower half grows; the wider one is not touched: the top at 8 wide over a bottom at 16 wide.
-        Image narrow = StackHalves(make(30, 30, 0, 0, 8, 8, 0xFF0000), make(30, 30, 0, 0, 16, 4, 0x00FF00));
-        CHECK(narrow.width == 16 && narrow.height == 20);
+        CHECK(JoinHalves(top, empty).Empty() && JoinHalves(empty, bottom).Empty());
+        // A narrow top over a wide bottom keeps its own width: no rescale of either half.
+        Image narrow = JoinHalves(make(64, 64, 28, 0, 8, 30, 0xFF0000), make(64, 64, 8, 30, 48, 10, 0x00FF00));
+        CHECK(narrow.width == 48 && narrow.height == 40 && narrow.rgba[size_t(0) * 48 + 20] == 0xFFFF0000u && narrow.rgba[size_t(0) * 48 + 19] == 0u);
+        // A bottom frame at half size lands where a full-size one would (+-1 px): 32 x 32 with a 10 x 8 block at (10, 15)
+        // is 64 x 64 with 20 x 16 at (20, 30).
+        Image half = JoinHalves(make(64, 64, 20, 0, 20, 30, 0xFF0000), make(32, 32, 10, 15, 10, 8, 0x00FF00));
+        CHECK(half.width >= 20 && half.width <= 22 && half.height >= 46 && half.height <= 47);  // +-1 px: the bilinear edge of the grown frame
+        CHECK(half.rgba[size_t(5) * half.width + 10] == 0xFFFF0000u);                      // the top, row 5
+        CHECK(half.rgba[size_t(half.height - 3) * half.width + half.width / 2] == 0xFF00FF00u); // the bottom's last rows
+        CHECK((half.rgba[size_t(29) * half.width + half.width / 2] >> 24) == 255);           // no gap at the waist
 
         // Through the catalogue: Blast Zone's halves (2004 and 1004) in the scratch portraits folder.
         const Toy* blastTop = Catalogue::Get().Find(2004);
@@ -1054,7 +1063,7 @@ namespace
         CHECK(HalfPicturePath(*blastTop, 0x2000) == folder + "/fireknightbody_wii_material.png"); // the base version: the plain toy's
         CHECK(HalfPicturePath(*blastBottom, 0) == folder + "/fireknightlegs_wii_material.png");
         Image blast = SwapperPicture(*blastTop, 0x2000, *blastBottom, 0);
-        CHECK(blast.width == 48 && blast.height == 24 + 30); // 48 x 24 over 32 x 20 grown to 48 x 30
+        CHECK(blast.width == 48 && blast.height == 46); // frames of 64: the top (8..56, 4..28) and the legs (16..48, 30..50): box 8..56 x 4..50
         // Dark Blast Zone has pictures of its own, not on the disc folder yet: its halves fall back to the plain toy's.
         CHECK(HalfPicturePath(*blastTop, 0x2402) == folder + "/fireknightbody_wii_material.png");
         CHECK(SavePng(make(64, 64, 0, 0, 10, 10, 0xFF0000), folder + "/darkblasttop_wii_material.png"));

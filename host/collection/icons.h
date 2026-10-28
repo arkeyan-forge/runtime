@@ -55,11 +55,12 @@ namespace collection
     std::string HalfPicturePath(const Toy& toy, uint16_t variant = 0);
     // `image` cut to its visible pixels (alpha above `minAlpha`: its bounding box); unchanged when none is visible.
     Image CropToVisible(const Image& image, uint8_t minAlpha = 8);
-    // The two halves of a swapper stacked, as the game's swap screen shows them: each cut to its visible pixels, both at
-    // the width of the wider (the narrower grows, bilinear), the top above the bottom, centred, meeting at the waist.
-    // Empty when either half has no visible pixel.
-    Image StackHalves(const Image& top, const Image& bottom);
-    // A swapper's picture: its two halves' pictures from the discs (HalfPicturePath) stacked. Empty when either half has
+    // The two halves of a swapper joined, as the game's swap screen shows them: each half is drawn in place on one shared
+    // square frame (the sizes differ between toys: both frames are brought to the larger one's size first), the top
+    // composited over the bottom (straight alpha), the result cut to its visible box. No stacking, no rescaling of a half
+    // on its own. Empty when either half has no visible pixel.
+    Image JoinHalves(const Image& top, const Image& bottom);
+    // A swapper's picture: its two halves' pictures from the discs (HalfPicturePath) joined. Empty when either half has
     // none (the caller falls back to the top's picture with the bottom small in a corner). The same picture in the
     // launcher, the figure sheet, Add a figure, the seats and the Toy Box.
     Image SwapperPicture(const Toy& top, uint16_t topVariant, const Toy& bottom, uint16_t bottomVariant);
