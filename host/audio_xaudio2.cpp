@@ -16,6 +16,7 @@ namespace
 
     IXAudio2* g_xaudio;
     std::atomic<IXAudio2SourceVoice*> g_voice;
+    std::atomic<uint32_t> g_volume{ 100 };
     float g_buffers[BufferCount][AudioFrameSamples * 2];
     uint32_t g_nextBuffer;
 
@@ -62,13 +63,14 @@ void HostAudioSubmit(const float* planarFrame)
 
     // Downmix 5.1 to stereo.
     constexpr float Side = 0.7071f;
+    const float gain = float(g_volume.load()) / 100.0f;
     float* stereo = g_buffers[g_nextBuffer];
     for (uint32_t i = 0; i < AudioFrameSamples; i++)
     {
         auto channel = [&](uint32_t c) { return planarFrame[c * AudioFrameSamples + i]; };
         float center = channel(2) * Side;
-        stereo[i * 2 + 0] = std::clamp(channel(0) + center + channel(4) * Side, -1.0f, 1.0f);
-        stereo[i * 2 + 1] = std::clamp(channel(1) + center + channel(5) * Side, -1.0f, 1.0f);
+        stereo[i * 2 + 0] = std::clamp((channel(0) + center + channel(4) * Side) * gain, -1.0f, 1.0f);
+        stereo[i * 2 + 1] = std::clamp((channel(1) + center + channel(5) * Side) * gain, -1.0f, 1.0f);
     }
     if (dump != nullptr)
         fwrite(stereo, sizeof(g_buffers[0]), 1, dump);
@@ -93,4 +95,14 @@ uint32_t HostAudioQueuedFrames()
 {
     IXAudio2SourceVoice* voice = g_voice;
     return voice != nullptr ? QueuedBuffers(voice) : 0;
+}
+
+void HostAudioSetVolume(uint32_t percent)
+{
+    g_volume = percent < 100 ? percent : 100;
+}
+
+uint32_t HostAudioVolume()
+{
+    return g_volume;
 }

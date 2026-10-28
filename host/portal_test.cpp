@@ -257,7 +257,9 @@ int main()
         CHECK(ClassifySwapForce(3, 0) == Prompt{});                        // the zoom out to the portal
         CHECK(ClassifySwapForce(5, 0) == (Prompt{ Kind::Player, 1 }));     // Idle: the prompt is up
         CHECK(ClassifySwapForce(5, 1) == (Prompt{ Kind::Player, 2 }));
-        CHECK(ClassifySwapForce(13, 0) == (Prompt{ Kind::Player, 1 }));    // Dead: waits for the next Skylander
+        CHECK(ClassifySwapForce(13, 0) == (Prompt{ Kind::Player, 1, true })); // Dead: the Skylander died, the game waits for the next
+        CHECK(ClassifySwapForce(13, 1) == (Prompt{ Kind::Player, 2, true }) && !ClassifySwapForce(5, 0).defeated); // Idle is not a death
+        CHECK(!(ClassifySwapForce(13, 0) == ClassifySwapForce(5, 0)));       // so a death after an Idle prompt is a new episode
         CHECK(ClassifySwapForce(5, ~0u) == Prompt{});                      // nobody asked
         CHECK(ClassifySwapForce(7, 0) == Prompt{});                        // IdleOutro: a figure came
         CHECK(ClassifySwapForce(16, ~0u).kind == Kind::TooMany);           // Error: a "too many" screen
@@ -288,6 +290,12 @@ int main()
         CHECK(poll(many, Tracker::Stable) == Tracker::Event::Gone);                // "too many" is not a request
         CHECK(poll(many, 20) == Tracker::Event::None);
         CHECK(poll({}, Tracker::Stable) == Tracker::Event::None);
+        // A death (Swap Force's Dead state) arrives as its own episode with the flag, straight after the Idle prompt too.
+        const Prompt dead{ Kind::Player, 1, true };
+        CHECK(poll(dead, Tracker::Stable) == Tracker::Event::Appeared && got.defeated && got.player == 1);
+        CHECK(poll(p1, Tracker::Stable) == Tracker::Event::Appeared && !got.defeated);
+        CHECK(poll(dead, Tracker::Stable) == Tracker::Event::Appeared && got.defeated);
+        CHECK(poll({}, Tracker::Stable) == Tracker::Event::Gone);
     }
 
     // A variant figure (Series 2 Eruptor, variant 0x1801 at block 1 0x1C): the portal hands the title the tag as it

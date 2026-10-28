@@ -16,3 +16,7 @@ bool HostAudioActive();
 
 // Frames waiting in the output queue; the audio driver paces itself on this so the device is the clock.
 uint32_t HostAudioQueuedFrames();
+
+// The master volume, 0 to 100 (the F3 menu, [<game>.audio] volume): applied to every frame HostAudioSubmit queues.
+void HostAudioSetVolume(uint32_t percent);
+uint32_t HostAudioVolume();

@@ -81,6 +81,15 @@ namespace
             return true;
         }
 
+        bool Volume(const std::string& source, const std::string& value)
+        {
+            uint32_t n;
+            if (!ParseNumber(value, n) || n > 100)
+                return Warn(source, "volume", value, "a number from 0 to 100");
+            s.volume = n;
+            return true;
+        }
+
         bool Device(const std::string& source, const std::string& value)
         {
             if (value != "auto" && value != "keyboard" && value != "gamepad")
@@ -112,6 +121,29 @@ namespace
             warnings.push_back(fmt::format("{}: no keyboard action \"{}\"; ignored", source, action));
             return false;
         }
+
+        // pad_<button>=<button>|none: the pad button `button` does the job of the named one.
+        bool Pad(const std::string& source, const std::string& button, const std::string& value)
+        {
+            const int from = PadButtonIndex(button), to = PadButtonIndex(value);
+            if (from < 0)
+            {
+                warnings.push_back(fmt::format("{}: no pad button \"{}\"; ignored", source, button));
+                return false;
+            }
+            if (to < 0 && value != "none")
+                return Warn(source, "pad_" + button, value, "a pad button or none");
+            s.padMap.target[from] = int8_t(to);
+            return true;
+        }
+
+        bool Rumble(const std::string& source, int player, const std::string& value)
+        {
+            if (value != "off" && value != "low" && value != "normal" && value != "strong")
+                return Warn(source, player == 0 ? "rumble_p1" : "rumble_p2", value, "off, low, normal or strong");
+            s.rumble[player] = value;
+            return true;
+        }
     };
 }
 
@@ -140,6 +172,7 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
         else if (key == "anisotropy") set.Anisotropy(file, value);
         else if (key == "fps_limit") set.FpsLimit(file, value);
         else if (key == "skip_intro_movies") set.Bool(file, "skip_intro_movies", value, s.skipIntroMovies);
+        else if (key == "show_fps") set.Bool(file, "show_fps", value, s.showFps);
         else if (key == "texture_dump") set.Bool(file, "texture_dump", value, s.textureDump);
         else if (key == "texture_packs") set.Bool(file, "texture_packs", value, s.texturePacks);
         else if (key == "original_resolution") set.Bool(file, "original_resolution", value, s.originalResolution);
@@ -150,17 +183,30 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
     // so a game started without PLAY (its own icon, a shortcut to the runtime) still gets what its page shows.
     for (const auto& [key, value] : section((gameSection + ".video").c_str()))
         video(key, value);
+    // The master volume: [audio], then the game's own [<game>.audio].
+    for (const std::string& name : { std::string("audio"), gameSection + ".audio" })
+        for (const auto& [key, value] : section(name.c_str()))
+            if (key == "volume")
+                set.Volume(file, value);
     for (const auto& [key, value] : section("input"))
     {
         if (key == "device") set.Device(file, value);
         else if (key == "gamepad") s.gamepad = value;
         else if (key == "glyphs") set.Glyphs(file, value);
         else if (key.starts_with("key_")) set.Key(file, key.substr(4), value);
+        else if (key.starts_with("pad_")) set.Pad(file, key.substr(4), value);
+        else if (key == "rumble_p1") set.Rumble(file, 0, value);
+        else if (key == "rumble_p2") set.Rumble(file, 1, value);
     }
     // The game's own keys (Skylauncher keeps one copy per game, [<game>.input], and puts it in [input] at PLAY) win over
     // [input], so a game started without the launcher still plays with its own bindings.
     for (const auto& [key, value] : section((gameSection + ".input").c_str()))
+    {
         if (key.starts_with("key_")) set.Key(file, key.substr(4), value);
+        else if (key.starts_with("pad_")) set.Pad(file, key.substr(4), value);
+        else if (key == "rumble_p1") set.Rumble(file, 0, value);
+        else if (key == "rumble_p2") set.Rumble(file, 1, value);
+    }
     for (const auto& [key, value] : section("portal"))
     {
         if (key == "toybox_auto_open") set.Bool(file, "toybox_auto_open", value, s.toyboxAutoOpen);
@@ -168,10 +214,12 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
     const auto& game = section(gameSection.c_str());
     if (auto it = game.find("language"); it != game.end()) s.language = it->second;
     if (auto it = game.find("voice_language"); it != game.end()) s.voiceLanguage = it->second;
+    if (auto it = game.find("nightmare_from_start"); it != game.end()) set.Bool(file, "nightmare_from_start", it->second, s.nightmareFromStart);
 
     // Environment
     if (const char* value = skyenv::Get("SKY_LANGUAGE", getEnv)) s.language = value;
     if (const char* value = skyenv::Get("SKY_VOICE_LANGUAGE", getEnv)) s.voiceLanguage = value;
+    if (const char* value = skyenv::Get("SKY_NIGHTMARE_FROM_START", getEnv)) set.Bool("SKY_NIGHTMARE_FROM_START", "nightmare_from_start", value, s.nightmareFromStart);
     if (const char* value = skyenv::Get("SKY_TOYBOX_AUTO_OPEN", getEnv)) set.Bool("SKY_TOYBOX_AUTO_OPEN", "toybox_auto_open", value, s.toyboxAutoOpen);
     if (const char* value = skyenv::Get("SKY_TEXTURE_DUMP", getEnv)) set.Bool("SKY_TEXTURE_DUMP", "SKY_TEXTURE_DUMP", value, s.textureDump);
     if (const char* value = skyenv::Get("SKY_TEXTURE_PACKS", getEnv)) set.Bool("SKY_TEXTURE_PACKS", "SKY_TEXTURE_PACKS", value, s.texturePacks);
@@ -220,6 +268,7 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
         else if (option == "--glyphs") { if (!take()) return false; set.Glyphs(cli, value); }
         else if (option == "--language") { if (!take()) return false; s.language = value; }
         else if (option == "--voice-language") { if (!take()) return false; s.voiceLanguage = value; }
+        else if (option == "--nightmare-from-start") { if (!take()) return false; set.Bool(cli, "nightmare_from_start", value, s.nightmareFromStart); }
         else if (option == "--key")
         {
             if (!take()) return false;
@@ -231,6 +280,18 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
             }
             set.Key(cli, value.substr(0, equals), value.substr(equals + 1));
         }
+        else if (option == "--pad")
+        {
+            if (!take()) return false;
+            size_t equals = value.find('=');
+            if (equals == std::string::npos)
+            {
+                error = "--pad takes <button>=<button>, e.g. --pad rb=b";
+                return false;
+            }
+            set.Pad(cli, value.substr(0, equals), value.substr(equals + 1));
+        }
+        else if (option == "--rumble") { if (!take()) return false; set.Rumble(cli, 0, value); set.Rumble(cli, 1, value); }
         else if (option == "--select-iso" || option == "--launcher" || !option.starts_with("--"))
             s.arguments.push_back(argv[i]);
         else
@@ -271,10 +332,15 @@ std::string SettingsHelp(const char* program)
         "                              what the game listens to (default auto: keyboard and gamepad)\n"
         "  --gamepad <guid>            the gamepad to use (see --list-gamepads; default the first one)\n"
         "  --key <action>=<key>        keyboard binding, SDL key names (e.g. --key a=Space)\n"
+        "  --pad <button>=<button>     the first pad button does the job of the second (e.g. --pad rb=b; none: nothing)\n"
+        "  --rumble <off|low|normal|strong>\n"
+        "                              rumble strength, both players\n"
         "  --glyphs <auto|xbox|xbox360|xboxone|playstation|nintendo|keyboard>\n"
         "                              button glyphs shown by the game (default auto: the last device used)\n"
         "  --language <code>           text language: en fr de es it nl sv no da fi\n"
         "  --voice-language <code>     voice language, same codes\n"
+        "  --nightmare-from-start <0|1>\n"
+        "                              Swap Force: the Nightmare difficulty offered before the story is beaten\n"
         "  --select-iso                choose the disc image again\n"
         "  --launcher                  open the launcher window\n"
         "  --list-gamepads             print the connected gamepads and their GUID, then quit\n"
@@ -286,7 +352,10 @@ std::string SettingsHelp(const char* program)
         program);
     for (const KeyAction& action : g_keyActions)
         text += fmt::format("  {:<12} {}\n", action.name, action.defaultKey);
-    text += "(Escape also works as back.)\n";
+    text += "(Escape also works as back.)\n\nPad buttons for --pad:";
+    for (const char* button : g_padButtons)
+        text += fmt::format(" {}", button);
+    text += "\n";
     return text;
 }
 
@@ -296,15 +365,23 @@ std::string DescribeSettings(const RuntimeSettings& s)
     for (size_t i = 0; i < std::size(g_keyActions); i++)
         if (s.keys[i] != g_keyActions[i].defaultKey)
             keys += fmt::format("{}{}={}", keys.empty() ? "" : ",", g_keyActions[i].name, s.keys[i]);
+    std::string padDescription;
+    for (int i = 0; i < PadButtonCount; i++)
+        if (s.padMap.target[i] != i)
+            padDescription += fmt::format("{}{}->{}", padDescription.empty() ? ", pad " : ",", g_padButtons[i],
+                s.padMap.target[i] < 0 ? "none" : g_padButtons[s.padMap.target[i]]);
+    if (s.rumble[0] != "normal" || s.rumble[1] != "normal")
+        padDescription += fmt::format(", rumble {}/{}", s.rumble[0], s.rumble[1]);
     std::string scale = s.resolutionScale == 0 ? "auto" : fmt::format("{} ({}x{})", s.resolutionScale, 1120 * s.resolutionScale,
         704 * s.resolutionScale);
     return fmt::format("scale {}, vsync {}, {}, anisotropy {}, fps limit {}, intro movies {}, input {}, gamepad {}, keys {}, "
-        "glyphs {}, language {}, voices {}{}", scale, s.vsync ? 1 : 0,
+        "glyphs {}, language {}, voices {}{}{}", scale, s.vsync ? 1 : 0,
         s.fullscreen ? "fullscreen" : "windowed", s.anisotropy, s.fpsLimit, s.skipIntroMovies ? "skipped" : "played",
         s.inputDevice, s.gamepad.empty() ? "first" : s.gamepad, keys.empty() ? "default" : keys, s.glyphs,
         s.language.empty() ? "game" : s.language, s.voiceLanguage.empty() ? "game" : s.voiceLanguage,
-        s.toyboxAutoOpen ? "" : ", toybox auto-open off")
+        s.toyboxAutoOpen ? "" : ", toybox auto-open off", padDescription)
         + (s.aspectAuto ? "" : ", aspect 16:9")
         + (s.textureDump ? ", texture dump" : "") + (s.texturePacks ? "" : ", texture packs off")
-        + (s.originalResolution ? ", original resolution" : "");
+        + (s.originalResolution ? ", original resolution" : "") + (s.nightmareFromStart ? ", nightmare from the start" : "")
+        + (s.showFps ? ", fps counter" : "") + (s.volume != 100 ? fmt::format(", volume {}", s.volume) : "");
 }

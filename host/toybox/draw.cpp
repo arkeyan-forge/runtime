@@ -505,6 +505,16 @@ namespace toybox
             BottomBadge(model, f, center, diameter, grey);
         }
 
+        // The red cross of a figure that ran out of health, over its picture (the card's and the seat's).
+        void OutOfHealthCross(ImVec2 center, float half)
+        {
+            const float width = std::max(3.0f, half / 3.0f);
+            g_draw->AddLine(ImVec2(center.x - half, center.y - half), ImVec2(center.x + half, center.y + half), IM_COL32(0, 0, 0, 120), width + 3);
+            g_draw->AddLine(ImVec2(center.x - half, center.y + half), ImVec2(center.x + half, center.y - half), IM_COL32(0, 0, 0, 120), width + 3);
+            g_draw->AddLine(ImVec2(center.x - half, center.y - half), ImVec2(center.x + half, center.y + half), Rgb(Look::Danger), width);
+            g_draw->AddLine(ImVec2(center.x - half, center.y + half), ImVec2(center.x + half, center.y - half), Rgb(Look::Danger), width);
+        }
+
         void HeroPortrait(const Model& model, const Figure& f, ImVec2 center, int diameter)
         {
             if (collection::Card card = model.CardFor(f); card.Swapper() && card.first->toy != nullptr && card.second->toy != nullptr &&
@@ -765,6 +775,8 @@ namespace toybox
             float width = b.x - a.x, cx = (a.x + b.x) / 2;
             Box(a, b, cursor ? Look::CardSelected : Look::Panel, cursor ? Look::Gold : Look::CardBorder, 16, 2);
             CardPortrait(model, f, ImVec2(cx, a.y + 54), 80, grey);
+            if (model.OutOfHealth(f))
+                OutOfHealthCross(ImVec2(cx, a.y + 54), 26);
             TextCentered(g_black, 15, ImVec2(cx, a.y + 110), grey ? Look::TextDimmer : Look::Text, Fit(g_black, 15, model.FigureName(f), width - 16));
             std::string line = model.LevelLine(f);
             if (!line.empty())
@@ -1023,6 +1035,8 @@ namespace toybox
                 else if (f != nullptr)
                 {
                     CardPortrait(model, *f, picture, 64);
+                    if (model.OutOfHealth(*f))
+                        OutOfHealthCross(picture, 21);
                     name = model.FigureName(*f);
                     line = model.LevelLine(*f);
                     if (s.waiting)
@@ -2026,6 +2040,79 @@ namespace toybox
             }
         }
 
+        // --- The F3 menu, over the game (docs/runtime/host/gamemenu.md) ----------------------------------------------------
+
+        void DrawMenu(Model& model)
+        {
+            Fill(ImVec2(0, 0), ImVec2(CanvasWidth, CanvasHeight), Look::Night, 0.55f);
+            ImVec2 min(320, 56), max(960, 676);
+            Panel(min, max, 0.97f);
+            Title(L("GAME MENU", "MENU DU JEU"), ImVec2(min.x + 28, min.y + 20), 30);
+            std::vector<MenuRow> rows = model.MenuRows();
+            bool anyNextStart = false;
+            for (size_t i = 0; i < rows.size(); i++)
+            {
+                const MenuRow& row = rows[i];
+                float y = min.y + 74 + float(i) * 48;
+                ImVec2 a(min.x + 24, y), b(max.x - 24, y + 44);
+                bool focused = model.menuRow == int(i);
+                bool action = row.kind == MenuRow::Kind::Action;
+                Box(a, b, focused ? Look::CardSelected : Look::Night, focused ? Look::Gold : Look::CardBorder, 12, 2);
+                std::string label = row.label + (row.nextStart ? " *" : "");
+                anyNextStart = anyNextStart || row.nextStart;
+                if (action)
+                    TextCentered(g_black, 17, ImVec2((a.x + b.x) / 2, y + 22), i + 1 == rows.size() ? Look::TextSoft : Look::GoldText, label);
+                else
+                    TextMiddle(g_black, 16, a.x + 16, y + 22, Look::Text, label);
+                int index = int(i);
+                AddHit(a, b, [&model, index] { model.FocusMenuRow(index, 0); });
+                if (action)
+                    continue;
+                // The value on the right; a slider has its bar, and "-" / "+" buttons step it.
+                float right = b.x - 14;
+                bool stepped = row.kind == MenuRow::Kind::Slider || row.kind == MenuRow::Kind::Choice;
+                if (stepped)
+                {
+                    ImVec2 plusA(right - 34, y + 7), plusB(right, y + 37), minusA(right - 34 - 130 - 8 - 34, y + 7), minusB(right - 34 - 130 - 8, y + 37);
+                    PlainButton(minusA, minusB, "-", 18, false);
+                    PlainButton(plusA, plusB, "+", 18, false);
+                    AddHit(minusA, minusB, [&model, index] { model.FocusMenuRow(index, -1); });
+                    AddHit(plusA, plusB, [&model, index] { model.FocusMenuRow(index, 1); });
+                    float centerX = (minusB.x + plusA.x) / 2;
+                    if (row.kind == MenuRow::Kind::Slider)
+                    {
+                        ImVec2 track(minusB.x + 8, y + 15), trackEnd(plusA.x - 8, y + 21);
+                        RoundRect(track, trackEnd, Look::Field, 3);
+                        RoundRect(track, ImVec2(track.x + (trackEnd.x - track.x) * float(row.percent) / 100.0f, trackEnd.y), Look::Gold, 3);
+                        TextCentered(g_black, 13, ImVec2(centerX, y + 33), Look::TextDim, row.value);
+                    }
+                    else
+                        TextCentered(g_black, 16, ImVec2(centerX, y + 22), focused ? Look::GoldText : Look::TextSoft, row.value);
+                }
+                else
+                {
+                    ImVec2 pillA(right - 80, y + 8), pillB(right, y + 36);
+                    bool on = row.value == L("On", "Oui");
+                    Box(pillA, pillB, on ? Look::Bar : Look::Chip, on ? Look::Bar : Look::Control, 14, 2);
+                    TextCentered(g_black, 14, ImVec2((pillA.x + pillB.x) / 2, y + 22), on ? Look::GoldInk : Look::TextSoft, row.value);
+                }
+            }
+            if (anyNextStart)
+                Text(g_bold, 13, ImVec2(min.x + 28, max.y - 34), Look::TextDim, L("* applies at the next start", "* au prochain démarrage"));
+            Hints(max.x - 28, max.y - 26, { { 'A', L("Change", "Changer") }, { 'B', L("Close", "Fermer") } });
+        }
+
+        // The FPS counter: a small readout in the top right corner, over everything.
+        void DrawFps(const Model& model)
+        {
+            if (model.fps.empty())
+                return;
+            float width = Measure(g_black, 15, model.fps).x + 24;
+            ImVec2 min(CanvasWidth - 16 - width, 12), max(CanvasWidth - 16, 40);
+            Box(min, max, Look::Night, Look::PanelBorder, 14, 2, 0.8f);
+            TextCentered(g_black, 15, ImVec2((min.x + max.x) / 2, 26), Look::Text, model.fps);
+        }
+
         // --- Over the game: the wheel, its list, the toast -------------------------------------------------------------
 
         constexpr float WheelRadius = 220;
@@ -2175,7 +2262,7 @@ namespace toybox
         ImGui::NewFrame();
         g_draw = ImGui::GetBackgroundDrawList();
         g_hits.clear();
-        bool overGame = !model.open || model.screen == Screen::Wheel || model.screen == Screen::WheelList;
+        bool overGame = !model.open || model.screen == Screen::Wheel || model.screen == Screen::WheelList || model.screen == Screen::Menu;
         if (!model.open)
             DrawToast(model, 36);
         else
@@ -2194,10 +2281,12 @@ namespace toybox
             case Screen::Manage: DrawManage(model); break;
             case Screen::Wheel: DrawWheel(model); break;
             case Screen::WheelList: DrawWheelList(model); break;
+            case Screen::Menu: DrawMenu(model); break;
             }
             DrawDialog(model);
-            DrawToast(model, overGame ? 36 : 628);
+            DrawToast(model, model.screen == Screen::Menu ? 6 : overGame ? 36 : 628);
         }
+        DrawFps(model);
         ImGui::Render();
         imgui_software::Texture canvas{ CanvasWidth, CanvasHeight };
         if (overGame)

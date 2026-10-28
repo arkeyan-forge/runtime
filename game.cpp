@@ -1,6 +1,9 @@
 #include "game.h"
+#include "host/toybox.h"
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
+#include <mutex>
 
 std::string game::MovieName(std::string_view path)
 {
@@ -18,4 +21,24 @@ bool game::IsIntroMovie(std::string_view path)
 {
     const auto& intro = Current().introMovies;
     return std::find(intro.begin(), intro.end(), MovieName(path)) != intro.end();
+}
+
+void game::LevelStarted(std::string_view name)
+{
+    static std::mutex mutex;
+    static std::string last;
+    std::lock_guard lock(mutex);
+    if (last == name)
+        return;
+    last = name;
+    fprintf(stderr, "[level] %.*s starts\n", int(name.size()), name.data());
+    ToyboxLevelStarted();
+}
+
+void game::NoteFileOpen(std::string_view path)
+{
+    if (Current().LevelOfFile == nullptr)
+        return;
+    if (std::string level = Current().LevelOfFile(path); !level.empty())
+        LevelStarted(level);
 }

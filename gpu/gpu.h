@@ -106,6 +106,8 @@ namespace gpu
 
     // Reads back the last presented image (RGBA8 in memory order R, G, B, A). Offscreen output only: swapchain images
     // cannot be read.
+    // Frames the game has presented since the start (any thread): the F3 menu's FPS counter divides its difference by time.
+    uint64_t FramesPresented();
     bool ReadbackOutput(std::vector<uint32_t>& rgba, uint32_t& width, uint32_t& height);
 
     // Reads back a colour texture's base level as RGBA8 (finishes the frame's GPU work first); with `raw`, the bits of

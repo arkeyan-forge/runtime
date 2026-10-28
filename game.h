@@ -78,6 +78,17 @@ namespace game
             uint32_t width, height;
         };
         Size fullScene = {};
+
+        // [<game>] nightmare_from_start: the game's hardest difficulty offered from a new game, whatever the save says, and
+        // locked again when the setting is off; the save is never written for it. nullptr: the game has no locked
+        // difficulty (Spyro's Adventure has none to choose, Giants' hardest is open from the start; Swap Force's Nightmare
+        // is locked until the story is beaten).
+        void (*SetNightmareFromStart)(bool on) = nullptr;
+
+        // The level a file open starts ("level_027", the first component of the disc path it opens, lower case; empty for
+        // any other file), so the Toy Box knows a new level began (NoteFileOpen; a figure out of health can play again).
+        // nullptr: the game says it itself (Swap Force: engines/alchemy/zone.cpp calls LevelStarted).
+        std::string (*LevelOfFile)(std::string_view path) = nullptr;
     };
 
     // The adapter of the game being built, defined by games/<id>/adapter.cpp.
@@ -86,6 +97,12 @@ namespace game
     // A movie's name from its path ("game:\movies\fre\legal.bik" -> "legal"): the file name, lower case, without
     // its extension.
     std::string MovieName(std::string_view path);
+
+    // A level began (a file of a level the title opens, or the zone Swap Force enters): said once for each change of level;
+    // the Toy Box's figures that ran out of health can play again. `name` is only for the log.
+    void LevelStarted(std::string_view name);
+    // Called for every file the title opens: asks the adapter whether it is a level's.
+    void NoteFileOpen(std::string_view path);
 
     // True when `path` is one of the game's start-up logos (Adapter::introMovies).
     bool IsIntroMovie(std::string_view path);

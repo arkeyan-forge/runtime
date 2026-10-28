@@ -3,9 +3,13 @@
 #include "memory.h"
 #include "platform/platform.h"
 #include <atomic>
+#include <cstdio>
 
 namespace
 {
+    // The guest context of this host thread, for the crash report (PrintGuestLocation).
+    thread_local const PPCContext* t_guestContext;
+
     constexpr uint8_t ThreadObjectType = 6;
     constexpr size_t HostStackSize = 16 * 1024 * 1024; // recompiled calls nest on the host stack
 
@@ -33,6 +37,7 @@ namespace
         }
 
         PPCContext& ctx = thread.context->ctx;
+        t_guestContext = &ctx;
         ctx.fpscr.loadFromHost();
 
         uint32_t function = info->start;
@@ -169,7 +174,24 @@ void StartHostDrivenThread(std::function<void(PPCContext&)> body, uint8_t cpu)
     auto* context = new GuestThreadContext(0x10000, g_nextThreadId++, cpu);
     PlatformStartThread(HostStackSize, [body = std::move(body), context]
     {
+        t_guestContext = &context->ctx;
         context->ctx.fpscr.loadFromHost();
         body(context->ctx);
     });
+}
+
+void PrintGuestLocation()
+{
+    // Called from the fault handler, on the thread that faulted. The registers are those the recompiled code last stored:
+    // a value it kept in a host register is not here, so lr and ctr name the last call that went through the context.
+    const PPCContext* ctx = t_guestContext;
+    if (ctx == nullptr)
+    {
+        fprintf(stderr, "[crash] where: not on a guest thread (a host thread: video, audio or the main loop)\n");
+        return;
+    }
+    uint32_t pcr = ctx->r13.u32;
+    uint32_t threadId = pcr != 0 ? g_memory.Read<uint32_t>(CurrentKThread(pcr) + 0x14C) : 0;
+    fprintf(stderr, "[crash] where: guest thread %u, lr 0x%08X, ctr 0x%08X, r1 0x%08X, r3 0x%08X, r31 0x%08X\n",
+        threadId, uint32_t(ctx->lr), ctx->ctr.u32, ctx->r1.u32, ctx->r3.u32, ctx->r31.u32);
 }

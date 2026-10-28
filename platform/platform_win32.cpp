@@ -7,6 +7,7 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include "platform/platform.h"
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
@@ -123,6 +124,18 @@ namespace
         _Exit(1);
     }
 
+    // abort() (the runtime's own fatal errors) does not reach the unhandled-exception filter: same report from SIGABRT.
+    void OnAbort(int)
+    {
+        g_onFault("abort", nullptr);
+        fprintf(stderr, "Backtrace:\n");
+        void* frames[64];
+        USHORT count = RtlCaptureStackBackTrace(0, 64, frames, nullptr);
+        for (USHORT i = 0; i < count; i++)
+            PrintFrame(frames[i]);
+        _Exit(1);
+    }
+
     DWORD WINAPI ThreadMain(void* argument)
     {
         std::unique_ptr<std::function<void()>> body(static_cast<std::function<void()>*>(argument));
@@ -144,6 +157,7 @@ void PlatformInstallFaultHandler(void (*onFault)(const char* description, const 
 {
     g_onFault = onFault;
     SetUnhandledExceptionFilter(OnUnhandledException);
+    signal(SIGABRT, OnAbort);
 }
 
 uint8_t* PlatformReserveMemory(size_t size)

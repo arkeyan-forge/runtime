@@ -5,6 +5,7 @@
 #include <SDL3/SDL_metal.h>
 #include <plume_render_interface.h>
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
@@ -892,8 +893,11 @@ namespace
     // and where a frame's time goes on average, on the GPU thread (worker.cpp) when there is one: "rest" is then its idle
     // time and its other commands; without it, the guest's CPU work, the renderer's state translation and the guest's
     // waits. A second line gives the GPU thread's busy share and how long the game's render thread waited for it.
+    std::atomic<uint64_t> g_framesPresented;
+
     void LogPerf()
     {
+        g_framesPresented++;
         Context& c = *g_context;
         static const bool enabled = skyenv::Get("SKY_PERF_LOG") == nullptr || atoi(skyenv::Get("SKY_PERF_LOG")) != 0;
         static uint32_t slowWindows = 0; // consecutive windows under the frame rate with the GPU as the limit
@@ -1101,6 +1105,11 @@ void gpu::detail::PresentNow(const Texture* image)
         c.nextOffscreenFrame = std::max(c.nextOffscreenFrame, now) + OffscreenFrameNs;
     }
     LogPerf();
+}
+
+uint64_t gpu::FramesPresented()
+{
+    return g_framesPresented;
 }
 
 void gpu::SetOverlay(const Texture* overlay)

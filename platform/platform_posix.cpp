@@ -106,10 +106,25 @@ namespace
 #endif
     }
 
+    // The recompiled guest functions on the stack (sub_XXXXXXXX), innermost first: the crash report names the guest function
+    // that was running from them.
+    constexpr int MaxGuestFrames = 4;
+    int g_guestFrames;
+    char g_guestNames[MaxGuestFrames][32];
+
     void PrintCodeAddress(const char* label, uintptr_t address)
     {
         Dl_info info{};
         bool found = address != 0 && dladdr(reinterpret_cast<void*>(address), &info) != 0;
+        // The symbol is sub_XXXXXXXX, __imp__sub_XXXXXXXX or the C++ mangling of one: the guest address is the 8 hex digits.
+        if (const char* at = found && info.dli_sname != nullptr ? strstr(info.dli_sname, "sub_") : nullptr;
+            at != nullptr && g_guestFrames < MaxGuestFrames && strspn(at + 4, "0123456789ABCDEF") >= 8)
+        {
+            char name[13];
+            snprintf(name, sizeof(name), "%.12s", at);
+            if (g_guestFrames == 0 || strcmp(g_guestNames[g_guestFrames - 1], name) != 0)
+                snprintf(g_guestNames[g_guestFrames++], sizeof(g_guestNames[0]), "%s", name);
+        }
         if (found && info.dli_sname != nullptr)
             fprintf(stderr, "%s 0x%llx %s + %llu (%s)\n", label, (unsigned long long)address, info.dli_sname,
                 (unsigned long long)(address - uintptr_t(info.dli_saddr)), info.dli_fname);
@@ -158,6 +173,17 @@ namespace
             backtrace_symbols_fd(frames, backtrace(frames, 64), STDERR_FILENO);
         }
 
+        // Which guest function it was: the innermost recompiled one on the host stack, then its callers.
+        if (g_guestFrames > 0)
+        {
+            fprintf(stderr, "[crash] guest function: %s", g_guestNames[0]);
+            for (int i = 1; i < g_guestFrames; i++)
+                fprintf(stderr, "%s%s", i == 1 ? ", called from " : ", ", g_guestNames[i]);
+            fprintf(stderr, "\n");
+        }
+        else
+            fprintf(stderr, "[crash] guest function: none named on the host stack (the fault is in host code)\n");
+
         // Raw addresses can be symbolised later: atos -o <executable> -l <base> <address>...
         Dl_info self{};
         if (dladdr(reinterpret_cast<void*>(&PrintFaultingCode), &self) != 0)
@@ -180,7 +206,7 @@ namespace
         g_reporter = pthread_self();
 
         char description[32];
-        snprintf(description, sizeof(description), "signal %d", signal);
+        snprintf(description, sizeof(description), "signal %d%s", signal, signal == SIGABRT ? " abort" : signal == SIGSEGV ? " segv" : signal == SIGBUS ? " bus" : signal == SIGILL ? " illegal" : signal == SIGTRAP ? " trap" : "");
         g_onFault(description, info->si_addr);
         PrintFaultingCode(context);
         _exit(1);
@@ -212,6 +238,7 @@ void PlatformInstallFaultHandler(void (*onFault)(const char* description, const 
     sigaction(SIGBUS, &action, nullptr);
     sigaction(SIGTRAP, &action, nullptr); // libc++ hardening assertions and __builtin_trap
     sigaction(SIGILL, &action, nullptr);
+    sigaction(SIGABRT, &action, nullptr); // the runtime's own fatal errors (abort(): an unrecompiled indirect call, a full heap)
 }
 
 uint8_t* PlatformReserveMemory(size_t size)

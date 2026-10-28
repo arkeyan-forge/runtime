@@ -1,6 +1,7 @@
 // Checks the settings parser: launcher.ini, SKY_* variables (and the older SSA_* names) and the command line, and their precedence.
 // usage: SSASettingsTest
 #include "host/env.h"
+#include "host/pad_map.h"
 #include "host/settings.h"
 #include <cstdio>
 #include <cstdlib>
@@ -160,6 +161,15 @@ int main()
     CHECK(run.ok && run.warnings.empty() && run.settings.fpsLimit == 60 && run.settings.skipIntroMovies && SkipIntroMovies());
     run = Parse({ { "ssa.video", { { "fps_limit", "60" } } } }, {}, { "--fps-limit", "30" });
     CHECK(run.ok && run.settings.fpsLimit == 30);
+    // The F3 menu's keys: the volume ([audio], then the game's own [<game>.audio]) and the FPS counter ([<game>.video] show_fps).
+    run = Parse({}, {}, {});
+    CHECK(run.ok && run.settings.volume == 100 && !run.settings.showFps);
+    run = Parse({ { "audio", { { "volume", "40" } } }, { "ssa.audio", { { "volume", "90" } } }, { "giants.audio", { { "volume", "10" } } },
+                  { "ssa.video", { { "show_fps", "1" } } } }, {}, {});
+    CHECK(run.ok && run.warnings.empty() && run.settings.volume == 90 && run.settings.showFps
+        && DescribeSettings(run.settings).find("fps counter") != std::string::npos && DescribeSettings(run.settings).find("volume 90") != std::string::npos);
+    run = Parse({ { "audio", { { "volume", "150" } } } }, {}, {});
+    CHECK(run.ok && run.warnings.size() == 1 && run.settings.volume == 100);
     // Keys: [input], then the game's own [<game>.input] (another game's section is ignored).
     run = Parse({ { "input", { { "key_y", "G" } } }, { "ssa.input", { { "key_y", "H" } } } }, {}, {});
     CHECK(run.ok && run.warnings.empty() && run.settings.keys[KeyIndex("y")] == "H" && run.settings.keys[KeyIndex("x")] == "C");
@@ -213,6 +223,71 @@ int main()
     portal["portal"]["toybox_auto_open"] = "maybe";
     run = Parse(portal, {}, {});
     CHECK(run.settings.toyboxAutoOpen && run.warnings.size() == 1);
+
+    // Pad remapping and rumble: [input] then the game's [ssa.input]; a bad value or button warns; --pad and --rumble.
+    CHECK(Parse({}, {}, {}).settings.padMap.Identity() && Parse({}, {}, {}).settings.rumble[0] == "normal");
+    LauncherConfig pads;
+    pads["input"] = { { "pad_rb", "b" }, { "rumble_p1", "low" } };
+    pads["ssa.input"] = { { "pad_rb", "x" }, { "pad_lt", "none" }, { "pad_a", "dpad_up" }, { "rumble_p2", "strong" } };
+    pads["giants.input"] = { { "pad_y", "a" } };
+    run = Parse(pads, {}, {});
+    CHECK(run.ok && run.warnings.empty() && !run.settings.padMap.Identity());
+    CHECK(run.settings.padMap.target[PadButtonIndex("rb")] == PadButtonIndex("x")); // the game's wins over [input]
+    CHECK(run.settings.padMap.target[PadButtonIndex("lt")] == -1 && run.settings.padMap.target[PadButtonIndex("a")] == PadButtonIndex("dpad_up"));
+    CHECK(run.settings.padMap.target[PadButtonIndex("y")] == PadButtonIndex("y")); // another game's remap is not read
+    CHECK(run.settings.rumble[0] == "low" && run.settings.rumble[1] == "strong");
+    CHECK(DescribeSettings(run.settings).find("rb->x") != std::string::npos);
+    LauncherConfig badPads;
+    badPads["ssa.input"] = { { "pad_rb", "banana" }, { "pad_nothing", "a" }, { "rumble_p1", "huge" } };
+    run = Parse(badPads, {}, {});
+    CHECK(run.warnings.size() == 3 && run.settings.padMap.Identity() && run.settings.rumble[0] == "normal");
+    run = Parse({}, {}, { "--pad", "lb=a", "--rumble", "off" });
+    CHECK(run.ok && run.settings.padMap.target[PadButtonIndex("lb")] == PadButtonIndex("a") && run.settings.rumble[1] == "off");
+    CHECK(!Parse({}, {}, { "--pad", "lb" }).ok);
+
+    {
+        PadMap map;
+        GamepadState pad;
+        pad.buttons = Button::RightShoulder | Button::A;
+        pad.thumbLX = 1234;
+        CHECK(RemapPad(pad, map).buttons == pad.buttons); // nothing remapped: untouched
+        map.target[PadButtonIndex("rb")] = int8_t(PadButtonIndex("b"));
+        GamepadState out = RemapPad(pad, map);
+        CHECK(out.buttons == (Button::B | Button::A) && out.thumbLX == 1234); // RB does B's job and no longer RB's
+        map.target[PadButtonIndex("a")] = int8_t(PadButtonIndex("b")); // two buttons on one
+        CHECK(RemapPad(pad, map).buttons == Button::B);
+        map = PadMap();
+        map.target[PadButtonIndex("a")] = int8_t(PadButtonIndex("b")); // a swap
+        map.target[PadButtonIndex("b")] = int8_t(PadButtonIndex("a"));
+        pad.buttons = Button::A;
+        CHECK(RemapPad(pad, map).buttons == Button::B);
+        pad.buttons = Button::B;
+        CHECK(RemapPad(pad, map).buttons == Button::A);
+        pad.buttons = Button::A | Button::B;
+        CHECK(RemapPad(pad, map).buttons == (Button::A | Button::B));
+        map = PadMap();
+        map.target[PadButtonIndex("a")] = -1; // off
+        pad.buttons = Button::A | Button::X;
+        CHECK(RemapPad(pad, map).buttons == Button::X);
+        map = PadMap(); // triggers: LT -> A (digital past 30), B -> RT (all the way), RT stays analog under another name
+        map.target[PadButtonIndex("lt")] = int8_t(PadButtonIndex("a"));
+        map.target[PadButtonIndex("b")] = int8_t(PadButtonIndex("rt"));
+        pad = GamepadState();
+        pad.leftTrigger = 200;
+        pad.buttons = Button::B;
+        out = RemapPad(pad, map);
+        CHECK(out.buttons == Button::A && out.leftTrigger == 0 && out.rightTrigger == 255);
+        pad.leftTrigger = 20; // under the threshold: not pressed
+        CHECK(RemapPad(pad, map).buttons == 0);
+        map = PadMap();
+        map.target[PadButtonIndex("lt")] = int8_t(PadButtonIndex("rt"));
+        pad = GamepadState();
+        pad.leftTrigger = 90;
+        out = RemapPad(pad, map);
+        CHECK(out.leftTrigger == 0 && out.rightTrigger == 90);
+    }
+    CHECK(ScaleRumble(40000, "off") == 0 && ScaleRumble(40000, "normal") == 40000 && ScaleRumble(40000, "low") == 16000);
+    CHECK(ScaleRumble(20000, "strong") == 32000 && ScaleRumble(60000, "strong") == 65535 && ScaleRumble(40000, "bogus") == 40000);
 
     // Errors: unknown option, missing value, malformed --key.
     CHECK(!Parse({}, {}, { "--frobnicate" }).ok);

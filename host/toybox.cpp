@@ -1,6 +1,7 @@
 #include "host/toybox.h"
 #include "gpu/gpu.h"
 #include "host/art/game_art.h"
+#include "host/gamemenu.h"
 #include "host/glyphs.h"
 #include "host/portal.h"
 #include "game.h"
@@ -11,6 +12,7 @@
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <cmath>
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <mutex>
@@ -158,11 +160,13 @@ namespace
             }
             return;
         }
-        if (key.repeat && (key.key == SDLK_TAB || key.key == SDLK_F6))
+        if (key.repeat && (key.key == SDLK_TAB || key.key == SDLK_F6 || key.key == SDLK_F3))
             return;
         if (!model.open)
         {
-            if (key.key == SDLK_F6)
+            if (key.key == SDLK_F3)
+                model.OpenMenu(); // the F3 menu (docs/runtime/host/gamemenu.md)
+            else if (key.key == SDLK_F6)
                 OpenToybox();
             else if (key.key == SDLK_TAB)
                 g_tabDown = now;
@@ -187,6 +191,11 @@ namespace
             return;
         }
         if ((key.key == SDLK_F6 || key.key == SDLK_TAB) && model.screen != Screen::Name)
+        {
+            model.Close();
+            return;
+        }
+        if (key.key == SDLK_F3 && model.screen == Screen::Menu) // F3 opened it: F3 closes it (elsewhere F3 is the Toy Box's View)
         {
             model.Close();
             return;
@@ -265,6 +274,12 @@ namespace
         return 0;
     }
 
+    // SKY_TOYBOX_SCRIPT's "prompt=1" / "prompt=2d": the game asks that player for a Skylander for 3 s (d: and says its Skylander
+    // died), as if ReadPortalPrompt said it, and "level": a level starts (game::LevelStarted): the out of health test.
+    portalprompt::Prompt g_testPrompt;
+    uint64_t g_testPromptUntil = 0;
+    int g_testLevels = 0;
+
     // SKY_TOYBOX_SCRIPT="F6:100,Right:101,type=Ace:103,shot:104,pad=back*0.8:110": items at times in seconds since
     // launch. A key name (SDL_GetKeyFromName; "shift+Right") is pressed and released; "down=Tab" / "up=Tab" press or
     // release only; "type=<text>" types; "shot" or "shot=<name>" saves a screenshot; "pad=back+lright*0.8" holds pad
@@ -308,6 +323,17 @@ namespace
             if (action == "shot" || action.rfind("shot=", 0) == 0)
             {
                 SaveShot(action.size() > 5 ? action.substr(5) : std::string());
+                continue;
+            }
+            if (action.rfind("prompt=", 0) == 0)
+            {
+                g_testPrompt = { portalprompt::Kind::Player, atoi(action.c_str() + 7), action.back() == 'd' };
+                g_testPromptUntil = now + 3000000000ull;
+                continue;
+            }
+            if (action == "level")
+            {
+                game::LevelStarted("script level " + std::to_string(++g_testLevels));
                 continue;
             }
             if (action.rfind("type=", 0) == 0)
@@ -366,7 +392,7 @@ namespace
     void Present()
     {
         toybox::Model& model = M();
-        bool visible = model.open || !model.toast.empty();
+        bool visible = model.open || !model.toast.empty() || !model.fps.empty();
         if (!visible)
         {
             if (g_overlayShown)
@@ -408,7 +434,7 @@ void ToyboxInit(SDL_Window* window)
     M().Init(!PortalIsEmulated() || (realView != nullptr && *realView != '\0'));
     g_enabled = true;
     LoadScript();
-    fprintf(stderr, "[toybox] hold Tab or View: quick swap wheel; F6, tap Tab or View + Y: the Toy Box\n");
+    fprintf(stderr, "[toybox] hold Tab or View: quick swap wheel; F6, tap Tab or View + Y: the Toy Box; F3 or View + Start: the game menu\n");
 }
 
 bool ToyboxHandleEvent(const SDL_Event& event)
@@ -421,7 +447,7 @@ bool ToyboxHandleEvent(const SDL_Event& event)
     case SDL_EVENT_KEY_DOWN:
     case SDL_EVENT_KEY_UP:
     {
-        bool toggle = event.key.key == SDLK_TAB || event.key.key == SDLK_F6;
+        bool toggle = event.key.key == SDLK_TAB || event.key.key == SDLK_F6 || event.key.key == SDLK_F3;
         bool wasOpen = model.open;
         HandleKey(event.key, event.type == SDL_EVENT_KEY_DOWN);
         return wasOpen || model.open || toggle;
@@ -506,6 +532,12 @@ void ToyboxFilterGamepad(GamepadState& state)
                 g_backUsed = true;
                 OpenToybox();
             }
+            else if (pressed & Button::Start) // View + Start: the F3 menu
+            {
+                g_backDown = 0;
+                g_backUsed = true;
+                model.OpenMenu();
+            }
             else if (now - g_backDown >= HoldForWheel)
             {
                 g_backDown = 0;
@@ -526,7 +558,7 @@ void ToyboxFilterGamepad(GamepadState& state)
         // View is the wheel's until released or given back as a tap; Y too while View is down.
         state.buttons &= uint16_t(~Button::Back);
         if (buttons & Button::Back)
-            state.buttons &= uint16_t(~Button::Y);
+            state.buttons &= uint16_t(~(Button::Y | Button::Start));
         if (now < g_tapUntil)
             state.buttons |= Button::Back;
         // Buttons that closed a menu stay away from the game until released (sticks and triggers past a dead zone:
@@ -575,7 +607,7 @@ void ToyboxFilterGamepad(GamepadState& state)
         g_wheelByPad = false;
 
     // --- The Toy Box ---------------------------------------------------------------------------------------------------
-    if ((buttons & Button::Back) && (pressed & Button::Y))
+    if ((buttons & Button::Back) && ((pressed & Button::Y) || (model.screen == Screen::Menu && (pressed & Button::Start))))
     {
         model.Close();
         g_swallow = true;
@@ -624,12 +656,16 @@ void ToyboxSetAutoOpen(bool enabled)
     g_autoOpen = enabled;
 }
 
-// Opens the Toy Box on the seat the game asks for, and closes it once the prompt is gone.
+// Opens the Toy Box on the seat the game asks for, and closes it once the prompt is gone. A figure the game gave up on
+// (it asks for the seat again while that figure, which it had taken, is still on it, or says the Skylander died) is out of
+// health until the next level: the Toy Box marks it, whether or not it opens by itself.
 static void FollowPrompt(toybox::Model& model)
 {
-    if (!g_autoOpen || model.realPortal)
+    if (model.realPortal)
         return;
     portalprompt::Prompt prompt = game::Current().ReadPortalPrompt != nullptr ? game::Current().ReadPortalPrompt() : portalprompt::Prompt{};
+    if (g_testPromptUntil > SDL_GetTicksNS())
+        prompt = g_testPrompt;
     portalprompt::Prompt appeared;
     switch (g_promptTracker.Update(prompt, appeared))
     {
@@ -640,6 +676,11 @@ static void FollowPrompt(toybox::Model& model)
         {
             if (model.seats[i].seat.id != id)
                 continue;
+            if (model.MarkOutOfHealth(int(i), appeared.defeated))
+                fprintf(stderr, "[toybox] player %d's figure is out of health (%s)\n", appeared.player,
+                    appeared.defeated ? "the game says its Skylander died" : "the game asks for the seat again while it is on it");
+            if (!g_autoOpen)
+                break;
             fprintf(stderr, "[toybox] prompt for player %d\n", appeared.player);
             // Left alone when the player has it open already.
             if (!model.open)
@@ -652,6 +693,8 @@ static void FollowPrompt(toybox::Model& model)
         break;
     }
     case portalprompt::Tracker::Event::Gone:
+        if (!g_autoOpen)
+            break;
         fprintf(stderr, "[toybox] the prompt is gone\n");
         if (g_openedByPrompt && model.open && model.screen == Screen::Home && model.dialogs.empty())
             model.Close();
@@ -662,6 +705,13 @@ static void FollowPrompt(toybox::Model& model)
     }
     if (!model.open)
         g_openedByPrompt = false;
+}
+
+static std::atomic<bool> g_levelStarted{ false };
+
+void ToyboxLevelStarted()
+{
+    g_levelStarted = true;
 }
 
 void ToyboxNotice(const char* english, const char* french)
@@ -685,7 +735,14 @@ void ToyboxUpdate()
             model.Notice(toybox::French() ? g_notice.second : g_notice.first, 4);
         }
     }
+    if (g_levelStarted.exchange(false))
+        model.ClearOutOfHealth();
     FollowPrompt(model);
+    if (std::string fps = gamemenu::FpsText(); fps != model.fps)
+    {
+        model.fps = fps;
+        model.Touch();
+    }
     uint64_t now = SDL_GetTicksNS();
     // Tab held: the wheel.
     if (g_tabDown != 0 && !model.open && now - g_tabDown >= HoldForWheel)

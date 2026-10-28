@@ -1,6 +1,7 @@
 #include "search.h"
 #include "../figures/figure_tag.h"
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <set>

@@ -137,6 +137,18 @@ namespace
     }
 }
 
+std::string LogPath()
+{
+    return g_path;
+}
+
+std::string PreviousLogPath()
+{
+    if (g_path.empty())
+        return {};
+    return g_path.size() > 4 && g_path.substr(g_path.size() - 4) == ".log" ? g_path.substr(0, g_path.size() - 4) + ".prev.log" : g_path + ".prev";
+}
+
 void LogInit()
 {
     if (const char* chosen = skyenv::Get("SKY_LOG"))

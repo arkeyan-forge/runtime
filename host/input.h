@@ -40,3 +40,8 @@ GamepadState GetGamepad(uint32_t& packetNumber, int user = 0);
 // runs; a third field holds it that many seconds. lup/ldown/lleft/lright push the left stick all the way. SKY_PRESS2 is
 // the same script for the second controller (user 1), which then exists.
 void LoadInputScript(const char* script, int user = 0);
+
+// The vibration the title asked for (XamInputSetState): both motors, 0-65535, per user. The host's main loop sends it to
+// that user's pad, scaled by the player's rumble setting (pad_map.h). `serial` changes with every request.
+void SetHostVibration(int user, uint16_t left, uint16_t right);
+void GetHostVibration(int user, uint16_t& left, uint16_t& right, uint32_t& serial);

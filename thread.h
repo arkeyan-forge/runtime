@@ -49,3 +49,7 @@ void DeliverUserApcs(PPCContext& ctx, GuestThread& thread);
 
 // Runs host code that calls into the guest (interrupts, timers) on its own thread with a guest context.
 void StartHostDrivenThread(std::function<void(PPCContext&)> body, uint8_t cpu);
+
+// The crash report's "[crash] where:" line for the calling thread: its guest thread id and last stored lr, ctr, r1, r3, r31
+// (the guest function itself is named by the host stack that follows, `sub_XXXXXXXX`). Safe to call from a fault handler.
+void PrintGuestLocation();

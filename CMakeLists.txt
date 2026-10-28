@@ -5,54 +5,7 @@ else()
     set(SSA_PLATFORM_SOURCES platform/platform_posix.cpp)
 endif()
 
-# The figure and collection library (host/figures without the portraits, host/collection), shared with Skylauncher
-# (docs/runtime/host/collection_api.md). The catalogue (resources/collection/catalogue.json) is built in.
-set(SSA_CATALOGUE ${CMAKE_SOURCE_DIR}/resources/collection/catalogue.json)
-add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/embedded_catalogue.cpp
-    COMMAND ${CMAKE_COMMAND} -DNAME=g_embeddedCatalogue -DINPUT=${SSA_CATALOGUE}
-        -DOUTPUT=${CMAKE_CURRENT_BINARY_DIR}/embedded_catalogue.cpp -P ${CMAKE_SOURCE_DIR}/cmake/embed_file.cmake
-    DEPENDS ${CMAKE_SOURCE_DIR}/cmake/embed_file.cmake ${SSA_CATALOGUE}
-    COMMENT "Embedding the toy catalogue")
-set(SSA_COLLECTION_SOURCES
-    host/figures/figure_catalog.cpp
-    host/figures/figure_crypto.cpp
-    host/figures/figure_data.cpp
-    host/figures/figure_tag.cpp
-    host/collection/catalogue.cpp
-    host/collection/collection.cpp
-    host/collection/datadir.cpp
-    host/collection/game_data.cpp
-    host/collection/icons.cpp
-    host/collection/json.cpp
-    host/collection/save_backup.cpp
-    host/collection/search.cpp
-    host/collection/upgrades.cpp
-    ${CMAKE_CURRENT_BINARY_DIR}/embedded_catalogue.cpp)
-# Each game's pictures from the player's disc: logo, background, portraits (docs/runtime/host/game_art.md). Where each
-# game keeps them is its manifest, games/<id>/art.json, every one built in (a new game adds a file, no code).
-file(GLOB SSA_ART_MANIFESTS CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/games/*/art.json)
-list(SORT SSA_ART_MANIFESTS)
-string(REPLACE ";" "|" SSA_ART_MANIFEST_LIST "${SSA_ART_MANIFESTS}")
-add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/embedded_art_manifests.cpp
-    COMMAND ${CMAKE_COMMAND} "-DINPUTS=${SSA_ART_MANIFEST_LIST}" -DOUTPUT=${CMAKE_CURRENT_BINARY_DIR}/art_manifests.json
-        -P ${CMAKE_SOURCE_DIR}/cmake/join_json.cmake
-    COMMAND ${CMAKE_COMMAND} -DNAME=g_embeddedArtManifests -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/art_manifests.json
-        -DOUTPUT=${CMAKE_CURRENT_BINARY_DIR}/embedded_art_manifests.cpp -P ${CMAKE_SOURCE_DIR}/cmake/embed_file.cmake
-    DEPENDS ${CMAKE_SOURCE_DIR}/cmake/join_json.cmake ${CMAKE_SOURCE_DIR}/cmake/embed_file.cmake ${SSA_ART_MANIFESTS}
-    COMMENT "Embedding the art manifests" VERBATIM)
-set(SSA_ART_SOURCES
-    host/art/alchemy_archive.cpp
-    host/art/disc_languages.cpp
-    host/art/game_art.cpp
-    host/art/game_text.cpp
-    host/art/lux_images.cpp
-    host/art/xenos_texture.cpp
-    ${CMAKE_CURRENT_BINARY_DIR}/embedded_art_manifests.cpp)
-
-# The pictures' readers as a library, for SkyBuild (the game's icon is made from the disc's logo: tools/skybuild).
-add_library(SSAArtReader STATIC ${SSA_ART_SOURCES} ${SSA_COLLECTION_SOURCES})
-target_include_directories(SSAArtReader PUBLIC .)
-target_link_libraries(SSAArtReader PUBLIC SDL3::SDL3-static)
+include(${CMAKE_SOURCE_DIR}/cmake/art_reader.cmake)
 
 # The built game's name: the executable, the macOS app bundle and the Windows .exe (games/<id>/info.cpp names it for the
 # launcher). The CMake target stays SSARecomp for every game, so every build and test command keeps working.
@@ -94,10 +47,14 @@ add_executable(SSARecomp
     ${SSA_COLLECTION_SOURCES}
     ${SSA_ART_SOURCES}
     host/input.cpp
+    host/pad_map.cpp
     host/launcher.cpp
     host/launcher_games.cpp
     host/xex_title.cpp
+    host/collection/achievements.cpp
     host/log.cpp
+    host/gamemenu.cpp
+    host/report.cpp
     host/portal.cpp
     host/portal_async.cpp
     host/portal_emulated.cpp
@@ -108,6 +65,7 @@ add_executable(SSARecomp
     host/settings.cpp
     host/toybox.cpp
     host/toybox/draw.cpp
+    host/toybox/menu.cpp
     host/toybox/model.cpp
     kernel/files.cpp
     kernel/imports_giants.cpp
@@ -240,7 +198,7 @@ add_executable(SSATexturePackTest EXCLUDE_FROM_ALL host/texture_pack_test.cpp ho
 target_include_directories(SSATexturePackTest PRIVATE . ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/xxHash)
 
 # Settings parser test (launcher.ini, environment, command line; no game data needed): ./SSASettingsTest
-add_executable(SSASettingsTest host/settings_test.cpp host/settings.cpp)
+add_executable(SSASettingsTest host/settings_test.cpp host/settings.cpp host/pad_map.cpp)
 target_include_directories(SSASettingsTest PRIVATE .)
 target_link_libraries(SSASettingsTest PRIVATE fmt::fmt SDL3::SDL3-static)
 
@@ -340,6 +298,22 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
     target_include_directories(SSASavesTest PRIVATE .)
 endif()
 
+# Achievements (the XDBF reader), unlocks and play time (synthetic data, scratch folders; the discs given are only read):
+# ./SSAProgressTest [<disc>.iso...]. And the achievement calls of a title on a fake guest context, against a disc:
+# ./SSAAchievementsKernelTest <disc>.iso
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    add_executable(SSAProgressTest host/collection/progress_test.cpp host/collection/achievements.cpp host/collection/progress.cpp
+        host/collection/save_backup.cpp host/collection/datadir.cpp vfs.cpp ${SSA_PLATFORM_SOURCES})
+    target_include_directories(SSAProgressTest PRIVATE .)
+    target_link_libraries(SSAProgressTest PRIVATE SSAXenonUtils fmt::fmt SDL3::SDL3-static)
+
+    add_executable(SSAAchievementsKernelTest EXCLUDE_FROM_ALL kernel/xam_achievements_test.cpp kernel/xam_achievements.cpp kernel/objects.cpp
+        kernel/overlapped.cpp memory.cpp host/collection/achievements.cpp host/collection/progress.cpp host/collection/save_backup.cpp
+        host/collection/datadir.cpp vfs.cpp ${SSA_PLATFORM_SOURCES})
+    target_include_directories(SSAAchievementsKernelTest PRIVATE . ${SSA_PPC_DIR})
+    target_link_libraries(SSAAchievementsKernelTest PRIVATE SSAXenonUtils fmt::fmt SDL3::SDL3-static)
+endif()
+
 # On Windows/packaged builds, copy third-party notices into the output directory.
 if(WIN32)
     target_sources(SSARecomp PRIVATE platform/win32/SSARecomp.rc)
@@ -358,9 +332,9 @@ if(SSA_UWP)
     # (window and events, audio, launcher, real portals).
     get_target_property(SSA_SOURCES SSARecomp SOURCES)
     list(REMOVE_ITEM SSA_SOURCES main.cpp host/audio.cpp host/launcher.cpp host/launcher_games.cpp host/xex_title.cpp host/log.cpp host/portal_hid.cpp
-        host/portal_usb.cpp)
+        host/portal_usb.cpp host/gamemenu.cpp host/report.cpp)
     set_property(TARGET SSARecomp PROPERTY SOURCES ${SSA_SOURCES} host/audio_xaudio2.cpp host/uwp/main.cpp
-        host/uwp/portal_backends.cpp host/uwp/settings_uwp.cpp host/uwp/uwp_compat.cpp host/uwp/cpu_check.cpp)
+        host/uwp/portal_backends.cpp host/uwp/settings_uwp.cpp host/uwp/uwp_compat.cpp host/uwp/cpu_check.cpp host/uwp/gamemenu_uwp.cpp)
     # The CPU check runs before any other code, so it stays on the baseline whatever SSA_UWP_MARCH (toolchain file).
     set_source_files_properties(host/uwp/cpu_check.cpp PROPERTIES COMPILE_OPTIONS "-march=btver2")
     if(NOT SSA_UWP_MARCH STREQUAL "btver2")
@@ -370,7 +344,7 @@ if(SSA_UWP)
     target_link_options(SSARecomp PRIVATE -municode)
     # Shared files that include SDL's headers (see SSA_UWP_DESKTOP_FAMILY in the root CMakeLists.txt).
     set_source_files_properties(host/display.cpp host/portal.cpp host/portal_emulated.cpp kernel/xam_content.cpp
-        host/settings.cpp host/uwp/settings_uwp.cpp host/toybox.cpp host/toybox/draw.cpp host/toybox/model.cpp
+        host/settings.cpp host/uwp/settings_uwp.cpp host/toybox.cpp host/toybox/draw.cpp host/toybox/menu.cpp host/toybox/model.cpp host/uwp/gamemenu_uwp.cpp
         host/art/game_art.cpp host/art/game_text.cpp
         host/collection/catalogue.cpp host/collection/collection.cpp host/collection/icons.cpp
         PROPERTIES COMPILE_OPTIONS "${SSA_UWP_DESKTOP_FAMILY}")

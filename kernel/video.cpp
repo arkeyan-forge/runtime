@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <deque>
 #include <mutex>
+#include <string_view>
 #include <utility>
 #include <vector>
 #include "../host/env.h"
@@ -147,8 +148,23 @@ namespace
     }
 }
 
+// SKY_CRASH_TEST=fault|abort (test aid, docs/porting/debugging.md): after the 400th flip the guest's render thread faults on a
+// null host pointer, or aborts as the runtime's own fatal errors do, to check the crash report's "[crash]" lines.
+static void CrashTest()
+{
+    static const char* mode = skyenv::Get("SKY_CRASH_TEST");
+    static uint32_t flips;
+    if (mode == nullptr || ++flips != 400)
+        return;
+    fprintf(stderr, "[crash-test] %s now\n", mode);
+    if (std::string_view(mode) == "abort")
+        abort();
+    *static_cast<volatile int*>(nullptr) = 1;
+}
+
 void WaitForFlip(uint32_t presentInterval)
 {
+    CrashTest();
     static uint32_t seen[8];
     static uint32_t seenCount;
     if (std::find(seen, seen + seenCount, presentInterval) == seen + seenCount && seenCount < 8)

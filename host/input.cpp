@@ -26,6 +26,8 @@ namespace
         uint32_t hostPacket = 0;
         std::vector<ScriptedPress> script;
         bool connected = false;
+        uint16_t vibrationLeft = 0, vibrationRight = 0;
+        uint32_t vibrationSerial = 0;
     };
 
     std::mutex g_mutex;
@@ -58,6 +60,29 @@ void SetHostGamepad(const GamepadState& state, int user, bool connected)
         u.host = state;
         u.hostPacket++;
     }
+}
+
+void SetHostVibration(int user, uint16_t left, uint16_t right)
+{
+    if (user < 0 || user >= MaxUsers)
+        return;
+    std::lock_guard lock(g_mutex);
+    User& u = g_users[user];
+    if (u.vibrationLeft != left || u.vibrationRight != right)
+    {
+        u.vibrationLeft = left;
+        u.vibrationRight = right;
+        u.vibrationSerial++;
+    }
+}
+
+void GetHostVibration(int user, uint16_t& left, uint16_t& right, uint32_t& serial)
+{
+    std::lock_guard lock(g_mutex);
+    const User& u = g_users[user];
+    left = u.vibrationLeft;
+    right = u.vibrationRight;
+    serial = u.vibrationSerial;
 }
 
 bool GamepadConnected(int user)

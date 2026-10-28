@@ -3,6 +3,7 @@
 #include "d3d/xenos.h"
 #include "gpu/gpu.h"
 #include "host/embedded_fonts.h"
+#include "host/input.h"
 #include "host/settings.h"
 #include "memory.h"
 #include <SDL3/SDL.h>
@@ -1020,6 +1021,36 @@ void RunTestScript()
     {
         const std::string& action = steps[next++].action;
         fprintf(stderr, "[glyphs] script: %s\n", action.c_str());
+        // btn:<name> / btnup:<name>: hold / release a button of the virtual pad (a b x y lb rb lt rt start back ls rs dpad_*),
+        // for the pad remapping test (docs/runtime/xbox360/input.md). vibrate / vibrate0: the title asks Player 1's pad to rumble.
+        if (action == "vibrate" || action == "vibrate0")
+        {
+            SetHostVibration(0, action == "vibrate" ? 40000 : 0, action == "vibrate" ? 20000 : 0);
+            continue;
+        }
+        if (action.starts_with("btn:") || action.starts_with("btnup:"))
+        {
+            const bool down = action.starts_with("btn:");
+            const std::string name = action.substr(action.find(':') + 1);
+            static const std::pair<const char*, SDL_GamepadButton> Buttons[] = {
+                { "a", SDL_GAMEPAD_BUTTON_SOUTH }, { "b", SDL_GAMEPAD_BUTTON_EAST }, { "x", SDL_GAMEPAD_BUTTON_WEST },
+                { "y", SDL_GAMEPAD_BUTTON_NORTH }, { "lb", SDL_GAMEPAD_BUTTON_LEFT_SHOULDER }, { "rb", SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER },
+                { "start", SDL_GAMEPAD_BUTTON_START }, { "back", SDL_GAMEPAD_BUTTON_BACK }, { "ls", SDL_GAMEPAD_BUTTON_LEFT_STICK },
+                { "rs", SDL_GAMEPAD_BUTTON_RIGHT_STICK }, { "dpad_up", SDL_GAMEPAD_BUTTON_DPAD_UP },
+                { "dpad_down", SDL_GAMEPAD_BUTTON_DPAD_DOWN }, { "dpad_left", SDL_GAMEPAD_BUTTON_DPAD_LEFT },
+                { "dpad_right", SDL_GAMEPAD_BUTTON_DPAD_RIGHT },
+            };
+            if (virtualPad != nullptr)
+            {
+                if (name == "lt" || name == "rt")
+                    SDL_SetJoystickVirtualAxis(virtualPad, name == "lt" ? SDL_GAMEPAD_AXIS_LEFT_TRIGGER : SDL_GAMEPAD_AXIS_RIGHT_TRIGGER,
+                        down ? 32767 : -32768); // the triggers' rest is the axis minimum
+                for (const auto& [text, button] : Buttons)
+                    if (name == text)
+                        SDL_SetJoystickVirtualButton(virtualPad, button, down);
+            }
+            continue;
+        }
         if (action == "key")
         {
             for (bool down : { true, false })
@@ -1057,6 +1088,11 @@ void RunTestScript()
             desc.button_mask = (1u << SDL_GAMEPAD_BUTTON_COUNT) - 1;
             desc.axis_mask = (1u << SDL_GAMEPAD_AXIS_COUNT) - 1;
             desc.name = pad.name;
+            desc.Rumble = [](void*, Uint16 low, Uint16 high) -> bool
+            {
+                fprintf(stderr, "[input] virtual pad rumbles: %u/%u\n", unsigned(low), unsigned(high));
+                return true;
+            };
             virtualId = SDL_AttachVirtualJoystick(&desc);
             virtualPad = virtualId != 0 ? SDL_OpenJoystick(virtualId) : nullptr;
             if (virtualPad == nullptr)

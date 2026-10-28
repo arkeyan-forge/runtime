@@ -595,7 +595,7 @@ namespace
         painter.Text("SETTINGS", sr.x+38, sr.y+16, 11, settingsOpen?TextPrimary:(sh?TextPrimary:TextSecondary), false, 1.6f);
         painter.Text("F1", sr.x+SidebarW-52, sr.y+18, 8.5f, TextDim, false, 1.8f);
         Add(sr, Act::Settings);
-        painter.TextCentered("MINECRAFT-STYLE · SKYLANDERS ART", SidebarW*0.5f, DesignH-28, 7.5f, TextDim, false, 2.2f);
+        painter.TextCentered("NATIVE PC PORT", SidebarW*0.5f, DesignH-28, 7.5f, TextDim, false, 2.2f);
 
         // content
         if (settingsOpen && settingsT > 0.001f) DrawSettings();
@@ -717,7 +717,7 @@ namespace
         SDL_FRect area{ContentX, HeroY, ContentW, FooterY + FooterH - HeroY};
         // header
         widgets->Label("SETTINGS", ContentX, HeroY+6, TextDim);
-        painter.Text("Tweak language, display and game data. Looks like Minecraft Launcher, styled for Skylanders.", ContentX, HeroY+28, 12, TextSecondary);
+        painter.Text("Tweak language, display and game data.", ContentX, HeroY+28, 12, TextSecondary);
         SDL_FRect back{ContentRight-96, HeroY, 80, 34};
         widgets->Button(back, "BACK", ButtonStyle::Secondary, true, Hover(Hotspot{back,Act::CloseSettings,-1,true}), 10.5f);
         Add(back, Act::CloseSettings);

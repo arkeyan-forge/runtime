@@ -3,6 +3,8 @@
 // The Toy Box (docs/runtime/host/toybox_ux.md): the portal's seats, My Skylanders, figure management, and the quick swap wheel
 // over the game. Gamepad: hold View for the wheel (a tap still reaches the game), View + Y for the Toy Box; keyboard:
 // hold Tab for the wheel, tap Tab or F6 for the Toy Box. While either is open the title gets no input from that pad.
+// F3 (View + Start on a pad) opens the game menu: volume, FPS counter, the settings a player changes in play, Report a problem
+// (host/gamemenu.h); it takes the input as the Toy Box does.
 // Drawn with Dear ImGui on the CPU (host/imgui_software.h) into one image that gpu::SetOverlay blends over the game.
 #include "host/input.h"
 
@@ -29,3 +31,6 @@ void ToyboxSetAutoOpen(bool enabled);
 // Any thread: a short message over the game (the Toy Box's toast, 4 s), in English or French by the game's text language.
 // Nothing is shown when the Toy Box is unavailable (no window, or its fonts did not load).
 void ToyboxNotice(const char* english, const char* french);
+
+// A level started (game.cpp NoteLevel): the figures that ran out of health can play again.
+void ToyboxLevelStarted();

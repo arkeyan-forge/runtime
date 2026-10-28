@@ -19,6 +19,7 @@ namespace portalprompt
     {
         Kind kind = Kind::None;
         int player = 0;
+        bool defeated = false; // the game says that player's Skylander ran out of health (Swap Force's Dead state)
         bool operator==(const Prompt&) const = default;
     };
 

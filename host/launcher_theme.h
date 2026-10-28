@@ -41,7 +41,7 @@ namespace LauncherTheme
     inline constexpr SDL_Color Orange{ 255, 154, 64, 255 };
     inline constexpr SDL_Color Cyan{ 90, 228, 255, 255 };
     inline constexpr SDL_Color Green{ 108, 238, 178, 255 };
-    inline constexpr SDL_Color PlayGreen{ 105, 214, 116, 255 };       // Minecraft-like play button
+    inline constexpr SDL_Color PlayGreen{ 105, 214, 116, 255 };       // the play button
     inline constexpr SDL_Color PlayGreenHover{ 132, 240, 144, 255 };
     inline constexpr SDL_Color Red{ 255, 112, 124, 255 };
 

@@ -1,12 +1,15 @@
 #include "host/audio.h"
 #include "host/collection/datadir.h"
+#include "host/collection/progress.h"
 #include "host/collection/save_backup.h"
 #include "host/display.h"
 #include "host/env.h"
+#include "host/gamemenu.h"
 #include "host/glyphs.h"
 #include "host/input.h"
 #include "host/launcher.h"
 #include "host/log.h"
+#include "host/pad_map.h"
 #include "host/portal.h"
 #include "host/settings.h"
 #include "host/xex_title.h"
@@ -56,6 +59,7 @@ static void OnFault(const char* description, const void* hostAddress)
         fprintf(stderr, "\nFault (%s) at guest address 0x%08X\n", description, uint32_t(address - g_memory.base));
     else
         fprintf(stderr, "\nFault (%s) at host address %p\n", description, hostAddress);
+    PrintGuestLocation();
 }
 
 // Keyboard bindings (settings, [input] key_<action>; Escape is also back) and the gamepad, per the input device setting.
@@ -63,6 +67,8 @@ struct HostInput
 {
     bool keyboard = true, gamepad = true;
     SDL_Scancode keys[std::size(g_keyActions)];
+    PadMap padMap;                  // what each pad button does (the keyboard has its own keys)
+    std::string rumble[2];          // off, low, normal, strong, per player
 };
 
 static HostInput MakeHostInput(const RuntimeSettings& settings)
@@ -72,6 +78,9 @@ static HostInput MakeHostInput(const RuntimeSettings& settings)
     input.gamepad = settings.inputDevice != "keyboard";
     for (size_t i = 0; i < std::size(g_keyActions); i++)
         input.keys[i] = SDL_GetScancodeFromName(settings.keys[i].c_str());
+    input.padMap = settings.padMap;
+    input.rumble[0] = settings.rumble[0];
+    input.rumble[1] = settings.rumble[1];
     return input;
 }
 
@@ -111,20 +120,56 @@ static GamepadState ReadHostGamepad(const HostInput& input, SDL_Gamepad* gamepad
             { SDL_GAMEPAD_BUTTON_SOUTH, Button::A }, { SDL_GAMEPAD_BUTTON_EAST, Button::B },
             { SDL_GAMEPAD_BUTTON_WEST, Button::X }, { SDL_GAMEPAD_BUTTON_NORTH, Button::Y },
         };
+        GamepadState pad;
         for (const auto& [sdlButton, button] : buttons)
         {
             if (SDL_GetGamepadButton(gamepad, sdlButton))
-                state.buttons |= button;
+                pad.buttons |= button;
         }
         auto axis = [&](SDL_GamepadAxis a) { return SDL_GetGamepadAxis(gamepad, a); };
-        if (state.thumbLX == 0) state.thumbLX = axis(SDL_GAMEPAD_AXIS_LEFTX);
-        if (state.thumbLY == 0) state.thumbLY = int16_t(-std::max(-32767, int(axis(SDL_GAMEPAD_AXIS_LEFTY))));
-        if (state.thumbRX == 0) state.thumbRX = axis(SDL_GAMEPAD_AXIS_RIGHTX);
-        if (state.thumbRY == 0) state.thumbRY = int16_t(-std::max(-32767, int(axis(SDL_GAMEPAD_AXIS_RIGHTY))));
-        state.leftTrigger = std::max(state.leftTrigger, uint8_t(axis(SDL_GAMEPAD_AXIS_LEFT_TRIGGER) >> 7));
-        state.rightTrigger = std::max(state.rightTrigger, uint8_t(axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) >> 7));
+        pad.thumbLX = axis(SDL_GAMEPAD_AXIS_LEFTX);
+        pad.thumbLY = int16_t(-std::max(-32767, int(axis(SDL_GAMEPAD_AXIS_LEFTY))));
+        pad.thumbRX = axis(SDL_GAMEPAD_AXIS_RIGHTX);
+        pad.thumbRY = int16_t(-std::max(-32767, int(axis(SDL_GAMEPAD_AXIS_RIGHTY))));
+        pad.leftTrigger = uint8_t(axis(SDL_GAMEPAD_AXIS_LEFT_TRIGGER) >> 7);
+        pad.rightTrigger = uint8_t(axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) >> 7);
+        pad = RemapPad(pad, input.padMap);
+        state.buttons |= pad.buttons;
+        if (state.thumbLX == 0) state.thumbLX = pad.thumbLX;
+        if (state.thumbLY == 0) state.thumbLY = pad.thumbLY;
+        if (state.thumbRX == 0) state.thumbRX = pad.thumbRX;
+        if (state.thumbRY == 0) state.thumbRY = pad.thumbRY;
+        state.leftTrigger = std::max(state.leftTrigger, pad.leftTrigger);
+        state.rightTrigger = std::max(state.rightTrigger, pad.rightTrigger);
     }
     return state;
+}
+
+// Sends what the title asked for (XamInputSetState) to the user's pad, scaled by the player's rumble setting. SDL stops a
+// rumble after its duration, so a running one is sent again every half second.
+static void SendRumble(int user, SDL_Gamepad* gamepad, const std::string& strength)
+{
+    static uint16_t lastLeft[MaxUsers] = {}, lastRight[MaxUsers] = {};
+    static uint64_t sentAt[MaxUsers] = {};
+    static SDL_Gamepad* lastPad[MaxUsers] = {};
+    uint16_t asked[2] = {};
+    uint32_t serial = 0;
+    GetHostVibration(user, asked[0], asked[1], serial);
+    const uint16_t left = gamepad != nullptr ? ScaleRumble(asked[0], strength) : 0;
+    const uint16_t right = gamepad != nullptr ? ScaleRumble(asked[1], strength) : 0;
+    const uint64_t now = SDL_GetTicks();
+    const bool changed = left != lastLeft[user] || right != lastRight[user] || gamepad != lastPad[user];
+    if (!changed && ((left | right) == 0 || now - sentAt[user] < 500))
+        return;
+    if (gamepad != nullptr)
+        SDL_RumbleGamepad(gamepad, left, right, (left | right) != 0 ? 1000 : 0);
+    if (changed && gamepad != nullptr)
+        fprintf(stderr, "[input] rumble player %d: the game asked %u/%u, %s: %u/%u\n", user + 1, unsigned(asked[0]), unsigned(asked[1]),
+            strength.c_str(), unsigned(left), unsigned(right));
+    lastLeft[user] = left;
+    lastRight[user] = right;
+    lastPad[user] = gamepad;
+    sentAt[user] = now;
 }
 
 static std::string GamepadGuid(SDL_JoystickID id)
@@ -216,6 +261,14 @@ int main(int argc, char** argv)
             fprintf(stderr, "unknown voice language \"%s\", using English\n", settings.voiceLanguage.c_str());
     }
 
+    if (settings.nightmareFromStart)
+    {
+        if (::game::Current().SetNightmareFromStart == nullptr)
+            fprintf(stderr, "%s has no locked difficulty, ignoring nightmare_from_start\n", game.name);
+        else
+            ::game::Current().SetNightmareFromStart(true);
+    }
+
     PlatformInit();
     PlatformInstallFaultHandler(OnFault);
 
@@ -283,11 +336,13 @@ int main(int argc, char** argv)
     glyphs::Init(settings);
     texpack::ConfigureForGame(game.id, settings.textureDump, settings.texturePacks);
     PortalInit();
+    gamemenu::Init(settings, window, SSA_GAME_VERSION);
     ToyboxInit(window);
     ToyboxSetAutoOpen(settings.toyboxAutoOpen);
     // While the game runs, Skylauncher refuses to restore a backup over its saves (Settings > Game data,
     // save_backup.h). The marker holds this process id; a crash leaves it behind and the launcher sees it is gone.
     savebackup::SetGameRunning(true);
+    progress::BeginSession(game.id); // play time: written every minute and at exit (collection/progress.h)
     auto mainThread = CreateGuestThread(g_module.entryPoint, 0, 0, g_module.stackSize, false, 0);
 
     HostInput input = MakeHostInput(settings);
@@ -303,6 +358,7 @@ int main(int argc, char** argv)
             if (mainThread->exited)
                 break;
         }
+        progress::TickSession();
 
         if (headless)
         {
@@ -322,6 +378,7 @@ int main(int argc, char** argv)
                 (event.type == SDL_EVENT_WINDOW_HIDDEN && IsWindowGone()))
             {
                 savebackup::SetGameRunning(false);
+                progress::EndSession();
                 std::_Exit(0);
             }
             // The chosen gamepad (--gamepad) replaces another one in use when it shows up.
@@ -358,6 +415,8 @@ int main(int argc, char** argv)
         ToyboxFilterGamepad(state);
         SetHostGamepad(state);
         SetHostGamepad(ReadHostGamepad(secondInput, secondGamepad), 1, secondGamepad != nullptr);
+        SendRumble(0, gamepad, input.rumble[0]);
+        SendRumble(1, secondGamepad, input.rumble[1]);
         ToyboxUpdate();
         PresentDisplayFrame(); // paced by vsync
     }
@@ -366,5 +425,6 @@ int main(int argc, char** argv)
     // under them (and could wait on them forever).
     fprintf(stderr, "Main thread exited with 0x%08X\n", mainThread->exitCode);
     savebackup::SetGameRunning(false);
+    progress::EndSession();
     std::_Exit(0);
 }

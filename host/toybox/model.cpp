@@ -354,6 +354,36 @@ namespace toybox
         return CardFor(f).Busy();
     }
 
+    // The game asked for this seat while the figure it had taken was still on it (or said the Skylander died): that figure
+    // is out of health and cannot play again before the next level. A figure placed a moment ago (`waiting`: the title has
+    // not read it yet) is not the one the game gave up on.
+    bool Model::MarkOutOfHealth(int seatIndex, bool certain)
+    {
+        if (seatIndex < 0 || seatIndex >= int(seats.size()) || seats[seatIndex].path.empty() || seats[seatIndex].physical)
+            return false;
+        const SeatState& s = seats[seatIndex];
+        if (s.waiting && !certain)
+            return false;
+        const Figure* f = SeatFigure(seatIndex);
+        outOfHealth.insert(s.path);
+        if (!s.path2.empty())
+            outOfHealth.insert(s.path2);
+        char text[160];
+        snprintf(text, sizeof(text), L("%s is out of health: pick another one.", "%s n'a plus de vie : choisis-en un autre."),
+            f != nullptr ? FigureName(*f).c_str() : s.path.c_str());
+        Toast(text, 5);
+        Touch();
+        return true;
+    }
+
+    void Model::ClearOutOfHealth()
+    {
+        if (outOfHealth.empty())
+            return;
+        outOfHealth.clear();
+        Touch();
+    }
+
     std::string Model::FigureName(const Figure& f) const
     {
         if (Card card = CardFor(f); card.Swapper())
@@ -1201,6 +1231,7 @@ namespace toybox
         case Screen::Add: RunAdd(command); break;
         case Screen::Name: RunName(command); break;
         case Screen::Manage: RunManage(command); break;
+        case Screen::Menu: RunMenu(command); break;
         case Screen::Wheel:
             if (command == Command::Back)
             {

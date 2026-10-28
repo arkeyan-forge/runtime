@@ -196,6 +196,7 @@ namespace
             fprintf(stderr, "\nFault (%s) at guest address 0x%08X\n", description, uint32_t(address - g_memory.base));
         else
             fprintf(stderr, "\nFault (%s) at host address %p\n", description, hostAddress);
+        PrintGuestLocation();
     }
 
     int16_t Axis(double value)

@@ -4,6 +4,7 @@
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 
 // resources/collection/catalogue.json, built in by cmake/embed_file.cmake.
 extern const unsigned char g_embeddedCatalogue[];

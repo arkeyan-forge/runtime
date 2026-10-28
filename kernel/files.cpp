@@ -504,6 +504,8 @@ namespace
             status = OpenDiscFile(file->path, desiredAccess, *file);
         }
 
+        if (status == StatusSuccess)
+            ::game::NoteFileOpen(file->path);
         // The time since start (the same origin as SKY_FRAME_TIMES) times the loads (tools/perf/load_times.py).
         fprintf(stderr, "[file] open %s -> 0x%08X at %.3f s\n", file->path.c_str(), status,
             std::chrono::duration<double>(std::chrono::steady_clock::now() - g_processStart).count());

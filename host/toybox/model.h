@@ -9,6 +9,7 @@
 #include "host/collection/upgrades.h"
 #include <cstdint>
 #include <functional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -31,6 +32,7 @@ namespace toybox
         Manage,    // screen 10
         Wheel,     // screen 4, over the game
         WheelList, // screen 5, over the game
+        Menu,      // the F3 menu: volume, FPS counter, settings, Report a problem (docs/runtime/host/gamemenu.md), over the game
     };
 
     // A place on the portal (catalogue seats) and what is on it.
@@ -170,6 +172,15 @@ namespace toybox
         int cursor = 0;
     };
 
+    // One line of the F3 menu.
+    struct MenuRow
+    {
+        enum class Kind { Slider, Toggle, Choice, Action } kind = Kind::Action;
+        std::string label, value;   // value: "70 %", "On", "60", "Auto"; empty for an action
+        int percent = 0;            // Slider: 0-100
+        bool nextStart = false;     // applies at the next start (the row says so)
+    };
+
     class Model
     {
     public:
@@ -223,8 +234,16 @@ namespace toybox
         uint64_t holdStart = 0;     // A held on a hold button (dialog), since
         float holdProgress = 0;
 
+        // --- The F3 menu ---------------------------------------------------------------------------------------------------
+        static constexpr int MenuRowCount = 10;
+        int menuRow = 0;
+        std::vector<MenuRow> MenuRows() const;
+        void OpenMenu();
+        void FocusMenuRow(int row, int step); // the mouse: focus the row, then step -1 / +1 (a value) or 0 (do it)
+
         // --- Messages --------------------------------------------------------------------------------------------------
         uint32_t lightRgb = 0;      // the portal's light as the game last set it, in 4 steps per channel (0xRRGGBB); 0 = off
+        std::string fps;            // the FPS counter's text ("30 FPS"), empty: off; set by toybox.cpp, drawn in the corner
         std::string toast;          // shown 3 s (5 s for long ones), in the Toy Box and over the game
         uint64_t toastUntil = 0;
         void Notice(const std::string& text, uint64_t seconds) { Toast(text, seconds); } // ToyboxNotice (host/toybox.h)
@@ -282,6 +301,12 @@ namespace toybox
         // `figures` lists its top (a lone half is its own card). In the Half screen every dump is its own card.
         collection::Card CardFor(const collection::Figure& f) const;
         bool CardBusy(const collection::Figure& f) const;
+        // Out of health (the game asked for the seat again while its figure was on it, or said the Skylander died): the
+        // dumps that cannot play until the next level. The card and the seat show a red cross; they can still be picked.
+        bool OutOfHealth(const collection::Figure& f) const { return outOfHealth.count(f.path) != 0; }
+        bool MarkOutOfHealth(int seatIndex, bool certain); // true when a figure was marked; `certain`: the game said it died
+        void ClearOutOfHealth();
+        std::set<std::string> outOfHealth;
         std::string FigureName(const collection::Figure& f) const;
         std::vector<std::string> FigureActions() const;          // the Figure page's lines
         std::vector<std::string> ColumnRows() const;             // the top row's places after the seats
@@ -345,6 +370,8 @@ namespace toybox
         void RunName(Command command);
         void RunManage(Command command);
         void RunDialog(Command command);
+        void RunMenu(Command command);
+        void MenuStep(int row, int step);
 
         // Portal.
         bool PutOn(int seatIndex, const std::string& path, bool fromWheel = false);
