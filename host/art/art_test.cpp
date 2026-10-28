@@ -4,6 +4,7 @@
 // what it got.
 //   ./SSAArtTest [--keep]            --keep: leave the scratch pictures to look at
 #include "host/art/alchemy_archive.h"
+#include "host/art/disc_languages.h"
 #include "host/art/game_art.h"
 #include "host/art/ico.h"
 #include "host/art/lux_images.h"
@@ -767,6 +768,37 @@ void TestIco()
     CHECK(MakeIco({ 1, 2, 3 }).empty());
 }
 
+    // Which languages a disc holds, from file names typed by hand (no game data).
+    void TestDiscLanguages()
+    {
+        using V = std::vector<std::string>;
+        // Spyro's Adventure: text folders and voice banks, per language; other folders (Japanese) and stray files are ignored.
+        V lux = { "/audio/eng/voice.bnk", "/audio/fre/voice.bnk", "/audio/spa/voice.bnk", "/audio/levels/a.bnk", "/text/eng/global.lxb",
+            "/text/fre/global.lxb", "/Text/GER/global.lxb", "/text/jap/global.lxb", "/text/dan", "/movies/eng/legal.bik" };
+        art::DiscLanguages ssa = art::LanguagesOnDisc("ssa", lux);
+        CHECK((ssa.text == V{ "en", "fr", "de" }));
+        CHECK((ssa.voice == V{ "en", "fr", "es" })); // text and voices are decided apart
+        CHECK((art::LanguagesOnDisc("ssa", { "\\audio\\ita\\voice.bnk" }).voice == V{ "it" }));
+        CHECK(art::LanguagesOnDisc("ssa", { "/default.xex" }).text.empty()); // no marker: unknown
+
+        // Swap Force: archives/<name>_<code>.pak.
+        V us = { "/archives/boss_kaos_bank_lv_en.pak", "/archives/boss_kaos_bank_lv_fr.pak", "/archives/ui_en.pak", "/archives/shared.pak",
+            "/archives/hat_staging.pak", "/default.xex" };
+        CHECK((art::LanguagesOnDisc("swapforce", us).text == V{ "en", "fr" }));
+        CHECK((art::LanguagesOnDisc("swapforce", us).voice == V{ "en", "fr" }));
+        V europe = { "/archives/a_it.pak", "/archives/a_es.pak", "/archives/b_es.pak", "/other/c_en.pak" };
+        CHECK((art::LanguagesOnDisc("swapforce", europe).text == V{ "es", "it" }));
+        CHECK(art::LanguagesOnDisc("swapforce", { "/archives/a_xx.pak", "/archives/a.pak" }).voice.empty());
+
+        // Giants: not in file names; all twelve whatever the list.
+        art::DiscLanguages giants = art::LanguagesOnDisc("giants", {});
+        CHECK(giants.text.size() == 12 && giants.text == giants.voice && giants.text[4] == "es-419");
+        CHECK(art::LanguagesOnDisc("trapteam", us).text.empty());
+
+        CHECK(art::JoinLanguages({ "en", "fr" }) == "en,fr" && art::JoinLanguages({}).empty());
+        CHECK((art::SplitLanguages("en,,fr,") == V{ "en", "fr" }) && art::SplitLanguages("").empty());
+    }
+
 int main(int argc, char** argv)
 {
     bool keep = argc > 1 && strcmp(argv[1], "--keep") == 0;
@@ -776,6 +808,7 @@ int main(int argc, char** argv)
     TestAlchemy();
     TestLux();
     TestIco();
+    TestDiscLanguages();
 
     // Scratch data folder: SKYLANDERS_DATA if set (the harness sets one), else a temporary one.
     std::filesystem::path scratch;

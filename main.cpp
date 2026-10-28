@@ -2,6 +2,7 @@
 #include "host/collection/datadir.h"
 #include "host/collection/save_backup.h"
 #include "host/display.h"
+#include "host/env.h"
 #include "host/glyphs.h"
 #include "host/input.h"
 #include "host/launcher.h"
@@ -30,7 +31,6 @@
 #ifdef __APPLE__
 #include <objc/message.h>
 #include <objc/runtime.h>
-#include "host/env.h"
 #endif
 
 // The window went away without a close request (SDL_EVENT_WINDOW_HIDDEN: on macOS an NSWindow closed or ordered out
@@ -241,7 +241,9 @@ int main(int argc, char** argv)
         HostAudioInit();
         gpu::g_settings = { .resolutionScale = settings.resolutionScale, .anisotropy = settings.anisotropy, .vsync = settings.vsync,
             .fpsLimit = settings.fpsLimit };
-        window = CreateDisplayWindow("Skylanders Native", 1280, 720, settings.fullscreen); // the product name, for every game
+        // The game's name and its version (games/<id>/game.txt): "Skylanders: Spyro's Adventure v0.9.1".
+        const std::string title = std::string(g_gameInfo.name) + " v" + SSA_GAME_VERSION;
+        window = CreateDisplayWindow(title.c_str(), 1280, 720, settings.fullscreen);
 #ifndef __APPLE__ // macOS: the bundle's icon (SSABuild's BundleIcon)
         if (window != nullptr) // the game's own icon from its default.xex; without one, the system's
         {

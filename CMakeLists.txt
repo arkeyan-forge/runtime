@@ -42,6 +42,7 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/embedded_art_manifests.cpp
     COMMENT "Embedding the art manifests" VERBATIM)
 set(SSA_ART_SOURCES
     host/art/alchemy_archive.cpp
+    host/art/disc_languages.cpp
     host/art/game_art.cpp
     host/art/game_text.cpp
     host/art/lux_images.cpp
@@ -371,3 +372,7 @@ if(SSA_UWP)
     set_source_files_properties(gpu/gpu.cpp DIRECTORY gpu PROPERTIES COMPILE_OPTIONS "${SSA_UWP_DESKTOP_FAMILY}")
     set_target_properties(SSAPortalTest SSAFigureTest SSAArtTest SSACollectionTest SSASettingsTest SSARecompGpuTest PROPERTIES EXCLUDE_FROM_ALL ON)
 endif()
+
+# The game's version in its window title (games/<id>/game.txt, read by the top CMakeLists.txt): main.cpp only, so a new
+# version leaves the other files' compile commands (and the kit's compile.args) unchanged.
+set_source_files_properties(main.cpp PROPERTIES COMPILE_DEFINITIONS SSA_GAME_VERSION="${SSA_GAME_VERSION}")

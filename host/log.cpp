@@ -1,5 +1,6 @@
 #include "host/log.h"
 #include "host/settings.h"
+#include "env.h"
 #include "collection/datadir.h"
 #include <SDL3/SDL.h>
 #include <chrono>
@@ -17,7 +18,6 @@
 #include <fcntl.h>
 #include <sys/utsname.h>
 #include <unistd.h>
-#include "env.h"
 #endif
 #ifdef __APPLE__
 #include <sys/sysctl.h>
