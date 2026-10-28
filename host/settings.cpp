@@ -131,7 +131,7 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
         return it != config.end() ? it->second : empty;
     };
     const char* file = "launcher.ini";
-    for (const auto& [key, value] : section("video"))
+    auto video = [&](const std::string& key, const std::string& value)
     {
         if (key == "resolution_scale") set.Scale(file, value);
         else if (key == "aspect") set.Aspect(file, value);
@@ -143,10 +143,13 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
         else if (key == "texture_dump") set.Bool(file, "texture_dump", value, s.textureDump);
         else if (key == "texture_packs") set.Bool(file, "texture_packs", value, s.texturePacks);
         else if (key == "original_resolution") set.Bool(file, "original_resolution", value, s.originalResolution);
-    }
-    // The game's own video section (Skylauncher keeps one per game) wins over [video] for the keys that are per game.
+    };
+    for (const auto& [key, value] : section("video"))
+        video(key, value);
+    // The game's own video section (the launcher keeps one per game, and PLAY copies it into [video]) wins over [video],
+    // so a game started without PLAY (its own icon, a shortcut to the runtime) still gets what its page shows.
     for (const auto& [key, value] : section((gameSection + ".video").c_str()))
-        if (key == "original_resolution") set.Bool(file, "original_resolution", value, s.originalResolution);
+        video(key, value);
     for (const auto& [key, value] : section("input"))
     {
         if (key == "device") set.Device(file, value);

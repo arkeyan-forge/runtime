@@ -55,6 +55,7 @@ namespace
     std::recursive_mutex g_mutex;
     uint64_t g_frame = 1;
     std::chrono::steady_clock::time_point g_swapEnd; // SKY_FRAME_TIMES
+    const auto g_processStart = std::chrono::steady_clock::now(); // set at start-up: SKY_FRAME_TIMES's origin
 
     // Resolution scale (settings): host render targets, and the textures resolved from them, are this many times the
     // guest's surfaces, so guest pixel coordinates (viewports, scissors, resolve and clear rectangles) are scaled by it.
@@ -1819,14 +1820,14 @@ PPC_FUNC(GAME_HOOK(D3DDevice_Swap))
                 (unsigned long long)g_frame, g_stats.draws, g_stats.resolves, g_stats.skippedShader, g_stats.skippedTarget, fps,
                 TakeRingJumps());
         }
-        // SKY_FRAME_TIMES=<file>: one line per frame: milliseconds since start at the present, the frame's work (from
-        // the previous swap's end to this swap, without the vblank wait), its draws. tools/perf/frames.py reads it.
+        // SKY_FRAME_TIMES=<file>: one line per frame: milliseconds since start-up at the present (the origin of the
+        // `[file] open` lines' times), the frame's work (from the previous swap's end to this swap, without the vblank
+        // wait), its draws. tools/perf/frames.py and load_times.py read it.
         static FILE* frameTimes = skyenv::Get("SKY_FRAME_TIMES") != nullptr ? fopen(skyenv::Get("SKY_FRAME_TIMES"), "w") : nullptr;
-        static const auto start = std::chrono::steady_clock::now();
         if (frameTimes != nullptr)
         {
             auto now = std::chrono::steady_clock::now();
-            fprintf(frameTimes, "%.3f %.3f %u\n", std::chrono::duration<double, std::milli>(now - start).count(),
+            fprintf(frameTimes, "%.3f %.3f %u\n", std::chrono::duration<double, std::milli>(now - g_processStart).count(),
                 std::chrono::duration<double, std::milli>(ready - g_swapEnd).count(), g_stats.draws);
             fflush(frameTimes);
         }

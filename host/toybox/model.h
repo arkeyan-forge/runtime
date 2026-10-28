@@ -227,6 +227,7 @@ namespace toybox
         uint32_t lightRgb = 0;      // the portal's light as the game last set it, in 4 steps per channel (0xRRGGBB); 0 = off
         std::string toast;          // shown 3 s (5 s for long ones), in the Toy Box and over the game
         uint64_t toastUntil = 0;
+        void Notice(const std::string& text, uint64_t seconds) { Toast(text, seconds); } // ToyboxNotice (host/toybox.h)
         int tidied = 0;             // figures this start's tidy moved (the one-time message)
 
         // --- Calls from toybox.cpp -----------------------------------------------------------------------------------

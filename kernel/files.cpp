@@ -26,6 +26,7 @@ namespace fs = std::filesystem;
 
 namespace
 {
+    const auto g_processStart = std::chrono::steady_clock::now(); // set at start-up, like SKY_FRAME_TIMES's origin
     constexpr uint32_t StatusSuccess = 0;
     constexpr uint32_t StatusBufferOverflow = 0x80000005;
     constexpr uint32_t StatusNoMoreFiles = 0x80000006;
@@ -503,7 +504,9 @@ namespace
             status = OpenDiscFile(file->path, desiredAccess, *file);
         }
 
-        fprintf(stderr, "[file] open %s -> 0x%08X\n", file->path.c_str(), status);
+        // The time since start (the same origin as SKY_FRAME_TIMES) times the loads (tools/perf/load_times.py).
+        fprintf(stderr, "[file] open %s -> 0x%08X at %.3f s\n", file->path.c_str(), status,
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - g_processStart).count());
         WriteIoStatus(ioStatusBlock, status, status == StatusSuccess ? information : 0);
         if (status != StatusSuccess)
             return status;

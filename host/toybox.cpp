@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <mutex>
 #include <string>
 #include <vector>
 #include "env.h"
@@ -32,6 +33,10 @@ namespace
 
     SDL_Window* g_window;
     bool g_enabled;
+    // ToyboxNotice (any thread) waits here for ToyboxUpdate (main thread).
+    std::mutex g_noticeMutex;
+    std::pair<std::string, std::string> g_notice;
+    bool g_noticePending;
     gpu::Texture* g_texture;
     std::vector<uint32_t> g_pixels;
     bool g_overlayShown;
@@ -659,12 +664,27 @@ static void FollowPrompt(toybox::Model& model)
         g_openedByPrompt = false;
 }
 
+void ToyboxNotice(const char* english, const char* french)
+{
+    std::lock_guard lock(g_noticeMutex);
+    g_notice = { english, french };
+    g_noticePending = true;
+}
+
 void ToyboxUpdate()
 {
     if (!g_enabled)
         return;
     RunScript();
     toybox::Model& model = M();
+    {
+        std::lock_guard lock(g_noticeMutex);
+        if (g_noticePending)
+        {
+            g_noticePending = false;
+            model.Notice(toybox::French() ? g_notice.second : g_notice.first, 4);
+        }
+    }
     FollowPrompt(model);
     uint64_t now = SDL_GetTicksNS();
     // Tab held: the wheel.

@@ -1,5 +1,6 @@
 #include "kernel/video.h"
 #include "game.h"
+#include "host/toybox.h"
 #include "memory.h"
 #include "platform/platform.h"
 #include "thread.h"
@@ -11,6 +12,7 @@
 #include <cstdio>
 #include <deque>
 #include <mutex>
+#include <utility>
 #include <vector>
 #include "../host/env.h"
 
@@ -30,6 +32,7 @@ namespace
     std::condition_variable g_vblankSignal;
     bool g_vblanksRunning;
     uint64_t g_vblanks;
+    uint64_t g_interruptsHandled; // interrupts (blanks and others) whose guest callback has returned (InterruptsHandled)
     uint64_t g_lastFlip;
 
     uint32_t g_fpsLimit = 30;
@@ -119,6 +122,11 @@ namespace
             ctx.r4.u64 = callbackContext;
             auto called = std::chrono::steady_clock::now();
             (PPC_LOOKUP_FUNC(g_memory.base, callback))(ctx, g_memory.base);
+            {
+                std::lock_guard lock(g_mutex);
+                g_interruptsHandled++;
+            }
+            g_vblankSignal.notify_all();
             if (logVBlanks && due != std::chrono::steady_clock::time_point{})
                 log.Add(called - due, std::chrono::steady_clock::now() - called);
         }
@@ -179,6 +187,9 @@ void WaitForFlip(uint32_t presentInterval)
                 h.fits = 0;
                 h.fitsToRestore = h.framesAtSixty < HalfRate::ShortSixty
                     ? std::min(h.fitsToRestore * 2, HalfRate::MaxFitsToRestore) : HalfRate::FitsToRestore;
+                static bool told = false; // once per run, in the corner, in the game's text language (the Toy Box's toast)
+                if (!std::exchange(told, true))
+                    ToyboxNotice("30 FPS: 60 not held", "30 FPS : 60 non tenu");
                 if (h.logged++ < 20)
                     fprintf(stderr, "[video] fps limit 60: frames miss their 16.7 ms blank, shown at 30 FPS until they fit again\n");
             }
@@ -203,6 +214,20 @@ void WaitForFlip(uint32_t presentInterval)
     uint64_t target = vblanks == 0 ? g_vblanks : g_lastFlip + vblanks;
     g_vblankSignal.wait(lock, [&] { return g_vblanks >= target; });
     g_lastFlip = g_vblanks;
+}
+
+uint64_t InterruptsHandled()
+{
+    std::lock_guard lock(g_mutex);
+    return g_interruptsHandled;
+}
+
+void WaitForInterruptHandled(uint64_t since)
+{
+    std::unique_lock lock(g_mutex);
+    if (!g_vblanksRunning)
+        return;
+    g_vblankSignal.wait_for(lock, 2 * VBlankPeriod, [&] { return g_interruptsHandled != since; });
 }
 
 void SetFrameRateLimit(uint32_t fps)

@@ -25,3 +25,7 @@ void ToyboxUpdate();
 // [portal] toybox_auto_open (default on): when the game asks for a figure (its "place a Skylander on the portal" screen),
 // the Toy Box opens by itself on that player's seat; it closes again when the prompt goes away. Emulated portal only.
 void ToyboxSetAutoOpen(bool enabled);
+
+// Any thread: a short message over the game (the Toy Box's toast, 4 s), in English or French by the game's text language.
+// Nothing is shown when the Toy Box is unavailable (no window, or its fonts did not load).
+void ToyboxNotice(const char* english, const char* french);

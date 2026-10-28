@@ -153,6 +153,14 @@ int main()
     run = Parse({ { "swapforce.video", { { "original_resolution", "1" } } } }, {}, {}); // another game's section: ignored
     CHECK(run.ok && !run.settings.originalResolution);
 
+    // The game's own [<game>.video] wins over [video] for every video key (a game started without the launcher's PLAY).
+    run = Parse({ { "video", { { "fps_limit", "30" }, { "skip_intro_movies", "0" } } },
+                  { "ssa.video", { { "fps_limit", "60" }, { "skip_intro_movies", "1" }, { "resolution_scale", "3" } } },
+                  { "giants.video", { { "fps_limit", "30" }, { "skip_intro_movies", "0" } } } }, {}, {});
+    CHECK(run.ok && run.warnings.empty() && run.settings.fpsLimit == 60 && run.settings.skipIntroMovies && SkipIntroMovies());
+    run = Parse({ { "ssa.video", { { "fps_limit", "60" } } } }, {}, { "--fps-limit", "30" });
+    CHECK(run.ok && run.settings.fpsLimit == 30);
+
     // aspect: auto by default; 16:9 from the file or the command line (the last wins); anything else warns.
     run = Parse({}, {}, {});
     CHECK(run.settings.aspectAuto);
