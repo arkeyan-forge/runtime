@@ -17,7 +17,7 @@
 #include <utility>
 #include "../host/env.h"
 
-#if defined(__APPLE__)
+#if defined(SSA_METAL)
 #include "shaders/present_metallib.h"
 #endif
 #if defined(_WIN32)
@@ -28,7 +28,7 @@
 #include "shaders/present_ReadbackRawCS_dxil.h"
 #include "shaders/present_ResolveDepthPS_dxil.h"
 #endif
-#if !defined(__APPLE__) && !defined(PLUME_D3D12_COREWINDOW)
+#if !defined(SSA_METAL) && !defined(PLUME_D3D12_COREWINDOW)
 #include "shaders/present_OverlayPS_spirv.h"
 #include "shaders/present_PresentPS_spirv.h"
 #include "shaders/present_PresentVS_spirv.h"
@@ -41,13 +41,13 @@ using namespace plume;
 
 namespace plume
 {
-#if defined(__APPLE__)
+#if defined(SSA_METAL)
     std::unique_ptr<RenderInterface> CreateMetalInterface();
 #endif
 #if defined(_WIN32)
     std::unique_ptr<RenderInterface> CreateD3D12Interface();
 #endif
-#if !defined(__APPLE__) && !defined(PLUME_D3D12_COREWINDOW)
+#if !defined(SSA_METAL) && !defined(PLUME_D3D12_COREWINDOW)
     std::unique_ptr<RenderInterface> CreateVulkanInterface();
 #endif
 }
@@ -55,7 +55,7 @@ namespace plume
 
 namespace
 {
-#if defined(__APPLE__)
+#if defined(SSA_METAL)
     const char* BackendName = "Metal";
 #elif defined(PLUME_D3D12_COREWINDOW)
     const char* BackendName = "D3D12";
@@ -299,7 +299,7 @@ namespace
     std::unique_ptr<RenderShader> CreatePresentShader(const char* entryPoint)
     {
         RenderShaderFormat format = g_context->renderInterface->getCapabilities().shaderFormat;
-#if defined(__APPLE__)
+#if defined(SSA_METAL)
         return g_context->device->createShader(g_presentMetallib, sizeof(g_presentMetallib), entryPoint, format);
 #else
         std::span<const std::pair<const char*, std::span<const uint8_t>>> blobs;
@@ -419,7 +419,7 @@ namespace
     bool GetRenderWindow(SDL_Window* window, RenderWindow& renderWindow)
     {
         SDL_PropertiesID properties = SDL_GetWindowProperties(window);
-#if defined(__APPLE__)
+#if defined(SSA_METAL)
         void* nsWindow = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, nullptr);
         if (nsWindow == nullptr || (SDL_GetWindowFlags(window) & SDL_WINDOW_METAL) == 0)
             return false;
@@ -442,6 +442,13 @@ namespace
         // PLUME_SDL3_VULKAN_ENABLED: plume creates the surface through SDL.
         (void)properties;
         renderWindow = window;
+#if defined(__APPLE__)
+        // MoltenVK test build (SSA_MACOS_VULKAN): SDL's offscreen driver has no surface, so draw offscreen like the Metal
+        // build does (SKY_GPU_SNAPSHOT reads frames back). Linux keeps SDL's headless swapchain (SKY_DUMP_FRAME).
+        const char* driver = SDL_GetCurrentVideoDriver();
+        if (driver != nullptr && SDL_strcmp(driver, "offscreen") == 0)
+            return false;
+#endif
         return (SDL_GetWindowFlags(window) & SDL_WINDOW_VULKAN) != 0;
 #endif
     }
@@ -563,7 +570,7 @@ namespace
 
 SDL_WindowFlags gpu::WindowFlags()
 {
-#if defined(__APPLE__)
+#if defined(SSA_METAL)
     return SDL_WINDOW_METAL;
 #elif defined(_WIN32)
     return 0;
@@ -582,7 +589,7 @@ bool gpu::Init(SDL_Window* window, uint32_t width, uint32_t height)
     g_context = std::make_unique<Context>();
     Context& c = *g_context;
     c.window = window;
-#if defined(__APPLE__)
+#if defined(SSA_METAL)
     c.renderInterface = CreateMetalInterface();
 #elif defined(PLUME_D3D12_COREWINDOW)
     D3D12EnableDred();
@@ -612,7 +619,7 @@ bool gpu::Init(SDL_Window* window, uint32_t width, uint32_t height)
     }
 #endif
 #endif
-#if defined(__APPLE__) || defined(PLUME_D3D12_COREWINDOW)
+#if defined(SSA_METAL) || defined(PLUME_D3D12_COREWINDOW)
     if (c.renderInterface != nullptr)
         c.device = c.renderInterface->createDevice();
 #endif

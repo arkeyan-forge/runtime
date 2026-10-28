@@ -1,5 +1,14 @@
 # Host renderer (plume) and its offscreen self-test.
+# SSA_METAL: the Metal backend (macOS default). SSA_MACOS_VULKAN=ON builds the Vulkan backend on macOS instead (MoltenVK),
+# a test configuration for the validation layers: docs/runtime/gpu/plume_backends.md.
+set(SSA_METAL OFF)
+if(APPLE AND NOT SSA_MACOS_VULKAN)
+    set(SSA_METAL ON)
+endif()
 add_library(SSARecompGpu STATIC gpu.cpp draw.cpp buffer_cache.cpp worker.cpp)
+if(SSA_METAL)
+    target_compile_definitions(SSARecompGpu PUBLIC SSA_METAL)
+endif()
 if(WIN32)
     target_sources(SSARecompGpu PRIVATE d3d12_diagnostics.cpp d3d12_pipeline_cache.cpp) # DRED, removal report; PSO cache
 endif()
@@ -13,8 +22,11 @@ if(EXISTS ${SSA_SHADER_CACHE_SOURCE})
     add_library(SSAShaderCache STATIC ${SSA_SHADER_CACHE_SOURCE})
     target_include_directories(SSAShaderCache PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_definitions(SSARecompGpu PRIVATE SSA_SHADER_CACHE)
+    if(SSA_METAL)
+        target_compile_definitions(SSAShaderCache PRIVATE SSA_METAL)
+    endif()
     target_link_libraries(SSARecompGpu PRIVATE SSAShaderCache)
-    if(NOT APPLE)
+    if(NOT SSA_METAL)
         # SPIR-V entries are smol-v encoded (public domain / MIT, like XenosRecomp's encoder).
         set(SMOLV_DIR ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/smol-v/source)
         target_sources(SSARecompGpu PRIVATE ${SMOLV_DIR}/smolv.cpp)
@@ -40,7 +52,7 @@ if(EXISTS ${SSA_PIPELINE_BASELINE})
     target_compile_definitions(SSARecompGpu PRIVATE SSA_PIPELINE_BASELINE)
 endif()
 
-if(APPLE)
+if(SSA_METAL)
     # MSL -> AIR -> metallib, embedded. Xcode 26+ ships the compiler separately.
     execute_process(COMMAND xcrun -sdk macosx metal --version RESULT_VARIABLE METAL_MISSING OUTPUT_QUIET ERROR_QUIET)
     if(METAL_MISSING)

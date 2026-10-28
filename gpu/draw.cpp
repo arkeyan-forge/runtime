@@ -30,7 +30,7 @@
 #if defined(SSA_SHADER_CACHE)
 #include "gpu/shader_cache.h"
 #include <zstd.h>
-#if !defined(__APPLE__)
+#if !defined(SSA_METAL)
 #include <smolv.h>
 #endif
 #endif
@@ -301,7 +301,7 @@ namespace
         SamplerSlot(gpu::SamplerState{});
 
 #if defined(SSA_SHADER_CACHE)
-#if defined(__APPLE__)
+#if defined(SSA_METAL)
         const uint8_t* compressed = g_compressedAirCache;
         size_t compressedSize = g_airCacheCompressedSize, size = g_airCacheDecompressedSize;
 #else
@@ -395,7 +395,7 @@ namespace
         {
             RenderShaderFormat format = g_context->renderInterface->getCapabilities().shaderFormat;
             auto created = std::make_unique<gpu::XenosShader>(gpu::XenosShader{ {}, entry->specConstantsMask, hash, false });
-#if defined(__APPLE__)
+#if defined(SSA_METAL)
             created->variants.push_back(g_context->device->createShader(g_draw->shaderCode.data() + entry->airOffset, entry->airSize, "shaderMain", format));
 #else
             if (g_draw->dxil)
@@ -596,7 +596,15 @@ namespace
         for (uint32_t i = 0; i < key.inputCount; i++)
         {
             const gpu::VertexInput& input = key.inputs[i];
-            elements[i] = RenderInputElement("ATTRIBUTE", input.location, input.location, input.format, input.stream, input.offset);
+            // The translated shaders read locations 1-3 (normal, tangent, binormal) and 9 (blend indices) as uint4 and
+            // every other input as float4. An integer format on a float input (the game's UBYTE4 PSIZE, location 16) is
+            // converted by value by D3D12 and Metal; Vulkan needs the scaled format (the validation layer rejects the
+            // pairing and MoltenVK fails the pipeline). The key keeps the guest's format: pipelines.bin and the baseline
+            // were written with it.
+            const bool uintInput = input.location >= 1 && input.location <= 3 || input.location == 9;
+            const RenderFormat format = !uintInput && input.format == RenderFormat::R8G8B8A8_UINT
+                ? RenderFormat::R8G8B8A8_USCALED : input.format;
+            elements[i] = RenderInputElement("ATTRIBUTE", input.location, input.location, format, input.stream, input.offset);
         }
         desc.inputSlots = slots;
         desc.inputSlotsCount = key.streamCount;
@@ -1322,6 +1330,11 @@ void gpu::detail::CopyTextureNow(Texture* destination, uint32_t x, uint32_t y, T
         return;
     RenderCommandList& list = Record();
     Transition(list, *source, RenderTextureLayout::COPY_SOURCE, RenderBarrierStage::COPY);
+    // A second copy into an image already in COPY_DEST (the game resolves several times into one texture) is a
+    // write-after-write hazard Vulkan wants a barrier for; the layout is unchanged, so Transition adds none.
+    if (destination->layout == RenderTextureLayout::COPY_DEST &&
+        g_context->renderInterface->getCapabilities().shaderFormat == RenderShaderFormat::SPIRV)
+        list.barriers(RenderBarrierStage::COPY, RenderTextureBarrier(destination->texture.get(), RenderTextureLayout::COPY_DEST));
     Transition(list, *destination, RenderTextureLayout::COPY_DEST, RenderBarrierStage::COPY);
     RenderBox box(region.left, region.top, region.right, region.bottom);
     list.copyTextureRegion(RenderTextureCopyLocation::Subresource(destination->texture.get(), 0, slice),
