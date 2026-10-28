@@ -5,11 +5,16 @@
 // The game only uses inflateInit_ (-> inflateInit2_), inflate and inflateEnd, so the stream state can live on the
 // host: each guest z_stream gets a host one, keyed by its address; the guest's `state` field just marks it as open.
 #include "game_hooks.h"
+#include "host/env.h"
 #include "memory.h"
+#include <algorithm>
 #include <memory>
 #include <mutex>
 #include <ppc_config.h>
 #include <ppc_context.h>
+#include <cstdio>
+#include <cstring>
+#include <string>
 #include <unordered_map>
 
 #ifdef SSA_INFLATE_MINIZ
@@ -72,6 +77,56 @@ namespace
         inflateEnd(it->second.get());
         g_streams.erase(it);
     }
+
+    // CRC-32 (zlib's), the hash the game's packages key their strings by.
+    uint32_t Crc32(const std::string& text)
+    {
+        uint32_t crc = 0xFFFFFFFF;
+        for (unsigned char c : text)
+        {
+            crc ^= c;
+            for (int bit = 0; bit < 8; ++bit)
+                crc = (crc >> 1) ^ (0xEDB88320 & (0 - (crc & 1)));
+        }
+        return ~crc;
+    }
+
+    // SKY_NEXT_LEVEL=<level> (test aid, scripts only) [SSA]: the frontend's opening movie (levels\frontend\mission.str,
+    // its MoviePlayer thing) names the level a new game goes to in its `nextLevel` field: "Level_027", which the package
+    // holds as the string's CRC-32 (the field's value and the key of the string table) plus the string in its pool. With
+    // the switch, the hash becomes <level>'s (a name of gamedata.lxb's level list: Level_021, Level_010b, Level_Hub,
+    // Challenge_Level_000...), and so does the pooled string when it fits, so the game starts that level itself, its
+    // Skylander and HUD included (SKY_LEVEL only swaps level_027's files: no Skylander is created).
+    void SwapNextLevel(uint8_t* out, uint32_t size)
+    {
+        static const std::string level = [] {
+            const char* value = skyenv::Get("SKY_NEXT_LEVEL");
+            return std::string(value != nullptr ? value : "");
+        }();
+        static const std::string first = "Level_027";
+        static constexpr char marker[] = "nextLevel";
+        if (level.empty() || std::search(out, out + size, marker, marker + sizeof(marker) - 1) == out + size)
+            return;
+        const std::string pooled = '\0' + first + '\0';
+        uint8_t* at = std::search(out, out + size, pooled.begin(), pooled.end());
+        if (at == out + size)
+            return;
+        if (level.size() <= first.size())
+        {
+            memset(at + 1, 0, first.size());
+            memcpy(at + 1, level.data(), level.size());
+        }
+        const uint32_t from = Crc32(first), to = Crc32(level);
+        const uint8_t fromBytes[4] = { uint8_t(from >> 24), uint8_t(from >> 16), uint8_t(from >> 8), uint8_t(from) };
+        int hashes = 0;
+        for (uint8_t* hash = out; (hash = std::search(hash, out + size, fromBytes, fromBytes + 4)) != out + size; hash += 4)
+        {
+            hash[0] = uint8_t(to >> 24), hash[1] = uint8_t(to >> 16), hash[2] = uint8_t(to >> 8), hash[3] = uint8_t(to);
+            ++hashes;
+        }
+        fprintf(stderr, "[level] the opening movie's nextLevel is %s (SKY_NEXT_LEVEL, %d hashes)\n", level.c_str(), hashes);
+    }
+
 }
 
 // inflateInit2_(strm, windowBits, version, stream_size); inflateInit_ (0x825F23B8) branches here with windowBits 15.
@@ -134,6 +189,8 @@ PPC_FUNC(GAME_HOOK(inflate))
 
     uint32_t consumed = availIn - host->avail_in;
     uint32_t produced = availOut - host->avail_out;
+    if (produced != 0)
+        SwapNextLevel(host->next_out - produced, produced);
     g_memory.Write<uint32_t>(stream + Stream::NextIn, nextIn + consumed);
     g_memory.Write<uint32_t>(stream + Stream::AvailIn, host->avail_in);
     g_memory.Write<uint32_t>(stream + Stream::TotalIn, g_memory.Read<uint32_t>(stream + Stream::TotalIn) + consumed);
