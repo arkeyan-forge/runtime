@@ -34,6 +34,28 @@ namespace
 
     uint32_t g_fpsLimit = 30;
 
+    // fps_limit 60 when the frames do not fit in a blank: shown every 2 blanks (steady 30 FPS) until they fit again.
+    // At 60 a late frame is shown at once (WaitForFlip), so a game at 45 FPS runs at a steady ~22 ms a frame while the
+    // display's vsync shows each frame for 1 or 2 refreshes: the picture moves by equal steps shown for unequal times,
+    // a judder that made Swap Force's fast scenes (the tutorial's lava canyon and crystal tunnel) look epileptic. The
+    // engines step by the time they measure, so at 2 blanks each frame is 33 ms of game time shown for 33 ms.
+    struct HalfRate
+    {
+        static constexpr uint32_t Window = 30;     // frames looked at
+        static constexpr uint32_t MissesToHalve = 3; // late frames in the window that halve the rate
+        // Frames in a row ready within one blank of the previous flip that bring 60 back: 10 s at 30 FPS, doubled (up to
+        // 5 min) each time 60 fails again within 2 s, since a frame that fits at 30 FPS may not at 60 (more GPU work per
+        // second). Counted in blanks, not host time: at interval 1 Swap Force waits for a blank in its own code.
+        static constexpr uint32_t FitsToRestore = 300, MaxFitsToRestore = 9000, ShortSixty = 120;
+        bool active = false;
+        std::array<bool, Window> missed = {};
+        uint32_t next = 0;
+        uint32_t fits = 0;
+        uint32_t fitsToRestore = FitsToRestore;
+        uint32_t framesAtSixty = 0;
+        uint32_t logged = 0;
+    } g_halfRate;
+
     // SKY_VBLANK_LOG=1: every 600 vertical blanks, how late the interrupt thread delivered them and how long the guest's
     // interrupt callback took (median, p95, max), to tell the emulated blanks' jitter from the game's.
     struct VBlankLog
@@ -142,6 +164,40 @@ void WaitForFlip(uint32_t presentInterval)
     std::unique_lock lock(g_mutex);
     if (!g_vblanksRunning)
         return;
+    // fps_limit 60: halve the rate while the frames miss their blank (g_halfRate).
+    if (g_fpsLimit == 60 && vblanks == 1)
+    {
+        HalfRate& h = g_halfRate;
+        if (!h.active)
+        {
+            h.missed[h.next] = g_vblanks > g_lastFlip + 1; // its blank has gone by
+            h.next = (h.next + 1) % HalfRate::Window;
+            h.framesAtSixty++;
+            if (uint32_t(std::count(h.missed.begin(), h.missed.end(), true)) >= HalfRate::MissesToHalve)
+            {
+                h.active = true;
+                h.fits = 0;
+                h.fitsToRestore = h.framesAtSixty < HalfRate::ShortSixty
+                    ? std::min(h.fitsToRestore * 2, HalfRate::MaxFitsToRestore) : HalfRate::FitsToRestore;
+                if (h.logged++ < 20)
+                    fprintf(stderr, "[video] fps limit 60: frames miss their 16.7 ms blank, shown at 30 FPS until they fit again\n");
+            }
+        }
+        else
+        {
+            h.fits = g_vblanks <= g_lastFlip + 1 ? h.fits + 1 : 0;
+            if (h.fits >= h.fitsToRestore)
+            {
+                h.active = false;
+                h.missed = {};
+                h.framesAtSixty = 0;
+                if (h.logged++ < 20)
+                    fprintf(stderr, "[video] fps limit 60: frames fit in a blank again, back to 60 FPS\n");
+            }
+        }
+        if (h.active)
+            vblanks = 2;
+    }
     // A frame that missed its vertical blank is shown at once, where the console would wait for the next one: there is
     // no scan-out to tear here, and a frame a little over 2 blanks (33 ms) would otherwise take 3 (50 ms).
     uint64_t target = vblanks == 0 ? g_vblanks : g_lastFlip + vblanks;

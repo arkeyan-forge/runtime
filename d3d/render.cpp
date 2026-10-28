@@ -1355,8 +1355,17 @@ namespace
         static const char* value = skyenv::Get("SKY_DUMP_FRAME");
         if (value == nullptr || g_dump.done)
             return;
+        // SKY_DUMP_FRAMES=<n>: n consecutive frames (default 1), each opened by a "[dump] frame <swap> at <seconds>" line.
+        static const int frames = std::max(skyenv::Get("SKY_DUMP_FRAMES") != nullptr ? atoi(skyenv::Get("SKY_DUMP_FRAMES")) : 1, 1);
+        static int dumped = 0;
         if (g_dump.active)
         {
+            if (++dumped < frames)
+            {
+                fprintf(stderr, "[dump] frame %llu at %.4f s\n", static_cast<unsigned long long>(g_frame),
+                    std::chrono::duration<double>(std::chrono::steady_clock::now() - g_dump.start).count());
+                return;
+            }
             g_dump.active = false;
             g_dump.done = true;
         }
@@ -1364,6 +1373,8 @@ namespace
                                  : std::chrono::duration<double>(std::chrono::steady_clock::now() - g_dump.start).count() >= atof(value))
         {
             g_dump.active = true;
+            fprintf(stderr, "[dump] frame %llu at %.4f s\n", static_cast<unsigned long long>(g_frame),
+                    std::chrono::duration<double>(std::chrono::steady_clock::now() - g_dump.start).count());
         }
     }
 
