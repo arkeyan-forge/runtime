@@ -17,6 +17,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 #include <ppc_config.h>
 #include <ppc_context.h>
 #include "../host/env.h"
@@ -232,6 +233,41 @@ namespace
         return path;
     }
 
+    // SKY_MOVIE_SWAP=<from>:<to>[,<from>:<to>...] (test aid, scripts only; tools/pipelines/ssa_ending.sh): a movie the
+    // title opens as movies\...\<from>.bik is read from movies\<to>.bik instead, so a run can play a movie the script
+    // cannot reach (SSA's ending and credits) in the movie player's own flow, e.g. legal:sl_sc30,atvilogo:credit.
+    std::string SwapMovie(std::string path)
+    {
+        static const std::vector<std::pair<std::string, std::string>> swaps = [] {
+            std::vector<std::pair<std::string, std::string>> out;
+            const char* value = skyenv::Get("SKY_MOVIE_SWAP");
+            std::string list = value != nullptr ? value : "";
+            for (char& c : list)
+                c = char(tolower(c));
+            for (size_t at = 0; at < list.size();)
+            {
+                size_t end = std::min(list.find(',', at), list.size()), colon = list.find(':', at);
+                if (colon < end)
+                    out.emplace_back(list.substr(at, colon - at), list.substr(colon + 1, end - colon - 1));
+                at = end + 1;
+            }
+            return out;
+        }();
+        if (swaps.empty() || !path.starts_with("\\movies\\") || !path.ends_with(".bik"))
+            return path;
+        const size_t nameAt = path.rfind('\\') + 1;
+        const std::string name = path.substr(nameAt, path.size() - 4 - nameAt);
+        for (const auto& [from, to] : swaps)
+        {
+            if (name == from)
+            {
+                fprintf(stderr, "[movie] %s read from movies\\%s.bik (SKY_MOVIE_SWAP)\n", path.c_str(), to.c_str());
+                return "\\movies\\" + to + ".bik";
+            }
+        }
+        return path;
+    }
+
     // Every disc device the title can name (game:, d:, \Device\Cdrom0, symbolic links) is the same disc.
     std::string DiscPath(std::string path)
     {
@@ -254,7 +290,7 @@ namespace
                 }
             }
         }
-        return RedirectLevel(std::move(path));
+        return SwapMovie(RedirectLevel(std::move(path)));
     }
 
     std::string GuestString(uint32_t ansiString)
