@@ -160,6 +160,11 @@ int main()
     CHECK(run.ok && run.warnings.empty() && run.settings.fpsLimit == 60 && run.settings.skipIntroMovies && SkipIntroMovies());
     run = Parse({ { "ssa.video", { { "fps_limit", "60" } } } }, {}, { "--fps-limit", "30" });
     CHECK(run.ok && run.settings.fpsLimit == 30);
+    // Keys: [input], then the game's own [<game>.input] (another game's section is ignored).
+    run = Parse({ { "input", { { "key_y", "G" } } }, { "ssa.input", { { "key_y", "H" } } } }, {}, {});
+    CHECK(run.ok && run.warnings.empty() && run.settings.keys[KeyIndex("y")] == "H" && run.settings.keys[KeyIndex("x")] == "C");
+    run = Parse({ { "input", { { "key_y", "G" } } }, { "giants.input", { { "key_y", "H" } } } }, {}, {});
+    CHECK(run.ok && run.settings.keys[KeyIndex("y")] == "G");
 
     // aspect: auto by default; 16:9 from the file or the command line (the last wins); anything else warns.
     run = Parse({}, {}, {});

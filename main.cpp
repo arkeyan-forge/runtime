@@ -105,6 +105,7 @@ static GamepadState ReadHostGamepad(const HostInput& input, SDL_Gamepad* gamepad
             { SDL_GAMEPAD_BUTTON_DPAD_UP, Button::DpadUp }, { SDL_GAMEPAD_BUTTON_DPAD_DOWN, Button::DpadDown },
             { SDL_GAMEPAD_BUTTON_DPAD_LEFT, Button::DpadLeft }, { SDL_GAMEPAD_BUTTON_DPAD_RIGHT, Button::DpadRight },
             { SDL_GAMEPAD_BUTTON_START, Button::Start }, { SDL_GAMEPAD_BUTTON_BACK, Button::Back },
+            { SDL_GAMEPAD_BUTTON_TOUCHPAD, Button::Back }, // PS4 / PS5: the touchpad's click is BACK too (its glyph)
             { SDL_GAMEPAD_BUTTON_LEFT_STICK, Button::LeftThumb }, { SDL_GAMEPAD_BUTTON_RIGHT_STICK, Button::RightThumb },
             { SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, Button::LeftShoulder }, { SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, Button::RightShoulder },
             { SDL_GAMEPAD_BUTTON_SOUTH, Button::A }, { SDL_GAMEPAD_BUTTON_EAST, Button::B },

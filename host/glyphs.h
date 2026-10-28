@@ -8,7 +8,6 @@
 #include <cstdint>
 #include <functional>
 #include <span>
-#include <string>
 #include <vector>
 
 namespace gpu { struct Texture; }
@@ -18,12 +17,15 @@ union SDL_Event;
 
 namespace glyphs
 {
-    enum class Style : uint8_t { Xbox360, XboxOne, PlayStation, Nintendo, Keyboard };
+    // PlayStation: the PS4 / PS5 look (Options, the touchpad for BACK); PlayStation3: START and SELECT.
+    enum class Style : uint8_t { Xbox360, XboxOne, PlayStation, Nintendo, Keyboard, PlayStation3 };
 
     // A, B, X, Y and Start first (their order indexes the key bindings). RightStick is SSA's 3D prompt (256x256, opaque,
     // the stick seen from above); LeftStickIcon and RightStickIcon are the small stick pictures of a font atlas.
+    // Controller, ArrowsLeftRight and ArrowsUpDown are drawn on the keyboard style only (pads keep the game's picture):
+    // SSA's Controls page pad (keycaps where its buttons are) and its blue arrows (the left stick's keys).
     enum class Glyph : uint8_t { A, B, X, Y, Start, RightStick, Back, LeftStickIcon, RightStickIcon,
-        LeftBumper, RightBumper, LeftTrigger, RightTrigger };
+        LeftBumper, RightBumper, LeftTrigger, RightTrigger, Controller, ArrowsLeftRight, ArrowsUpDown };
 
     // A cell of an atlas, in base-level pixels, inclusive (the picture's bounding box as the game drew it).
     struct Cell
@@ -65,12 +67,9 @@ namespace glyphs
     void OnEvent(const SDL_Event& event, SDL_Gamepad* gamepad);
 
     Style Current();
-    // What the keycap of `glyph` (A, B, X, Y, Start or Back) shows: the bound key's name on the current layout, shortened
-    // ("Enter", "Space", "Bksp"). For the texts that name a button by word (Swap Force's "PRESS START").
-    std::string BoundKey(Glyph glyph);
 
     // Test aid, from the host's main loop before it reads events: SKY_GLYPHS_SCRIPT="ps5:25,key:45,switch:55,..." at
-    // those seconds since launch attaches a virtual SDL gamepad of that family (ps5, ps4, switch, xboxone, xbox360; the
+    // those seconds since launch attaches a virtual SDL gamepad of that family (ps5, ps4, ps3, switch, xboxone, xbox360; the
     // previous one is detached) and presses its Guide button half a second later, or ("key") sends a key press, so that
     // glyphs=auto switches through the real event path.
     void RunTestScript();

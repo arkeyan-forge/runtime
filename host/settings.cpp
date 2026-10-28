@@ -157,6 +157,10 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
         else if (key == "glyphs") set.Glyphs(file, value);
         else if (key.starts_with("key_")) set.Key(file, key.substr(4), value);
     }
+    // The game's own keys (Skylauncher keeps one copy per game, [<game>.input], and puts it in [input] at PLAY) win over
+    // [input], so a game started without the launcher still plays with its own bindings.
+    for (const auto& [key, value] : section((gameSection + ".input").c_str()))
+        if (key.starts_with("key_")) set.Key(file, key.substr(4), value);
     for (const auto& [key, value] : section("portal"))
     {
         if (key == "toybox_auto_open") set.Bool(file, "toybox_auto_open", value, s.toyboxAutoOpen);

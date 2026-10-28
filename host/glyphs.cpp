@@ -7,6 +7,7 @@
 #include "memory.h"
 #include <SDL3/SDL.h>
 #include <stb_truetype.h>
+#include <stb_image_write.h>
 #define XXH_INLINE_ALL
 #include <xxhash.h>
 #include <algorithm>
@@ -38,9 +39,14 @@ namespace
 
     const char* StyleName(Style style)
     {
-        static const char* const Names[] = { "xbox360", "xboxone", "playstation", "nintendo", "keyboard" };
+        static const char* const Names[] = { "xbox360", "xboxone", "playstation", "nintendo", "keyboard", "playstation3" };
         return Names[size_t(style)];
     }
+
+    bool IsPlayStation(Style style) { return style == Style::PlayStation || style == Style::PlayStation3; }
+
+    // The styles we draw (every one but the game's own Xbox 360).
+    constexpr Style DrawnStyles[] = { Style::XboxOne, Style::PlayStation, Style::PlayStation3, Style::Nintendo, Style::Keyboard };
 
     std::atomic<Style> g_style{ Style::Xbox360 };
     bool g_auto = true;
@@ -150,6 +156,28 @@ namespace
                 best = std::min(best, SegmentDistance(x, y, points[i * 2], points[i * 2 + 1], points[j * 2], points[j * 2 + 1]));
             }
             return best - thickness / 2;
+        };
+    }
+    // A filled triangle (x0, y0, x1, y1, x2, y2): the distance to its edges, negative inside.
+    auto Polygon(std::vector<float> p)
+    {
+        return [=](float x, float y)
+        {
+            float edge = 1e9f;
+            int sign = 0;
+            bool inside = true;
+            for (size_t i = 0; i < 3; i++)
+            {
+                size_t j = (i + 1) % 3;
+                edge = std::min(edge, SegmentDistance(x, y, p[i * 2], p[i * 2 + 1], p[j * 2], p[j * 2 + 1]));
+                float cross = (p[j * 2] - p[i * 2]) * (y - p[i * 2 + 1]) - (p[j * 2 + 1] - p[i * 2 + 1]) * (x - p[i * 2]);
+                int s = cross > 0 ? 1 : -1;
+                if (sign == 0)
+                    sign = s;
+                else if (s != sign)
+                    inside = false;
+            }
+            return inside ? -edge : edge;
         };
     }
     auto Stroke(float ax, float ay, float bx, float by, float thickness)
@@ -344,7 +372,7 @@ namespace
             return;
         }
         RoundButton(c, cx, cy, s * 0.96f);
-        if (style == Style::PlayStation)
+        if (IsPlayStation(style))
             PlayStationSymbol(c, glyph, cx, cy, s);
         else if (style == Style::XboxOne)
             XboxOneLetter(c, glyph, cx, cy, s);
@@ -379,7 +407,7 @@ namespace
         }
         static const char* const Labels[4][4] = { { "LB", "RB", "LT", "RT" }, { "L1", "R1", "L2", "R2" },
             { "L", "R", "ZL", "ZR" }, { "LB", "RB", "LT", "RT" } };
-        size_t row = style == Style::PlayStation ? 1 : style == Style::Nintendo ? 2 : 0;
+        size_t row = IsPlayStation(style) ? 1 : style == Style::Nintendo ? 2 : 0;
         Pill(c, cx, cy, hw, hh, Labels[row][index], index < 2 ? hh : std::min(hw, hh) * 0.45f);
     }
 
@@ -402,9 +430,32 @@ namespace
         case Style::Keyboard:
             Keycap(c, cx, cy, hw, hh, g_keys[start ? 4 : 5], hh * 0.7f);
             break;
-        case Style::PlayStation:
-            Pill(c, cx, cy, hw, hh, start ? "OPTIONS" : "SHARE");
+        case Style::PlayStation3:
+            Pill(c, cx, cy, hw, hh, start ? "START" : "SELECT");
             break;
+        case Style::PlayStation:
+            if (start)
+                Pill(c, cx, cy, hw, hh, "OPTIONS");
+            else // the touchpad (BACK is the touchpad's click, or Share / Create): a wide dark pad with a soft gloss
+            {
+                float pw = std::min(hw, hh * 1.9f), ph = std::min(hh, pw * 0.55f), r = ph * 0.35f;
+                c.Fill(RoundBox(cx, cy, pw + 2, ph + 2, r + 2), Rgb(0, 0, 0, 0.35f));
+                c.Fill(RoundBox(cx, cy, pw, ph, r), Rim);
+                c.Fill(RoundBox(cx, cy, pw - ph * 0.14f, ph * 0.86f, r * 0.86f), Gradient(Rgb(84, 86, 96), Rgb(28, 29, 34), cy - ph, cy + ph));
+                c.Fill(Ellipse(cx, cy - ph * 0.4f, pw * 0.8f, ph * 0.3f),
+                    Gradient(Rgb(255, 255, 255, 0.28f), Rgb(255, 255, 255, 0.03f), cy - ph * 0.75f, cy - ph * 0.1f));
+            }
+            break;
+        case Style::Xbox360: // a silver round button with a play arrow (START) or a back arrow (BACK), as on the pad
+        {
+            float k = s * 0.17f;
+            c.Fill(Circle(cx, cy, s * 0.5f), Rgb(0, 0, 0, 0.35f));
+            c.Fill(Circle(cx, cy, s * 0.475f), Rgb(70, 72, 78));
+            c.Fill(Circle(cx, cy, s * 0.43f), Gradient(Rgb(236, 238, 242), Rgb(160, 164, 172), cy - s * 0.43f, cy + s * 0.43f));
+            float d = start ? 1.0f : -1.0f;
+            c.Fill(Polygon({ cx - d * k * 0.8f, cy - k, cx + d * k * 1.1f, cy, cx - d * k * 0.8f, cy + k }), Rgb(30, 31, 36));
+            break;
+        }
         case Style::XboxOne:
         {
             float k = s * 0.2f, t = s * 0.075f, gap = s * 0.14f;
@@ -451,8 +502,7 @@ namespace
             return;
         }
         RoundButton(c, cx, cy, s * 0.96f);
-        const char* label = style == Style::PlayStation ? (left ? "L3" : "R3") : style == Style::XboxOne ? (left ? "LS" : "RS")
-            : (left ? "L" : "R");
+        const char* label = IsPlayStation(style) ? (left ? "L3" : "R3") : (left ? "LS" : "RS");
         Text(c, label, cx, cy, s * 0.6f, s * 0.36f, Rgb(244, 244, 246), Ink, s * 0.03f);
     }
 
@@ -475,11 +525,78 @@ namespace
             Keycap(c, cx + key + gap, row, key / 2, key / 2, g_keys[17], key * 0.4f);
             return;
         }
-        const char* label = style == Style::PlayStation ? "R3" : style == Style::XboxOne ? "RS" : "R";
+        const char* label = IsPlayStation(style) ? "R3" : "RS";
         Text(c, label, cx, cy, r * 1.1f, r * 0.62f, Rgb(250, 248, 250), {}, 0);
     }
 
     // RGBA8 levels (straight alpha) of `glyph` drawn for `style`.
+    // A small key of an arrow cluster: its bound key when that is one character, else an arrow (dx, dy) on the cap.
+    void ArrowKey(Canvas& c, float cx, float cy, float h, const std::string& key, float dx, float dy)
+    {
+        if (key.size() == 1)
+        {
+            Keycap(c, cx, cy, h, h, key, h * 0.8f);
+            return;
+        }
+        Keycap(c, cx, cy, h, h, "", h);
+        float k = h * 0.32f, top = cy - h * 0.07f, px = -dy, py = dx; // the arrow's tip along (dx, dy)
+        c.Fill(Polygon({ cx + dx * k, top + dy * k, cx - dx * k + px * k, top - dy * k + py * k, cx - dx * k - px * k,
+            top - dy * k - py * k }), Rgb(34, 35, 44));
+    }
+
+    // Four keys as an inverted T (up above left, down, right), centred on (cx, cy); `first`: the up key's binding.
+    void ArrowCluster(Canvas& c, float cx, float cy, float key, size_t first)
+    {
+        float h = key / 2, gap = key * 0.08f, row = cy + h + gap / 2;
+        ArrowKey(c, cx, row - key - gap, h, g_keys[first], 0, -1);
+        ArrowKey(c, cx - key - gap, row, h, g_keys[first + 2], -1, 0);
+        ArrowKey(c, cx, row, h, g_keys[first + 1], 0, 1);
+        ArrowKey(c, cx + key + gap, row, h, g_keys[first + 3], 1, 0);
+    }
+
+    // SSA's Controls page pad (360_controller, 256x256) on the keyboard: a plain pad shape with a keycap of the bound key
+    // where each button is, so that the page's leader lines (another texture) point at keycaps. The places are the
+    // original's (centres measured on the disc's texture, in 256ths).
+    void ControllerKeys(Canvas& c)
+    {
+        float k = c.width / 256.0f;
+        auto at = [&](float v) { return v * k; };
+        Color body = Rgb(70, 72, 80, 0.92f);
+        c.Fill(Union(RoundBox(at(128), at(112), at(108), at(56), at(44)),
+            Union(Circle(at(66), at(160), at(44)), Circle(at(190), at(160), at(44)))), body);
+        auto cap = [&](float x, float y, float hw, float hh, const std::string& label)
+        { Keycap(c, at(x), at(y), at(hw), at(hh), label, at(hh) * 1.1f); };
+        cap(62.5f, 57, 15, 8, g_keys[6]);   // LB
+        cap(193.5f, 57, 15, 8, g_keys[7]);  // RB
+        cap(62.5f, 91.5f, 24, 13, StickKeys(10, "MOVE"));
+        cap(159.5f, 131.5f, 24, 13, StickKeys(14, "CAM"));
+        cap(105.5f, 94, 11, 9, g_keys[5]);  // Back
+        cap(151, 94, 11, 9, g_keys[4]);     // Start
+        cap(192.5f, 108.5f, 10, 10, g_keys[0]); // A
+        cap(209.5f, 91.5f, 10, 10, g_keys[1]);  // B
+        cap(175, 92, 10, 10, g_keys[2]);        // X
+        cap(192.5f, 75.5f, 10, 10, g_keys[3]);  // Y
+        ArrowCluster(c, at(94), at(130.5f), at(13), 18); // the d-pad
+    }
+
+    // SSA's blue arrows (arrow_rl 64x32, arrow_ud 32x32) on the keyboard: the left stick's keys, side by side or stacked.
+    void ArrowKeys(Canvas& c, bool leftRight)
+    {
+        float w = float(c.width), h = float(c.height);
+        if (leftRight)
+        {
+            float half = std::min(w / 4, h / 2) - 1;
+            ArrowKey(c, w * 0.25f, h / 2, half, g_keys[12], -1, 0);
+            ArrowKey(c, w * 0.75f, h / 2, half, g_keys[13], 1, 0);
+        }
+        else
+        {
+            float half = std::min(w / 2, h / 4) - 1;
+            ArrowKey(c, w / 2, h * 0.25f, half, g_keys[10], 0, -1);
+            ArrowKey(c, w / 2, h * 0.75f, half, g_keys[11], 0, 1);
+        }
+    }
+
     // Paints `glyph` for `style` into the canvas: a whole texture (SSA's layouts) or an atlas cell (its bounding box).
     void Paint(Canvas& canvas, Glyph glyph, Style style, bool cell)
     {
@@ -490,11 +607,15 @@ namespace
             else
                 MenuButton(canvas, style, glyph == Glyph::Start, canvas.width * 0.48f, canvas.height * 0.32f);
         }
+        else if (glyph == Glyph::Controller)
+            ControllerKeys(canvas);
+        else if (glyph == Glyph::ArrowsLeftRight || glyph == Glyph::ArrowsUpDown)
+            ArrowKeys(canvas, glyph == Glyph::ArrowsLeftRight);
         else if (glyph == Glyph::RightStick)
             RightStick(canvas, style);
         else if (glyph == Glyph::LeftStickIcon || glyph == Glyph::RightStickIcon)
             StickIcon(canvas, style, glyph == Glyph::LeftStickIcon);
-        else if (glyph >= Glyph::LeftBumper)
+        else if (glyph >= Glyph::LeftBumper && glyph <= Glyph::RightTrigger)
             Shoulder(canvas, glyph, style);
         else
             FaceButton(canvas, glyph, style);
@@ -616,6 +737,7 @@ namespace
         switch (type)
         {
         case SDL_GAMEPAD_TYPE_PS3:
+            return Style::PlayStation3;
         case SDL_GAMEPAD_TYPE_PS4:
         case SDL_GAMEPAD_TYPE_PS5:
             return Style::PlayStation;
@@ -661,6 +783,7 @@ namespace
         std::vector<uint32_t> originalRgba;
         uint64_t seen = 0;                 // the prefix hash of what is in memory (ours or the game's)
         Style applied = Style::Xbox360;
+        std::vector<Cell> added;           // cells we add where the game's image is empty (drawn in every style)
     };
 
     uint32_t FindImage(const MemoryImage& image)
@@ -680,13 +803,14 @@ namespace
     {
         const MemoryImage& image = *placed.image;
         auto* memory = static_cast<uint8_t*>(g_memory.Translate(placed.address));
-        if (style == Style::Xbox360 || !g_fontLoaded)
-            memcpy(memory, placed.original.data(), image.bytes);
-        else
+        memcpy(memory, placed.original.data(), image.bytes);
+        // The Xbox 360 style keeps the game's bytes but for the cells we add (their 360 look is ours too).
+        std::span<const Cell> cells = style == Style::Xbox360 ? std::span<const Cell>(placed.added) : image.cells;
+        if (g_fontLoaded && !cells.empty())
         {
-            Texture atlas = { 0, image.name, Glyph::A, image.cells };
+            Texture atlas = { 0, image.name, Glyph::A, cells };
             std::vector<uint32_t> drawn = DrawAtlas(atlas, style, placed.originalRgba, image.width, image.height, 1)[0];
-            for (const Cell& cell : image.cells)
+            for (const Cell& cell : cells)
                 for (uint32_t y = cell.y0 > 0 ? cell.y0 - 1u : 0u; y <= std::min<uint32_t>(cell.y1 + 1u, image.height - 1u); y++)
                     for (uint32_t x = cell.x0 > 0 ? cell.x0 - 1u : 0u; x <= std::min<uint32_t>(cell.x1 + 1u, image.width - 1u); x++)
                         Tile32(memory, image.width, x, y, drawn[size_t(y) * image.width + x]);
@@ -724,8 +848,18 @@ namespace
                     auto* memory = static_cast<const uint8_t*>(g_memory.Translate(one.address));
                     one.original.assign(memory, memory + image.bytes);
                     one.originalRgba = Untile32(memory, image.width, image.height);
+                    one.added.clear();
+                    for (const Cell& cell : image.cells)
+                    {
+                        bool empty = true;
+                        for (uint32_t y = cell.y0; y <= cell.y1 && empty; y++)
+                            for (uint32_t x = cell.x0; x <= cell.x1 && empty; x++)
+                                empty = (one.originalRgba[size_t(y) * image.width + x] >> 24) == 0;
+                        if (empty)
+                            one.added.push_back(cell);
+                    }
                     one.seen = XXH3_64bits(memory, PrefixBytes);
-                    one.applied = Style::Xbox360;
+                    one.applied = one.added.empty() ? Style::Xbox360 : Style(0xFF);
                     fprintf(stderr, "[glyphs] %s found in guest memory at %08X\n", image.name, one.address);
                 }
                 if (one.applied != Current())
@@ -736,6 +870,49 @@ namespace
     }
 }
 
+namespace
+{
+    // Test aid (SKY_GLYPHS_SHEET=<file.png>): every glyph in every style, one row per style (Xbox 360: only what we draw
+    // for it, the added Start), 96x96 cells, written once at start-up with the key bindings in use.
+    void WriteSheet(const char* path)
+    {
+        constexpr uint32_t Cell = 96;
+        constexpr Glyph Glyphs[] = { Glyph::A, Glyph::B, Glyph::X, Glyph::Y, Glyph::Start, Glyph::Back, Glyph::LeftBumper,
+            Glyph::RightBumper, Glyph::LeftTrigger, Glyph::RightTrigger, Glyph::LeftStickIcon, Glyph::RightStickIcon,
+            Glyph::RightStick, Glyph::ArrowsLeftRight, Glyph::ArrowsUpDown, Glyph::Controller };
+        constexpr Style Rows[] = { Style::Xbox360, Style::XboxOne, Style::PlayStation, Style::PlayStation3, Style::Nintendo,
+            Style::Keyboard };
+        uint32_t width = Cell * uint32_t(std::size(Glyphs)), height = Cell * uint32_t(std::size(Rows));
+        std::vector<uint32_t> sheet(size_t(width) * height, 0xFF303030);
+        for (size_t row = 0; row < std::size(Rows); row++)
+            for (size_t column = 0; column < std::size(Glyphs); column++)
+            {
+                Glyph glyph = Glyphs[column];
+                Style style = Rows[row];
+                bool keyboardOnly = glyph >= Glyph::Controller;
+                if ((style == Style::Xbox360 && glyph != Glyph::Start && glyph != Glyph::Back) || (keyboardOnly && style != Style::Keyboard))
+                    continue;
+                bool cell = glyph == Glyph::Start || glyph == Glyph::Back; // the square cell of a font image
+                uint32_t h = glyph == Glyph::ArrowsLeftRight ? Cell / 2 : Cell;
+                Canvas canvas(Cell, h);
+                Paint(canvas, glyph, style, cell);
+                std::vector<uint32_t> rgba = Levels(std::move(canvas), 1)[0];
+                for (uint32_t y = 0; y < h; y++)
+                    for (uint32_t x = 0; x < Cell; x++)
+                    {
+                        uint32_t c = rgba[size_t(y) * Cell + x], a = c >> 24;
+                        uint32_t& d = sheet[(row * Cell + y) * width + column * Cell + x];
+                        uint32_t out = 0xFF000000;
+                        for (int k = 0; k < 3; k++)
+                            out |= (((c >> (k * 8)) & 0xFF) * a + ((d >> (k * 8)) & 0xFF) * (255 - a)) / 255 << (k * 8);
+                        d = out;
+                    }
+            }
+        if (stbi_write_png(path, int(width), int(height), 4, sheet.data(), int(width * 4)))
+            fprintf(stderr, "[glyphs] sheet written: %s\n", path);
+    }
+}
+
 void Init(const RuntimeSettings& settings)
 {
     g_fontLoaded = stbtt_InitFont(&g_font, g_embeddedBungee, stbtt_GetFontOffsetForIndex(g_embeddedBungee, 0)) != 0;
@@ -743,16 +920,20 @@ void Init(const RuntimeSettings& settings)
         fprintf(stderr, "[glyphs] the embedded Bungee font does not load: the Xbox 360 glyphs stay\n");
     for (size_t i = 0; i < std::size(g_keyActions); i++)
         g_keys[i] = KeyLabel(settings.keys[i]);
+    fprintf(stderr, "[glyphs] keycaps: a=%s b=%s x=%s y=%s start=%s back=%s\n", g_keys[0].c_str(), g_keys[1].c_str(),
+        g_keys[2].c_str(), g_keys[3].c_str(), g_keys[4].c_str(), g_keys[5].c_str());
     g_keyboard = settings.inputDevice != "gamepad";
     g_gamepad = settings.inputDevice != "keyboard";
     g_xboxOnly = settings.glyphs == "xbox";
     g_auto = settings.glyphs == "auto" || g_xboxOnly;
     // auto: until a gamepad is opened or used
     Style style = g_keyboard && !g_xboxOnly ? Style::Keyboard : Style::Xbox360;
-    for (Style named : { Style::Xbox360, Style::XboxOne, Style::PlayStation, Style::Nintendo, Style::Keyboard })
+    for (Style named : { Style::Xbox360, Style::XboxOne, Style::PlayStation, Style::Nintendo, Style::Keyboard, Style::PlayStation3 })
         if (settings.glyphs == StyleName(named))
             style = named;
     Select(style);
+    if (const char* sheet = skyenv::Get("SKY_GLYPHS_SHEET"))
+        WriteSheet(sheet);
     if (!game::Current().glyphImages.empty())
         std::thread(WatchImages).detach();
 }
@@ -853,7 +1034,7 @@ void RunTestScript()
             continue;
         }
         static const struct { const char* name; uint16_t vendor, product; } Pads[] = {
-            { "ps5", 0x054C, 0x0CE6 }, { "ps4", 0x054C, 0x09CC }, { "switch", 0x057E, 0x2009 },
+            { "ps5", 0x054C, 0x0CE6 }, { "ps4", 0x054C, 0x09CC }, { "ps3", 0x054C, 0x0268 }, { "switch", 0x057E, 0x2009 },
             { "xboxone", 0x045E, 0x0B12 }, { "xbox360", 0x045E, 0x028E },
         };
         for (const auto& pad : Pads)
@@ -890,24 +1071,20 @@ Style Current()
     return g_style.load(std::memory_order_relaxed);
 }
 
-std::string BoundKey(Glyph glyph)
-{
-    return g_keys[glyph == Glyph::Back ? 5 : std::min<size_t>(size_t(glyph), 4)];
-}
-
 bool Replace(uint64_t guestHash, uint32_t width, uint32_t height, uint32_t levels,
     const std::function<std::vector<uint32_t>()>& guestBase, gpu::Texture*& texture, uint64_t& hostHash)
 {
     const Texture* known = Find(guestHash);
     Style style = Current();
-    bool draw = known != nullptr && style != Style::Xbox360 && g_fontLoaded;
+    bool keyboardOnly = known != nullptr && known->glyph >= Glyph::Controller;
+    bool draw = known != nullptr && style != Style::Xbox360 && g_fontLoaded && (!keyboardOnly || style == Style::Keyboard);
     uint64_t wanted = draw ? Salted(guestHash, style) : guestHash;
     if (texture != nullptr && hostHash == wanted)
         return draw;
 
     // Our RGBA8 texture is not the guest's format: drop it before anything else is uploaded in its place.
     if (texture != nullptr)
-        for (Style other : { Style::XboxOne, Style::PlayStation, Style::Nintendo, Style::Keyboard })
+        for (Style other : DrawnStyles)
             if (Find(Salted(hostHash, other)) != nullptr)
             {
                 gpu::DestroyTexture(texture);
