@@ -265,6 +265,94 @@ namespace collection
         return size_t(std::count_if(toy.variants.begin(), toy.variants.end(), [](const Variant& v) { return v.kind != VariantKind::Base; }));
     }
 
+    Catalogue::Reading Catalogue::Read(const std::string& id, const Toy* toy, uint16_t variant) const
+    {
+        Reading reading;
+        const Game* game = FindGame(id);
+        reading.works = toy != nullptr && game != nullptr && Accepts(id, toy->type);
+        if (!reading.works)
+            return reading;
+        reading.kind = toy->edition;
+        const Variant* entry = nullptr;
+        for (const Variant& v : toy->variants)
+        {
+            if (!v.sameTag && v.id == variant)
+                entry = &v;
+        }
+        if (variant == 0 || (entry != nullptr && entry->kind == VariantKind::Base))
+            return reading;
+        // A game tells a variant apart when the toy has a definition for it: Giants' and Swap Force's tables carry a figure's
+        // id as bit flags (11: repose, 10: alternate deco or Legendary, 9: LightCore) and a deco in the low byte, and only a
+        // listed one of the game's own years or before counts (the id's high nibble is the release year, 1: 2012, Giants).
+        // Spyro's Adventure (2011) reads the toy type only [V]. Chase and event figures carry none of the flags: a game plays
+        // them as the plain toy, or as Series 2 when they carry the repose bit and the toy has one (figures.md) [V Giants];
+        // Swap Force the same [?]; Trap Team and later games are taken to tell every variant of the older years apart [?].
+        const int newest = game->year - 2011;
+        auto known = [&](const Variant& v) {
+            if (v.sameTag || v.kind == VariantKind::Base || toy->category == Category::Trap || int(v.id >> 12) > newest)
+                return false;
+            if (newest >= 3)
+                return true;
+            if (v.kind == VariantKind::Series)
+                return (v.id & 0xFF) == 0x01 || (v.id & 0xFF) == 0x05;
+            return (v.id & 0x0600) != 0;
+        };
+        reading.exact = false;
+        if (entry != nullptr && known(*entry))
+        {
+            reading.seen = entry;
+            reading.kind = entry->kind;
+            reading.exact = true;
+            return reading;
+        }
+        if (toy->category == Category::Trap)
+        {
+            // A trap's variant is its shape: every game that reads the toy reads its shapes.
+            if (entry != nullptr && newest >= 3)
+            {
+                reading.seen = entry;
+                reading.kind = entry->kind;
+                reading.exact = true;
+            }
+            return reading;
+        }
+        const Variant* same = nullptr;
+        int fits = 0;
+        for (const Variant& v : toy->variants)
+        {
+            if (known(v) && (v.id & 0x0FFF) == (variant & 0x0FFF))
+                same = &v, fits++;
+        }
+        if (fits == 0 && newest >= 1 && (variant & 0x0800) != 0)
+        {
+            // A repose (bit 11) of a toy that has one (Series 2): Giants shows a later pose as Series 2 [V].
+            for (const Variant& v : toy->variants)
+            {
+                if (known(v) && v.kind == VariantKind::Series && (v.id & 0x0FFF) == 0x0801)
+                    same = &v, fits = 1;
+            }
+        }
+        if (fits == 1)
+        {
+            reading.seen = same;
+            reading.kind = same->kind;
+        }
+        return reading;
+    }
+
+    std::vector<const Variant*> Catalogue::VersionsFor(const std::string& game, const Toy& toy) const
+    {
+        std::vector<const Variant*> versions;
+        for (const Variant& v : toy.variants)
+        {
+            if (v.kind == VariantKind::Base)
+                continue;
+            if (v.sameTag || Read(game, &toy, v.id).exact)
+                versions.push_back(&v);
+        }
+        return versions;
+    }
+
     VariantInfo Catalogue::Describe(const Toy* toy, uint16_t variant) const
     {
         std::string base = toy != nullptr ? toy->name : "Unknown toy";

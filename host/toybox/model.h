@@ -246,6 +246,7 @@ namespace toybox
         // Wheel (toybox.cpp aims it from the stick, the arrows or 1-8).
         void OpenWheel(int seatIndex);
         void AimWheel(int place);           // -1: the centre
+        bool WheelPossible(const collection::Figure& f) const; // a player seat of this game reads it: it can be on the wheel
         void ConfirmWheel();                // swaps to the aimed figure (or cancels) and closes
         void WheelSeat(int step);           // LB/RB: the next seat with a wheel
         void WheelList();                   // Y: the full list for that seat

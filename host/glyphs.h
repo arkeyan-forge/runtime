@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <functional>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace gpu { struct Texture; }
@@ -64,6 +65,9 @@ namespace glyphs
     void OnEvent(const SDL_Event& event, SDL_Gamepad* gamepad);
 
     Style Current();
+    // What the keycap of `glyph` (A, B, X, Y, Start or Back) shows: the bound key's name on the current layout, shortened
+    // ("Enter", "Space", "Bksp"). For the texts that name a button by word (Swap Force's "PRESS START").
+    std::string BoundKey(Glyph glyph);
 
     // Test aid, from the host's main loop before it reads events: SKY_GLYPHS_SCRIPT="ps5:25,key:45,switch:55,..." at
     // those seconds since launch attaches a virtual SDL gamepad of that family (ps5, ps4, switch, xboxone, xbox360; the

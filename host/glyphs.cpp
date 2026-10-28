@@ -890,6 +890,11 @@ Style Current()
     return g_style.load(std::memory_order_relaxed);
 }
 
+std::string BoundKey(Glyph glyph)
+{
+    return g_keys[glyph == Glyph::Back ? 5 : std::min<size_t>(size_t(glyph), 4)];
+}
+
 bool Replace(uint64_t guestHash, uint32_t width, uint32_t height, uint32_t levels,
     const std::function<std::vector<uint32_t>()>& guestBase, gpu::Texture*& texture, uint64_t& hostHash)
 {

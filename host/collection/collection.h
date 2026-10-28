@@ -85,6 +85,11 @@ namespace collection
         std::string LastUsedIn(const std::string& game) const;
     };
 
+    // The figure as `game` sees it (Catalogue::Read): a variant the game does not tell apart plays as the plain toy, or as the
+    // variant it matches (a later repose as Series 2 in Giants). The player's own label and same-tag edition always stand.
+    VariantKind KindIn(const Figure& figure, const std::string& game);
+    std::string NameIn(const Figure& figure, const std::string& game);
+
     // Whether a toy keeps a level and gold (characters, minis and sidekicks), unlike items, adventure packs and traps.
     bool HasProgress(const Figure& figure);
     // The level a card shows for `game`, the same in the Toy Box and Skylauncher: "Level 6"; "Level 10 (15)" when the
@@ -270,6 +275,16 @@ namespace collection
     };
     std::vector<WheelPlace> GetWheel(const std::string& game, const std::string& seat);
     bool SetWheel(const std::string& game, const std::string& seat, const std::vector<WheelPlace>& places);
+    // The figures the player took off a seat's wheel: the recents do not bring them back.
+    std::vector<std::string> GetWheelSkipped(const std::string& game, const std::string& seat);
+    bool SetWheelSkipped(const std::string& game, const std::string& seat, const std::vector<std::string>& files);
+
+    // "On the wheel" (the player's own wheel, docs/runtime/host/toybox_ux.md section 5): a figure pinned on a place of the
+    // wheel of every player seat of `game` that reads it (the Toy Box and Skylauncher's sheet toggle it). Adding takes the
+    // first empty place, else the first place the recents filled (a pinned place stays); false when the game does not read
+    // the figure, or all eight places are pinned. Removing empties its places and keeps the recents from bringing it back.
+    bool OnWheel(const std::string& game, const std::string& file);
+    bool SetOnWheel(const std::string& game, const std::string& file, bool on);
 
     // --- Sections (docs/runtime/host/toybox_ux.md section 3) -----------------------------------------------------------------------
 

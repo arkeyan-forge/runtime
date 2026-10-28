@@ -121,6 +121,23 @@ namespace collection
 
         VariantInfo Describe(const Toy* toy, uint16_t variant) const;
 
+        // What a game makes of a figure (docs/runtime/host/collection.md, "What each game reads"): whether it reads the toy,
+        // and which variant it sees. A game tells apart only the decorations of its own years or before (Spyro's
+        // Adventure none: the toy type only; Giants the 49 its disc defines, and shows a later repose as Series 2); any other
+        // variant plays as the plain toy. `seen` is the variant the game sees (null: the plain toy), `exact` that the
+        // game tells this very variant apart.
+        struct Reading
+        {
+            bool works = false;
+            const Variant* seen = nullptr;
+            VariantKind kind = VariantKind::Base;
+            bool exact = true;
+        };
+        Reading Read(const std::string& game, const Toy* toy, uint16_t variant) const;
+        // A toy's versions the game tells apart, in catalogue order: the variants the game reads as themselves, and the
+        // same-tag editions (a physical edition no game can see, picked by the player). Never the "base" entry.
+        std::vector<const Variant*> VersionsFor(const std::string& game, const Toy& toy) const;
+
     private:
         std::vector<Toy> m_toys;
         std::vector<Game> m_games;

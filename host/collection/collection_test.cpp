@@ -247,6 +247,58 @@ namespace
         const Seat& giantsItem = catalogue.FindGame("giants")->seats[2];
         CHECK(std::find(giantsItem.accepts.begin(), giantsItem.accepts.end(), Category::Adventure) != giantsItem.accepts.end());
 
+        // What each game reads of a figure (Catalogue::Read, VersionsFor): backward compatible variants play as the game sees them.
+        {
+            const Toy* eruptor = catalogue.Find(9);
+            auto read = [&](const char* game, const Toy* toy, uint16_t variant) { return catalogue.Read(game, toy, variant); };
+            // Spyro's Adventure reads the toy type only: every variant plays as the plain toy.
+            Catalogue::Reading r = read("ssa", eruptor, 0x1801);
+            CHECK(r.works && !r.exact && r.seen == nullptr && r.kind == VariantKind::Base);
+            CHECK(!read("ssa", catalogue.Find(100), 0).works && !read("giants", catalogue.Find(3000), 0).works);
+            CHECK(catalogue.VersionsFor("ssa", *eruptor).empty());
+            // Giants: Series 2 and LightCore of Eruptor as themselves; a later repose as Series 2; the rest plain.
+            r = read("giants", eruptor, 0x1801);
+            CHECK(r.exact && r.kind == VariantKind::Series);
+            r = read("giants", eruptor, 0x1206);
+            CHECK(r.exact && r.kind == VariantKind::LightCore);
+            r = read("giants", eruptor, 0x2805);
+            CHECK(!r.exact && r.kind == VariantKind::Series && r.seen != nullptr && r.seen->id == 0x1801);
+            r = read("giants", eruptor, 0x2C02); // Volcanic: Giants has no deco for it, its repose bit makes it Series 2
+            CHECK(!r.exact && r.kind == VariantKind::Series);
+            r = read("giants", eruptor, 0x3810); // Eon's Elite carries the repose bit too: Giants shows the Series 2 pose
+            CHECK(!r.exact && r.kind == VariantKind::Series && r.seen != nullptr && r.seen->id == 0x1801);
+            r = read("giants", eruptor, 0x1814); // a chase figure: only the repose bit counts
+            CHECK(!r.exact && r.kind == VariantKind::Series);
+            r = read("giants", catalogue.Find(2), 0x1812); // Warnado has no repose: plain
+            CHECK(!r.exact && r.kind == VariantKind::Base && r.seen == nullptr);
+            r = read("giants", catalogue.Find(2), 0x2206); // Warnado is not a LightCore toy for Giants
+            CHECK(r.works && !r.exact && r.kind == VariantKind::Base);
+            std::string giantsVersions;
+            for (const Variant* v : catalogue.VersionsFor("giants", *eruptor))
+                giantsVersions += v->name + ";";
+            CHECK(giantsVersions == "Series 2 Eruptor;LightCore Eruptor;");
+            // Swap Force tells the 2013 decorations apart, Trap Team Eon's Elite too.
+            CHECK(read("swapforce", eruptor, 0x2C02).exact && read("swapforce", eruptor, 0x2C02).kind == VariantKind::AltDeco);
+            CHECK(!read("swapforce", eruptor, 0x3810).exact && read("trap_team", eruptor, 0x3810).exact);
+            // Trap Team's re-release of a sidekick (0x3000) is a version only in the games that tell it apart.
+            const Toy* terrabite = catalogue.Find(505);
+            CHECK(terrabite != nullptr && catalogue.VersionsFor("giants", *terrabite).empty() && catalogue.VersionsFor("swapforce", *terrabite).empty());
+            CHECK(catalogue.VersionsFor("trap_team", *terrabite).size() == 1);
+            // No version list repeats a toy's own name, shows a base entry or lists a variant its game plays as the plain toy.
+            for (const Game& game : catalogue.Games())
+                for (const Toy& toy : catalogue.Toys())
+                    for (const Variant* v : catalogue.VersionsFor(game.id, toy))
+                        CHECK(v->kind != VariantKind::Base && v->name != toy.name && (v->sameTag || catalogue.Read(game.id, &toy, v->id).exact));
+            // Figures as the game names them.
+            Figure seen;
+            seen.toy = eruptor;
+            seen.type = 9;
+            seen.variant = 0x3810;
+            seen.variantInfo = catalogue.Describe(eruptor, seen.variant);
+            CHECK(NameIn(seen, "giants") == "Series 2 Eruptor" && NameIn(seen, "trap_team") == "Eon's Elite Eruptor" &&
+                  KindIn(seen, "giants") == VariantKind::Series && KindIn(seen, "trap_team") == VariantKind::EonsElite && seen.DisplayName() == "Eon's Elite Eruptor");
+        }
+
         // Variants: listed, worked out from the bits, unknown toys.
         const Toy* gill = catalogue.Find(14);
         CHECK(gill != nullptr && gill->category == Category::Core && gill->element == Element::Water);
@@ -398,6 +450,33 @@ namespace
 
     // collection::Upgrades on a scratch data folder: the plain list without a file, then a file as art::Extract writes
     // it (a made-up one: game text never goes into a test), its languages, a Legendary sharing its base toy's list.
+    // "On the wheel": added to the wheel of every player seat that reads the figure, removed for good.
+    void TestWheel()
+    {
+        using namespace collection;
+        auto fileOf = [](const std::string& path) { return path.substr(path.rfind('/') + 1); };
+        auto count = [](const char* game, const char* seat, const std::string& file) {
+            std::vector<WheelPlace> wheel = GetWheel(game, seat);
+            return std::count_if(wheel.begin(), wheel.end(), [&](const WheelPlace& p) { return p.file == file && p.pinned; });
+        };
+        std::string file = fileOf(Create(14)); // Gill Grunt
+        CHECK(!OnWheel("ssa", file) && SetOnWheel("ssa", file, true) && OnWheel("ssa", file));
+        CHECK(count("ssa", "p1", file) == 1 && count("ssa", "p2", file) == 1);
+        CHECK(SetOnWheel("ssa", file, true) && count("ssa", "p1", file) == 1);
+        CHECK(SetOnWheel("ssa", file, false) && !OnWheel("ssa", file) && count("ssa", "p1", file) == 0);
+        std::vector<std::string> skipped = GetWheelSkipped("ssa", "p1");
+        CHECK(std::find(skipped.begin(), skipped.end(), file) != skipped.end());
+        CHECK(SetOnWheel("ssa", file, true));
+        skipped = GetWheelSkipped("ssa", "p1");
+        CHECK(std::find(skipped.begin(), skipped.end(), file) == skipped.end());
+        // Giants does not read a Swap Force toy; with all eight places pinned a ninth figure is refused.
+        CHECK(!SetOnWheel("giants", fileOf(Create(3000)), true));
+        std::vector<WheelPlace> full(8);
+        for (size_t i = 0; i < full.size(); i++)
+            full[i] = { "x" + std::to_string(i) + ".sky", true };
+        CHECK(SetWheel("giants", "p1", full) && SetWheel("giants", "p2", full) && !SetOnWheel("giants", file, true) && !OnWheel("giants", file));
+    }
+
     void TestUpgrades()
     {
         using namespace collection;
@@ -1278,6 +1357,7 @@ int main(int argc, char** argv)
     TestPortalOverview();
     TestGiants();
     TestUpgrades();
+    TestWheel();
 
     if (skyenv::Get("SKY_KEEP_COLLECTION") == nullptr)
         RemoveTree(g_scratch);

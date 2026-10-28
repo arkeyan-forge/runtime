@@ -282,6 +282,24 @@ namespace collection
         return !edition.empty() ? edition : variantInfo.name;
     }
 
+    VariantKind KindIn(const Figure& figure, const std::string& game)
+    {
+        if (figure.toy == nullptr || figure.editionKind != VariantKind::Base || game.empty())
+            return figure.Kind();
+        Catalogue::Reading reading = Catalogue::Get().Read(game, figure.toy, figure.variant);
+        return reading.works ? reading.kind : figure.Kind();
+    }
+
+    std::string NameIn(const Figure& figure, const std::string& game)
+    {
+        if (figure.toy == nullptr || !figure.label.empty() || !figure.edition.empty() || game.empty())
+            return figure.DisplayName();
+        Catalogue::Reading reading = Catalogue::Get().Read(game, figure.toy, figure.variant);
+        if (!reading.works || reading.exact)
+            return figure.DisplayName();
+        return reading.seen != nullptr ? reading.seen->name : figure.toy->name;
+    }
+
     bool Figure::IsSwapTop() const
     {
         return toy != nullptr && toy->category == Category::SwapTop;
@@ -1392,6 +1410,106 @@ namespace collection
             wheel.Set(seat, std::move(list));
             forGame.Set("wheel", std::move(wheel));
         });
+    }
+
+    std::vector<std::string> GetWheelSkipped(const std::string& game, const std::string& seat)
+    {
+        Json index = LoadJson(PathOf(IndexName));
+        std::vector<std::string> files;
+        for (const Json& item : index["views"][game]["wheel_skipped"][seat].Items())
+            files.push_back(item.AsString());
+        return files;
+    }
+
+    bool SetWheelSkipped(const std::string& game, const std::string& seat, const std::vector<std::string>& files)
+    {
+        return UpdateViews(game, [&](Json& forGame) {
+            Json skipped = forGame["wheel_skipped"].IsObject() ? forGame["wheel_skipped"] : Json::Object();
+            Json list = Json::Array();
+            for (const std::string& file : files)
+                list.Push(Json(file));
+            skipped.Set(seat, std::move(list));
+            forGame.Set("wheel_skipped", std::move(skipped));
+        });
+    }
+
+    namespace
+    {
+        // The player seats of a game that read a figure (their ids: "p1", "p2").
+        std::vector<std::string> WheelSeats(const std::string& game, const Figure& figure)
+        {
+            std::vector<std::string> seats;
+            const Game* g = Catalogue::Get().FindGame(game);
+            if (g == nullptr || figure.toy == nullptr || !Catalogue::Get().Accepts(game, figure.type))
+                return seats;
+            for (const Seat& seat : g->seats)
+            {
+                if (seat.player > 0 && std::find(seat.accepts.begin(), seat.accepts.end(), figure.toy->category) != seat.accepts.end())
+                    seats.push_back(seat.id);
+            }
+            return seats;
+        }
+    }
+
+    bool OnWheel(const std::string& game, const std::string& file)
+    {
+        Figure figure;
+        if (!Read(PathOf(file), figure))
+            return false;
+        if (figure.IsSwapBottom() && !figure.partner.empty())
+            return OnWheel(game, figure.partner);
+        for (const std::string& seat : WheelSeats(game, figure))
+        {
+            for (const WheelPlace& place : GetWheel(game, seat))
+            {
+                if (place.pinned && place.file == file)
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    bool SetOnWheel(const std::string& game, const std::string& file, bool on)
+    {
+        Figure figure;
+        if (!Read(PathOf(file), figure))
+            return false;
+        // A swapper's card is its top: the wheel keeps the top's file.
+        if (figure.IsSwapBottom() && !figure.partner.empty())
+            return SetOnWheel(game, figure.partner, on);
+        std::vector<std::string> seats = WheelSeats(game, figure);
+        bool done = !seats.empty();
+        for (const std::string& seat : seats)
+        {
+            std::vector<WheelPlace> places = GetWheel(game, seat);
+            std::vector<std::string> skipped = GetWheelSkipped(game, seat);
+            std::erase(skipped, file);
+            if (on)
+            {
+                auto here = std::find_if(places.begin(), places.end(), [&](const WheelPlace& p) { return p.file == file; });
+                if (here == places.end())
+                    here = std::find_if(places.begin(), places.end(), [](const WheelPlace& p) { return p.file.empty(); });
+                if (here == places.end())
+                    here = std::find_if(places.begin(), places.end(), [](const WheelPlace& p) { return !p.pinned; });
+                if (here == places.end())
+                {
+                    done = false;
+                    continue;
+                }
+                *here = { file, true };
+            }
+            else
+            {
+                for (WheelPlace& place : places)
+                {
+                    if (place.file == file)
+                        place = {};
+                }
+                skipped.push_back(file);
+            }
+            done = SetWheel(game, seat, places) && SetWheelSkipped(game, seat, skipped) && done;
+        }
+        return done;
     }
 
     // --- Sections --------------------------------------------------------------------------------------------------------

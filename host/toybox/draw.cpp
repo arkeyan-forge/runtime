@@ -1209,7 +1209,9 @@ namespace toybox
             TextCentered(g_display, size, ImVec2(cx, y + 16), 0xFFFFFF, Fit(g_display, size, name, max.x - min.x - 32));
             y += 42;
             std::string toy = f.toy != nullptr ? f.toy->name : model.FigureName(f);
-            std::string version = f.Kind() != VariantKind::Base ? VariantLabel(f.Kind()) : L("Standard", "Standard");
+            // The plain toy says no version: its name is the toy's; any other reads as the game sees it.
+            VariantKind seen = collection::KindIn(f, model.game);
+            std::string version = seen != VariantKind::Base ? VariantLabel(seen) : std::string();
             if (!f.edition.empty())
                 version = f.edition;
             std::string from;
@@ -1218,7 +1220,10 @@ namespace toybox
                 const Game* g = Catalogue::Get().FindGame(f.toy->game);
                 from = std::string(L("from ", "de ")) + (g != nullptr ? g->name.substr(g->name.rfind("Skylanders: ", 0) == 0 ? 12 : 0) : f.toy->game);
             }
-            std::string line = (toy == name ? std::string() : toy + " · ") + version + (f.toy != nullptr && f.toy->element < Element::None ? " · " + ElementLabel(f.toy->element) : "") + (from.empty() ? "" : " · " + from);
+            std::string line;
+            for (const std::string& part : { toy == name ? std::string() : toy, version,
+                     f.toy != nullptr && f.toy->element < Element::None ? ElementLabel(f.toy->element) : std::string(), from })
+                line += part.empty() ? std::string() : (line.empty() ? "" : " · ") + part;
             for (const std::string& l : Wrap(g_bold, 14, line, max.x - min.x - 48, 2))
             {
                 TextCentered(g_bold, 14, ImVec2(cx, y + 8), Look::TextDim, l);
@@ -1690,14 +1695,15 @@ namespace toybox
                 Box(a, b, cursor ? Look::CardSelected : Look::Panel, cursor && !model.addVersions ? Look::Gold : Look::CardBorder, 14, 2);
                 if (!SwapperStackOfToy(toy, 0, ImVec2(x + 34, y + cardHeight / 2), 52))
                     Portrait(toy, toy->edition, ImVec2(x + 34, y + cardHeight / 2), 48);
-                Text(g_black, 14, ImVec2(x + 66, y + 12), Look::Text, Fit(g_black, 14, Model::AddName(*toy), cardWidth - 74 - (VersionCount(*toy) == 0 ? 0 : 42)));
+                const size_t versionCount = Catalogue::Get().VersionsFor(model.game, *toy).size();
+                Text(g_black, 14, ImVec2(x + 66, y + 12), Look::Text, Fit(g_black, 14, Model::AddName(*toy), cardWidth - 74 - (versionCount == 0 ? 0 : 42)));
                 int owned = 0;
                 for (const Figure& f : model.figures)
                     owned += f.type == toy->type ? 1 : 0;
                 std::string line = owned == 0 ? L("not owned", "pas à toi") : owned == 1 ? L("owned", "à toi") : std::string(L("owned ×", "à toi ×")) + std::to_string(owned);
                 Text(g_bold, 12, ImVec2(x + 66, y + 34), owned > 0 ? Look::Bar : Look::TextDimmer, Fit(g_bold, 12, line, cardWidth - 74));
-                if (VersionCount(*toy) != 0) // it has versions: a small badge with their count
-                    Pill(ImVec2(b.x - 30, a.y + 16), "+" + std::to_string(VersionCount(*toy)), Look::Gold, Look::GoldInk, 12);
+                if (versionCount != 0) // it has versions this game tells apart: a small badge with their count
+                    Pill(ImVec2(b.x - 30, a.y + 16), "+" + std::to_string(versionCount), Look::Gold, Look::GoldInk, 12);
                 if (cursor && !model.addVersions)
                     FocusRing(a, b, 14, Look::Text);
                 int index = int(i);

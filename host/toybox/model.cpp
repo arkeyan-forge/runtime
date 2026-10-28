@@ -23,7 +23,7 @@ namespace toybox
         constexpr uint64_t PinHoldTime = 600'000'000; // wheel: X held on a place
 
         // The Figure page's actions: the main ones, then More (the others) and Details (the file, the toy's numbers).
-        enum class Action { PutOn, TakeOff, Unlock, EditStats, ChangeHalf, Rename, Favourite, Pin, Duplicate, BackUp, Restore, Reset, Delete, More, Details };
+        enum class Action { PutOn, TakeOff, Unlock, EditStats, ChangeHalf, Rename, Favourite, Wheel, Pin, Duplicate, BackUp, Restore, Reset, Delete, More, Details };
 
         std::string FileName(const std::string& path)
         {
@@ -364,7 +364,7 @@ namespace toybox
             snprintf(text, sizeof(text), L("Unknown toy %u (variant %04X)", "Jouet inconnu %u (variante %04X)"), f.type, f.variant);
             return text;
         }
-        std::string name = f.DisplayName();
+        std::string name = collection::NameIn(f, game);
         std::string nickname = figures::NicknameUtf8(f.stats);
         if (f.label.empty() && !nickname.empty() && Lower(nickname) != Lower(name))
             name += " (" + nickname + ")";
@@ -934,7 +934,8 @@ namespace toybox
         for (size_t i = 0; i < figures.size(); i++)
         {
             const Figure& f = figures[i];
-            if (!Accepts(s, f))
+            // A toy this game cannot read is not on its shelf (Skylauncher keeps the whole collection).
+            if (!Accepts(s, f) || (f.toy != nullptr && !Catalogue::Get().Accepts(game, f.type)))
                 continue;
             int other = f.partner.empty() ? -1 : FindFigure(PathOf(f.partner));
             if (!passes(f) && (other < 0 || !passes(figures[other])))
@@ -1807,6 +1808,8 @@ namespace toybox
             actions.push_back(KeepsProgress(f) ? Action::EditStats : Action::Rename);
             if (f.IsSwapTop() || f.IsSwapBottom())
                 actions.push_back(Action::ChangeHalf);
+            if (model.WheelPossible(f))
+                actions.push_back(Action::Wheel);
             for (Action a : { Action::Favourite, Action::More, Action::Details })
                 actions.push_back(a);
             return actions;
@@ -1855,6 +1858,10 @@ namespace toybox
             case Action::Favourite:
                 lines.push_back(f.favourite ? std::string(L("Favourite", "Favori")) + "\t" + L("on: shown first", "oui : en premier")
                                             : std::string(L("Add to favourites", "Ajouter aux favoris")));
+                break;
+            case Action::Wheel:
+                lines.push_back(collection::OnWheel(game, f.file) ? std::string(L("On the wheel", "Sur la roue")) + "\t" + L("on: A takes it off", "oui : A la retire")
+                                                                  : std::string(L("Add to the wheel", "Ajouter à la roue")));
                 break;
             case Action::More: lines.push_back(std::string(L("More…", "Plus…")) + "\t" + L("other actions", "autres actions")); break;
             case Action::Details: lines.push_back(figureDetails ? L("Hide the details", "Masquer les détails") : L("Details", "Détails")); break;
@@ -2005,6 +2012,15 @@ namespace toybox
             figure = FindFigure(path);
             BuildList();
             break;
+        case Action::Wheel:
+        {
+            bool on = !collection::OnWheel(game, f.file);
+            if (collection::SetOnWheel(game, f.file, on))
+                Toast(FigureName(f) + (on ? L(" is on the wheel", " est sur la roue") : L(" is off the wheel", " n'est plus sur la roue")));
+            else
+                Toast(L("The wheel is full: take a figure off it first", "La roue est pleine : retire d'abord une figurine"), 4);
+            break;
+        }
         case Action::Pin:
             pinPlace = 0;
             screen = Screen::Pin;
@@ -2622,17 +2638,16 @@ namespace toybox
         if (add.cells.empty())
             return;
         const Toy* toy = addToys[add.cells[add.cursor].figure];
-        // "Standard" is the toy itself, made under the id it is sold with when the catalogue has one (its "base" entry,
-        // which is never a second row of its own).
+        // The plain toy is one row, named as the toy is: made under the id it is sold with when the catalogue has one (its
+        // "base" entry, which is never a second row of its own). Then only the versions this game tells apart: the others
+        // play as the plain toy in it.
         uint16_t sold = StandardVariant(*toy);
-        Version plain{ toy->type, sold, L("Standard", "Standard"), {}, toy->edition };
+        Version plain{ toy->type, sold, AddName(*toy), {}, toy->edition };
         plain.owned = OwnedCount(toy->type, 0, {}) + (sold != 0 ? OwnedCount(toy->type, sold, {}) : 0);
         versions.push_back(plain);
-        for (const Variant& v : toy->variants)
+        for (const Variant* v : Catalogue::Get().VersionsFor(game, *toy))
         {
-            if (v.kind == VariantKind::Base)
-                continue;
-            Version version{ toy->type, uint16_t(v.sameTag ? sold : v.id), v.name, v.sameTag ? v.name : std::string(), v.kind };
+            Version version{ toy->type, uint16_t(v->sameTag ? sold : v->id), v->name, v->sameTag ? v->name : std::string(), v->kind };
             version.owned = OwnedCount(version.type, version.variant, version.edition);
             versions.push_back(version);
         }
@@ -3168,12 +3183,14 @@ namespace toybox
                 changed = true;
             }
         }
+        const std::vector<std::string> skipped = GetWheelSkipped(game, s.seat.id);
         for (const std::string& path : Recent(game, 32))
         {
             int index = FindFigure(path);
             if (index >= 0 && figures[index].IsSwapBottom() && !figures[index].partner.empty())
                 index = FindFigure(PathOf(figures[index].partner)); // a swapper's card is its top
-            if (index < 0 || !Accepts(s, figures[index]) || figures[index].path == s.path)
+            if (index < 0 || !Accepts(s, figures[index]) || figures[index].path == s.path ||
+                std::find(skipped.begin(), skipped.end(), figures[index].file) != skipped.end())
                 continue;
             if (std::any_of(wheel.places.begin(), wheel.places.end(), [&](const WheelPlace& p) { return p.file == figures[index].file; }))
                 continue;
@@ -3193,6 +3210,13 @@ namespace toybox
         dialogs.clear();
         fprintf(stderr, "[toybox] wheel for %s\n", SeatTag(wheel.seat).c_str());
         m_dirty = true;
+    }
+
+    bool Model::WheelPossible(const Figure& f) const
+    {
+        if (f.toy == nullptr || !Catalogue::Get().Accepts(game, f.type))
+            return false;
+        return std::any_of(seats.begin(), seats.end(), [&](const SeatState& s) { return PlayerSeat(s) && Accepts(s, f); });
     }
 
     void Model::AimWheel(int place)
