@@ -49,6 +49,11 @@ set(SSA_ART_SOURCES
     host/art/xenos_texture.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/embedded_art_manifests.cpp)
 
+# The pictures' readers as a library, for SkyBuild (the game's icon is made from the disc's logo: tools/skybuild).
+add_library(SSAArtReader STATIC ${SSA_ART_SOURCES} ${SSA_COLLECTION_SOURCES})
+target_include_directories(SSAArtReader PUBLIC .)
+target_link_libraries(SSAArtReader PUBLIC SDL3::SDL3-static)
+
 # The built game's name: the executable, the macOS app bundle and the Windows .exe (games/<id>/info.cpp names it for the
 # launcher). The CMake target stays SSARecomp for every game, so every build and test command keeps working.
 if(SSA_GAME STREQUAL "giants")

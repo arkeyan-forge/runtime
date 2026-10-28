@@ -4,6 +4,7 @@
 // its background art, its title icon, its toy portraits and (Giants, Swap Force) its large toy artworks. One flow for every game; what differs per game (which
 // archive, which picture) is the table in game_art.cpp. Used by the in-game Toy Box and by Skylauncher (game page,
 // sidebar, collection). Nothing is shipped or downloaded. docs/runtime/host/game_art.md.
+#include "xenos_texture.h"
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -58,6 +59,10 @@ namespace art
 
     // True for a game whose pictures this file knows how to read (those with a manifest: "ssa", "giants", "swapforce").
     bool Known(std::string_view game);
+
+    // The game's logo alone, read from the disc as the manifest says and not cached (SkyBuild makes the game's icon from it).
+    // False when `game` has no manifest or the disc has no readable logo.
+    bool ReadLogo(std::string_view game, const Disc& disc, Image& logo);
 
     enum Parts
     {

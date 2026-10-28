@@ -26,6 +26,9 @@
 #include <stb_image.h>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <utility>
 #include <vector>
 #ifdef __APPLE__
@@ -244,10 +247,15 @@ int main(int argc, char** argv)
         // The game's name and its version (games/<id>/game.txt): "Skylanders: Spyro's Adventure v0.9.1".
         const std::string title = std::string(g_gameInfo.name) + " v" + SSA_GAME_VERSION;
         window = CreateDisplayWindow(title.c_str(), 1280, 720, settings.fullscreen);
-#ifndef __APPLE__ // macOS: the bundle's icon (SSABuild's BundleIcon)
-        if (window != nullptr) // the game's own icon from its default.xex; without one, the system's
+#ifndef __APPLE__ // macOS: the bundle's icon (SkyBuild's BundleIcon)
+        if (window != nullptr) // game_icon.png beside the executable (SkyBuild's GameIcon: the disc's logo); else the icon of default.xex; else the system's
         {
-            std::vector<uint8_t> png = ReadTitleMetadata(g_disc.ReadAll("default.xex")).iconPng;
+            std::vector<uint8_t> png;
+            if (const char* base = SDL_GetBasePath())
+                if (std::ifstream file(std::filesystem::path(base) / "game_icon.png", std::ios::binary); file)
+                    png.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+            if (png.empty())
+                png = ReadTitleMetadata(g_disc.ReadAll("default.xex")).iconPng;
             int iconWidth = 0, iconHeight = 0, channels = 0;
             if (unsigned char* rgba = stbi_load_from_memory(png.data(), int(png.size()), &iconWidth, &iconHeight, &channels, 4))
             {

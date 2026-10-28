@@ -705,6 +705,18 @@ namespace art
         return FindManifest(game) != nullptr;
     }
 
+    bool ReadLogo(std::string_view game, const Disc& disc, Image& logo)
+    {
+        const Manifest* where = FindManifest(game);
+        if (where == nullptr)
+            return false;
+        Manifest logoOnly = *where;
+        logoOnly.background = {}; // not read
+        Image background;
+        ReadPictures(logoOnly, disc, logo, background);
+        return !logo.rgba.empty();
+    }
+
     Extraction Extract(std::string_view game, const Disc& disc, const std::vector<uint8_t>& titleIconPng, int parts)
     {
         Extraction result;
