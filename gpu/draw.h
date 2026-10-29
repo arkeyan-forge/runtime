@@ -25,7 +25,8 @@ namespace gpu
     }
 
     constexpr uint32_t MaxSamplers = 16; // sampler registers a translated shader can use
-    constexpr uint32_t MaxVertexSamplers = 4; // vertex texture fetch: fetch constants 16-19, sampler registers 0-3 of a vertex shader
+    constexpr uint32_t MaxVertexSamplers =
+        4; // vertex texture fetch: fetch constants 16-19, sampler registers 0-3 of a vertex shader
 
     struct VertexInput
     {
@@ -102,7 +103,7 @@ namespace gpu
         float halfPixelOffset[2];   // added to the output position, times w
         float alphaThreshold;
         float positionScale[2];     // multiplies the output position: (1, 1), or pixels to clip space (2/W, -2/H)
-        uint32_t paramGen;          // point sprites: bit 31 = the point coordinate goes to pixel shader register (bits 0-3)
+        uint32_t paramGen; // point sprites: bit 31 = the point coordinate goes to pixel shader register (bits 0-3)
         // Sampler registers whose texture is resolution-scale times its guest size (resolves): fetches with unnormalized
         // coordinates (in guest texels) scale them (bit n = register n).
         uint32_t scaledTextures;
@@ -114,11 +115,13 @@ namespace gpu
     void Draw(const DrawDesc& draw);
     // Clears the whole target, or only `rect` when given.
     void ClearColor(Texture* target, const float rgba[4], const plume::RenderRect* rect = nullptr);
-    void ClearDepthStencil(Texture* target, bool depth, bool stencil, float z, uint8_t stencilValue, const plume::RenderRect* rect = nullptr);
+    void ClearDepthStencil(Texture* target, bool depth, bool stencil, float z, uint8_t stencilValue,
+        const plume::RenderRect* rect = nullptr);
 
     // Copies `region` of `source` to (x, y) in array slice (cube face) `slice` of `destination`; both have the same format
     // (EDRAM resolves).
-    void CopyTexture(Texture* destination, uint32_t x, uint32_t y, Texture* source, const plume::RenderRect& region, uint32_t slice = 0);
+    void CopyTexture(Texture* destination, uint32_t x, uint32_t y, Texture* source, const plume::RenderRect& region,
+        uint32_t slice = 0);
 
     // Copies the depth of `region` of the depth target `source` to (x, y) in the red channel of `destination`, an R32_FLOAT
     // render target (EDRAM depth resolves).

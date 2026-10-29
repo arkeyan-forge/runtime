@@ -26,11 +26,11 @@ namespace collection
     struct LockInfo
     {
         bool locked = false; // a <dump>.lock exists
-        bool mine = false;   // taken by this process
-        bool stale = false;  // its process is gone (or the lock is unreadable)
-        std::string game;    // who holds it ("ssa", "launcher")
+        bool mine = false; // taken by this process
+        bool stale = false; // its process is gone (or the lock is unreadable)
+        std::string game; // who holds it ("ssa", "launcher")
         int64_t pid = 0;
-        std::string since;   // ISO 8601, UTC
+        std::string since; // ISO 8601, UTC
 
         // Someone else is using the figure right now: do not write it.
         bool Busy() const { return locked && !mine && !stale; }
@@ -52,15 +52,16 @@ namespace collection
     {
         std::string path, file;
         uint16_t type = 0, variant = 0;
-        const Toy* toy = nullptr;  // null: a toy the catalogue does not know
-        VariantInfo variantInfo;   // name and kind from the variant id (the toy's own edition for variant 0)
+        const Toy* toy = nullptr; // null: a toy the catalogue does not know
+        VariantInfo variantInfo; // name and kind from the variant id (the toy's own edition for variant 0)
         // collection.json
-        std::string label;         // the player's name for this dump
-        std::string edition;       // a same-tag edition the player picked ("Crystal Clear Wham-Shell")
+        std::string label; // the player's name for this dump
+        std::string edition; // a same-tag edition the player picked ("Crystal Clear Wham-Shell")
         VariantKind editionKind = VariantKind::Base;
         bool favourite = false;
         std::string lastGame, lastUsed;
-        std::string origin;        // "created" (Add a figure, a duplicate), "imported", "portal" (copy of a real toy); empty: older
+        std::string
+            origin; // "created" (Add a figure, a duplicate), "imported", "portal" (copy of a real toy); empty: older
         // A Swap Force half linked to the other half of its swapper (file name; empty: none, the half is a card of its
         // own). Set only when the link is good: both dumps exist, link each other, and are one top and one bottom.
         std::string partner;
@@ -69,7 +70,7 @@ namespace collection
             std::string game, lastUsed; // ISO 8601, UTC
             int uses = 0;
         };
-        std::vector<Use> uses;     // per game (Touch)
+        std::vector<Use> uses; // per game (Touch)
         // The dump
         figures::AreaState state = figures::AreaState::Blank;
         figures::FigureStats stats;
@@ -99,12 +100,12 @@ namespace collection
 
     struct Filter
     {
-        std::string game;             // only toys this game reads ("ssa"); empty: all
-        int category = -1;            // a Category; -1: all
-        int element = -1;             // an Element; -1: all
-        int kind = -1;                // a VariantKind (Figure::Kind); -1: all
+        std::string game; // only toys this game reads ("ssa"); empty: all
+        int category = -1; // a Category; -1: all
+        int element = -1; // an Element; -1: all
+        int kind = -1; // a VariantKind (Figure::Kind); -1: all
         bool favouritesOnly = false;
-        std::string text;             // in the name, label, nickname or file name, any case
+        std::string text; // in the name, label, nickname or file name, any case
     };
 
     // Reads one dump (and its metadata and lock). False if it is not a 1 KB tag image.
@@ -118,7 +119,8 @@ namespace collection
     {
         std::string top, bottom;
     };
-    SwapperPaths CreateSwapper(uint16_t topType, uint16_t bottomType, uint16_t topVariant = 0, uint16_t bottomVariant = 0);
+    SwapperPaths CreateSwapper(
+        uint16_t topType, uint16_t bottomType, uint16_t topVariant = 0, uint16_t bottomVariant = 0);
     // The other half of the same swapper: 2003 gives 1003 and 1003 gives 2003; 0 for any other toy.
     uint16_t MatchingHalf(uint16_t type);
 
@@ -218,11 +220,11 @@ namespace collection
 
     struct TrashEntry
     {
-        std::string id;      // its file in trash/ ("2026-10-24T101500Z 014 Gill Grunt.sky")
-        std::string file;    // the name it had
+        std::string id; // its file in trash/ ("2026-10-24T101500Z 014 Gill Grunt.sky")
+        std::string file; // the name it had
         std::string deleted; // ISO 8601, UTC
-        std::string reason;  // "deleted", "tidy"
-        std::string path;    // the dump inside trash/
+        std::string reason; // "deleted", "tidy"
+        std::string path; // the dump inside trash/
     };
     // Moves the dump (and its metadata) to trash/. Refused while another process uses it.
     bool Delete(const std::string& path, const std::string& reason = "deleted", std::string* error = nullptr);
@@ -239,8 +241,8 @@ namespace collection
     struct ImportReport
     {
         int added = 0, duplicates = 0, invalid = 0;
-        std::vector<std::string> paths;   // the new dumps
-        std::vector<uint16_t> unknown;    // toy types the catalogue does not know, among the new dumps
+        std::vector<std::string> paths; // the new dumps
+        std::vector<uint16_t> unknown; // toy types the catalogue does not know, among the new dumps
     };
     // Dumps (files, or every dump of a folder): each must be a 1 KB tag; byte-for-byte copies of a dump already in the
     // collection are skipped. New ones get origin "imported".
@@ -258,8 +260,8 @@ namespace collection
     {
         std::string group = "smart"; // smart, element, game, category, series, level, name
         std::string order = "recent"; // recent, level, name, toy
-        std::string show = "all";     // all, favourites, played, new
-        bool foldForeign = true;      // "Not for this game": folded at the end, else hidden
+        std::string show = "all"; // all, favourites, played, new
+        bool foldForeign = true; // "Not for this game": folded at the end, else hidden
 
         bool operator==(const View&) const = default;
     };
@@ -288,18 +290,45 @@ namespace collection
 
     // --- Sections (docs/runtime/host/toybox_ux.md section 3) -----------------------------------------------------------------------
 
-    enum class GroupBy { Smart, Element, Game, Category, Series, Level, Name };
-    enum class OrderBy { Recent, Level, Name, Toy };
+    enum class GroupBy
+    {
+        Smart,
+        Element,
+        Game,
+        Category,
+        Series,
+        Level,
+        Name
+    };
+    enum class OrderBy
+    {
+        Recent,
+        Level,
+        Name,
+        Toy
+    };
     GroupBy ParseGroupBy(const std::string& id);
     OrderBy ParseOrderBy(const std::string& id);
 
     struct Section
     {
-        enum class Kind { Shelf, Element, Game, Category, Series, Level, Letter, Unknown, Foreign };
+        enum class Kind
+        {
+            Shelf,
+            Element,
+            Game,
+            Category,
+            Series,
+            Level,
+            Letter,
+            Unknown,
+            Foreign
+        };
         Kind kind;
-        int value = 0;            // the element, category, variant kind, level or letter
-        std::string game;         // Kind::Game
-        std::vector<size_t> items; // indices into the list; a linked swapper is its top's index only (the bottom is left out)
+        int value = 0; // the element, category, variant kind, level or letter
+        std::string game; // Kind::Game
+        std::vector<size_t>
+            items; // indices into the list; a linked swapper is its top's index only (the bottom is left out)
     };
     // Sections of `list` for `game`. Smart is the shelf (Toy Box and Skylauncher alike): one section where every figure
     // shows once, favourites first, then the figures `game` took (newest first), then by element and category, a
@@ -318,8 +347,8 @@ namespace collection
     // One occupied place of the portal, in the seats' order.
     struct PortalEntry
     {
-        size_t seat = 0;     // index in the game's seats
-        int slot = -1;       // the portal's hardware slot, -1 if unknown
+        size_t seat = 0; // index in the game's seats
+        int slot = -1; // the portal's hardware slot, -1 if unknown
         std::string tag, seatName;
         std::string path, name;
     };
@@ -338,8 +367,8 @@ namespace collection
 
     struct Migration
     {
-        int copied = 0;   // new files in the collection
-        int matched = 0;  // already there byte for byte
+        int copied = 0; // new files in the collection
+        int matched = 0; // already there byte for byte
         int failed = 0;
     };
     // Copies every dump of `from` that was not migrated yet into the collection (never deletes or changes `from`),

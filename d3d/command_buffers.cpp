@@ -39,7 +39,8 @@ namespace
         std::vector<uint8_t> state; // its recorded bytes, range after range
         std::vector<RegisterWrite> writes; // registers written into the buffer since the previous draw, and by this one
     };
-    constexpr uint32_t WritesOnly = ~0u; // RecordedDraw::primitive of the buffer's last entry: what follows its last draw
+    constexpr uint32_t WritesOnly =
+        ~0u; // RecordedDraw::primitive of the buffer's last entry: what follows its last draw
 
     std::mutex g_mutex;
     uint32_t g_recording; // command buffer being recorded, 0 if none
@@ -114,12 +115,10 @@ namespace
 
 namespace d3d
 {
-    bool Replaying()
-    {
-        return g_replaying != nullptr;
-    }
+    bool Replaying() { return g_replaying != nullptr; }
 
-    bool RecordDraw(uint32_t device, uint32_t primitive, uint32_t first, uint32_t count, bool indexed, int32_t baseVertex)
+    bool RecordDraw(
+        uint32_t device, uint32_t primitive, uint32_t first, uint32_t count, bool indexed, int32_t baseVertex)
     {
         std::lock_guard lock(g_mutex);
         if (g_recording == 0)

@@ -47,7 +47,8 @@ namespace
     uint8_t* g_base;
 
     // Guest memory layout of the test.
-    constexpr uint32_t Request = 0x10000, Entries = 0x10100, SizeOut = 0x10200, HandleOut = 0x10204, Returned = 0x10208, Buffer = 0x20000;
+    constexpr uint32_t Request = 0x10000, Entries = 0x10100, SizeOut = 0x10200, HandleOut = 0x10204, Returned = 0x10208,
+                       Buffer = 0x20000;
 
     void WriteUnlock(uint32_t id)
     {
@@ -64,27 +65,42 @@ namespace
     }
 
     // XamUserCreateAchievementEnumerator(0, 0, xuid, flags 7, start, count) then XamEnumerate into Buffer.
-    struct Seen { uint32_t id, gamerscore, flags; uint64_t time; std::u16string name; };
+    struct Seen
+    {
+        uint32_t id, gamerscore, flags;
+        uint64_t time;
+        std::u16string name;
+    };
     std::vector<Seen> Enumerate(uint32_t start, uint32_t count, uint32_t* sizeOut = nullptr)
     {
-        g_context.r3.u64 = 0; g_context.r4.u64 = 0; g_context.r5.u64 = 0; g_context.r6.u64 = 7;
-        g_context.r7.u64 = start; g_context.r8.u64 = count; g_context.r9.u64 = SizeOut; g_context.r10.u64 = HandleOut;
+        g_context.r3.u64 = 0;
+        g_context.r4.u64 = 0;
+        g_context.r5.u64 = 0;
+        g_context.r6.u64 = 7;
+        g_context.r7.u64 = start;
+        g_context.r8.u64 = count;
+        g_context.r9.u64 = SizeOut;
+        g_context.r10.u64 = HandleOut;
         __imp__XamUserCreateAchievementEnumerator(g_context, g_base);
         CHECK(g_context.r3.u32 == 0);
         uint32_t size = g_memory.Read<uint32_t>(SizeOut);
         if (sizeOut != nullptr)
             *sizeOut = size;
         std::vector<Seen> seen;
-        g_context.r3.u64 = g_memory.Read<uint32_t>(HandleOut); g_context.r4.u64 = 0; g_context.r5.u64 = Buffer;
-        g_context.r6.u64 = size; g_context.r7.u64 = Returned; g_context.r8.u64 = 0;
+        g_context.r3.u64 = g_memory.Read<uint32_t>(HandleOut);
+        g_context.r4.u64 = 0;
+        g_context.r5.u64 = Buffer;
+        g_context.r6.u64 = size;
+        g_context.r7.u64 = Returned;
+        g_context.r8.u64 = 0;
         __imp__XamEnumerate(g_context, g_base);
         uint32_t got = g_memory.Read<uint32_t>(Returned);
         CHECK(g_context.r3.u32 == (got != 0 ? 0u : 18u));
         for (uint32_t i = 0; i < got; i++)
         {
             uint32_t item = Buffer + i * 0x24;
-            Seen s{ g_memory.Read<uint32_t>(item), g_memory.Read<uint32_t>(item + 0x14), g_memory.Read<uint32_t>(item + 0x20),
-                g_memory.Read<uint64_t>(item + 0x18), {} };
+            Seen s{ g_memory.Read<uint32_t>(item), g_memory.Read<uint32_t>(item + 0x14),
+                g_memory.Read<uint32_t>(item + 0x20), g_memory.Read<uint64_t>(item + 0x18), {} };
             for (uint32_t label = g_memory.Read<uint32_t>(item + 4); label != 0; label += 2)
             {
                 char16_t unit = char16_t(g_memory.Read<uint16_t>(label));
@@ -110,7 +126,8 @@ int main(int argc, char** argv)
         return 2;
     }
     bool second = argc > 2; // the process "after a restart"
-    fs::path scratch = fs::temp_directory_path() / ("SSAAchievementsKernelTest-" + std::to_string(second ? getppid() : getpid()));
+    fs::path scratch =
+        fs::temp_directory_path() / ("SSAAchievementsKernelTest-" + std::to_string(second ? getppid() : getpid()));
     fs::create_directories(scratch);
     setenv("SKY_SAVE_DIR", scratch.string().c_str(), 1);
 
@@ -128,7 +145,8 @@ int main(int argc, char** argv)
         for (const Seen& s : all)
             CHECK(s.time == 0 && !(s.flags & 0x20000) && !s.name.empty());
         uint32_t sizeOut = 0;
-        CHECK(Enumerate(1, 2, &sizeOut).size() == 2 && Enumerate(1, 2).front().id == list.items[1].id); // start index and count
+        CHECK(Enumerate(1, 2, &sizeOut).size() == 2 &&
+              Enumerate(1, 2).front().id == list.items[1].id); // start index and count
 
         WriteUnlock(third);
         CHECK(g_lastNotice == "Achievement unlocked: " + list.items[2].name);

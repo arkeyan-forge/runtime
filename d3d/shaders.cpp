@@ -42,7 +42,8 @@ namespace d3d
             if (dumpDirectory != nullptr)
             {
                 char path[1024];
-                snprintf(path, sizeof(path), "%s/%016llX.%s", dumpDirectory, (unsigned long long)shader.hash, vertex ? "vs" : "ps");
+                snprintf(path, sizeof(path), "%s/%016llX.%s", dumpDirectory, (unsigned long long)shader.hash,
+                    vertex ? "vs" : "ps");
                 if (FILE* file = fopen(path, "wbx")) // only once per shader
                 {
                     fwrite(bytes.data(), 1, size, file);
@@ -81,7 +82,8 @@ namespace d3d
                 if (uint32_t tableOffset = g_memory.Read<uint32_t>(container + 0x10))
                 {
                     uint32_t table = container + tableOffset + 4; // after the container's size field
-                    uint32_t constants = g_memory.Read<uint32_t>(table + 0xC), info = table + g_memory.Read<uint32_t>(table + 0x10);
+                    uint32_t constants = g_memory.Read<uint32_t>(table + 0xC),
+                             info = table + g_memory.Read<uint32_t>(table + 0x10);
                     for (uint32_t i = 0; i < constants && i < 512; i++)
                     {
                         uint32_t entry = info + i * 20, registerIndex = g_memory.Read<uint16_t>(entry + 6);
@@ -115,23 +117,20 @@ namespace d3d
     {
         switch (usage)
         {
-        case 0: return usageIndex == 0 ? 0 : 15;  // POSITION
-        case 3: return 1;                         // NORMAL
-        case 6: return 2;                         // TANGENT
-        case 7: return 3;                         // BINORMAL
+        case 0: return usageIndex == 0 ? 0 : 15; // POSITION
+        case 3: return 1; // NORMAL
+        case 6: return 2; // TANGENT
+        case 7: return 3; // BINORMAL
         case 5: return usageIndex < 4 ? 4 + usageIndex : 12 + (usageIndex - 4); // TEXCOORD
         case 10: return usageIndex == 0 ? 8 : 11; // COLOR
-        case 2: return 9;                         // BLENDINDICES
-        case 1: return 10;                        // BLENDWEIGHT
-        case 4: return 16;                        // PSIZE
+        case 2: return 9; // BLENDINDICES
+        case 1: return 10; // BLENDWEIGHT
+        case 4: return 16; // PSIZE
         default: return ~0u;
         }
     }
 
-    uint64_t HashBytes(const void* data, uint64_t size)
-    {
-        return XXH3_64bits(data, size);
-    }
+    uint64_t HashBytes(const void* data, uint64_t size) { return XXH3_64bits(data, size); }
 
     const GuestShader* FindGuestShader(uint32_t object)
     {
@@ -179,8 +178,8 @@ namespace
         {
             static bool reported;
             if (!reported)
-                fprintf(stderr, "[shader] %s object 0x%08X: no container at +0x%X (0x%08X)\n", vertex ? "vertex" : "pixel",
-                    object, containerOffset, g_memory.Read<uint32_t>(container));
+                fprintf(stderr, "[shader] %s object 0x%08X: no container at +0x%X (0x%08X)\n",
+                    vertex ? "vertex" : "pixel", object, containerOffset, g_memory.Read<uint32_t>(container));
             reported = true;
         }
         Original(ctx, base);
@@ -192,17 +191,11 @@ namespace
 #ifdef GAME_HOOK_D3DVertexShader_Init
 PPC_FUNC_IMPL(GAME_IMP(D3DVertexShader_Init));
 // D3DVertexShader_Init(object, microcode)
-PPC_FUNC(GAME_HOOK(D3DVertexShader_Init))
-{
-    InitShader<GAME_IMP(D3DVertexShader_Init)>(ctx, base, 0x368, true);
-}
+PPC_FUNC(GAME_HOOK(D3DVertexShader_Init)) { InitShader<GAME_IMP(D3DVertexShader_Init)>(ctx, base, 0x368, true); }
 #endif
 
 #ifdef GAME_HOOK_D3DPixelShader_Init
 PPC_FUNC_IMPL(GAME_IMP(D3DPixelShader_Init));
 // D3DPixelShader_Init(object, microcode)
-PPC_FUNC(GAME_HOOK(D3DPixelShader_Init))
-{
-    InitShader<GAME_IMP(D3DPixelShader_Init)>(ctx, base, 0x28, false);
-}
+PPC_FUNC(GAME_HOOK(D3DPixelShader_Init)) { InitShader<GAME_IMP(D3DPixelShader_Init)>(ctx, base, 0x28, false); }
 #endif

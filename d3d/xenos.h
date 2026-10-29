@@ -23,7 +23,7 @@ namespace d3d::xenos
         uint32_t Height() const { return ((dword[2] >> 13) & 0x1FFF) + 1; }
         uint32_t Depth() const { return ((dword[2] >> 26) & 0x3F) + 1; } // stacked/3D depth
         uint32_t Dimension() const { return (dword[5] >> 9) & 3; }       // 0 1D, 1 2D, 2 3D, 3 cube
-        uint32_t Swizzle() const { return (dword[3] >> 1) & 0xFFF; }     // 3 bits per component: 0-3 XYZW, 4 = 0, 5 = 1
+        uint32_t Swizzle() const { return (dword[3] >> 1) & 0xFFF; } // 3 bits per component: 0-3 XYZW, 4 = 0, 5 = 1
         uint32_t ClampX() const { return (dword[0] >> 10) & 7; }
         uint32_t ClampY() const { return (dword[0] >> 13) & 7; }
         uint32_t ClampZ() const { return (dword[0] >> 16) & 7; }
@@ -38,10 +38,10 @@ namespace d3d::xenos
 
     struct TextureFormatInfo
     {
-        gpu::Format host;      // UNKNOWN: not supported yet
-        uint32_t blockBytes;   // bytes per block (or texel)
-        uint32_t blockWidth;   // 4 for block-compressed formats, else 1
-        bool convertToRgba8;   // decoded on the CPU into R8G8B8A8 (formats with no host equivalent)
+        gpu::Format host; // UNKNOWN: not supported yet
+        uint32_t blockBytes; // bytes per block (or texel)
+        uint32_t blockWidth; // 4 for block-compressed formats, else 1
+        bool convertToRgba8; // decoded on the CPU into R8G8B8A8 (formats with no host equivalent)
     };
 
     const TextureFormatInfo& TextureFormat(uint32_t format);
@@ -52,10 +52,10 @@ namespace d3d::xenos
     // array slices (cube faces) of a level follow each other, 4 KB aligned.
     struct TextureLevel
     {
-        uint32_t address;       // physical, of slice 0
-        uint32_t pitchBlocks;   // row pitch in blocks (a multiple of 32 for tiled textures)
-        uint32_t sliceBytes;    // distance between array slices
-        uint32_t x, y;          // the level's offset in blocks inside the packed tail
+        uint32_t address; // physical, of slice 0
+        uint32_t pitchBlocks; // row pitch in blocks (a multiple of 32 for tiled textures)
+        uint32_t sliceBytes; // distance between array slices
+        uint32_t x, y; // the level's offset in blocks inside the packed tail
         uint32_t width, height; // texels
     };
 
@@ -80,7 +80,7 @@ namespace d3d::xenos
     struct VertexFormatInfo
     {
         gpu::Format host;
-        uint32_t size;    // bytes
+        uint32_t size; // bytes
         bool packedNormal; // DEC3N-style packed normal: given to shaders as a raw uint
     };
     VertexFormatInfo VertexFormat(uint32_t declType);

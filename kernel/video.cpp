@@ -33,7 +33,8 @@ namespace
     std::condition_variable g_vblankSignal;
     bool g_vblanksRunning;
     uint64_t g_vblanks;
-    uint64_t g_interruptsHandled; // interrupts (blanks and others) whose guest callback has returned (InterruptsHandled)
+    uint64_t
+        g_interruptsHandled; // interrupts (blanks and others) whose guest callback has returned (InterruptsHandled)
     uint64_t g_lastFlip;
 
     uint32_t g_fpsLimit = 30;
@@ -76,8 +77,9 @@ namespace
                 return std::array<float, 3>{ v[v.size() / 2], v[v.size() * 95 / 100], v.back() };
             };
             auto l = stats(late), c = stats(callback);
-            fprintf(stderr, "[vblank] late median %.2f p95 %.2f max %.2f ms; callback median %.2f p95 %.2f max %.2f ms\n",
-                l[0], l[1], l[2], c[0], c[1], c[2]);
+            fprintf(stderr,
+                "[vblank] late median %.2f p95 %.2f max %.2f ms; callback median %.2f p95 %.2f max %.2f ms\n", l[0],
+                l[1], l[2], c[0], c[1], c[2]);
             late.clear();
             callback.clear();
         }
@@ -137,12 +139,12 @@ namespace
     {
         memset(g_memory.Translate(mode), 0, 0x30);
         g_memory.Write<uint32_t>(mode + 0x00, 1280); // display width
-        g_memory.Write<uint32_t>(mode + 0x04, 720);  // display height
-        g_memory.Write<uint32_t>(mode + 0x08, 0);    // interlaced
-        g_memory.Write<uint32_t>(mode + 0x0C, 1);    // widescreen
-        g_memory.Write<uint32_t>(mode + 0x10, 1);    // high definition
+        g_memory.Write<uint32_t>(mode + 0x04, 720); // display height
+        g_memory.Write<uint32_t>(mode + 0x08, 0); // interlaced
+        g_memory.Write<uint32_t>(mode + 0x0C, 1); // widescreen
+        g_memory.Write<uint32_t>(mode + 0x10, 1); // high definition
         g_memory.Write<uint32_t>(mode + 0x14, std::bit_cast<uint32_t>(60.0f));
-        g_memory.Write<uint32_t>(mode + 0x18, 1);    // NTSC
+        g_memory.Write<uint32_t>(mode + 0x18, 1); // NTSC
         g_memory.Write<uint32_t>(mode + 0x1C, 0x8A);
         g_memory.Write<uint32_t>(mode + 0x20, 0x01);
     }
@@ -202,12 +204,15 @@ void WaitForFlip(uint32_t presentInterval)
                 h.active = true;
                 h.fits = 0;
                 h.fitsToRestore = h.framesAtSixty < HalfRate::ShortSixty
-                    ? std::min(h.fitsToRestore * 2, HalfRate::MaxFitsToRestore) : HalfRate::FitsToRestore;
-                static bool told = false; // once per run, in the corner, in the game's text language (the Toy Box's toast)
+                                      ? std::min(h.fitsToRestore * 2, HalfRate::MaxFitsToRestore)
+                                      : HalfRate::FitsToRestore;
+                static bool told =
+                    false; // once per run, in the corner, in the game's text language (the Toy Box's toast)
                 if (!std::exchange(told, true))
                     ToyboxNotice("30 FPS: 60 not held", "30 FPS : 60 non tenu");
                 if (h.logged++ < 20)
-                    fprintf(stderr, "[video] fps limit 60: frames miss their 16.7 ms blank, shown at 30 FPS until they fit again\n");
+                    fprintf(stderr, "[video] fps limit 60: frames miss their 16.7 ms blank, shown at 30 FPS until they "
+                                    "fit again\n");
             }
         }
         else
@@ -246,15 +251,9 @@ void WaitForInterruptHandled(uint64_t since)
     g_vblankSignal.wait_for(lock, 2 * VBlankPeriod, [&] { return g_interruptsHandled != since; });
 }
 
-void SetFrameRateLimit(uint32_t fps)
-{
-    g_fpsLimit = fps;
-}
+void SetFrameRateLimit(uint32_t fps) { g_fpsLimit = fps; }
 
-uint32_t FrameRateLimit()
-{
-    return g_fpsLimit;
-}
+uint32_t FrameRateLimit() { return g_fpsLimit; }
 
 void QueueGraphicsInterrupt(uint32_t source, std::function<void()> prepare)
 {
@@ -281,12 +280,6 @@ PPC_FUNC(__imp__VdSetGraphicsInterruptCallback)
         std::call_once(started, [] { StartHostDrivenThread(InterruptThread, 0); });
 }
 
-PPC_FUNC(__imp__VdQueryVideoMode)
-{
-    WriteVideoMode(ctx.r3.u32);
-}
+PPC_FUNC(__imp__VdQueryVideoMode) { WriteVideoMode(ctx.r3.u32); }
 
-PPC_FUNC(__imp__XGetVideoMode)
-{
-    WriteVideoMode(ctx.r3.u32);
-}
+PPC_FUNC(__imp__XGetVideoMode) { WriteVideoMode(ctx.r3.u32); }

@@ -42,8 +42,7 @@ uint32_t GuestMemory::SystemAlloc(uint32_t size, uint32_t align)
     return address;
 }
 
-GuestHeap::GuestHeap(uint32_t begin, uint32_t end, uint32_t pageSize)
-    : m_begin(begin), m_end(end), m_pageSize(pageSize)
+GuestHeap::GuestHeap(uint32_t begin, uint32_t end, uint32_t pageSize) : m_begin(begin), m_end(end), m_pageSize(pageSize)
 {
     m_free.emplace(begin, end - begin);
 }

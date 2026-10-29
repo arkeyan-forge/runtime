@@ -26,7 +26,9 @@ public:
 
     // Takes the device as created; `connected` is whether its IsConnected() just found it (PortalInit asks once).
     AsyncPortal(std::unique_ptr<PortalBackend> device, bool connected, Timing timing);
-    explicit AsyncPortal(std::unique_ptr<PortalBackend> device, bool connected = false) : AsyncPortal(std::move(device), connected, Timing()) {}
+    explicit AsyncPortal(std::unique_ptr<PortalBackend> device, bool connected = false)
+        : AsyncPortal(std::move(device), connected, Timing())
+    {}
     ~AsyncPortal() override;
 
     const char* Name() const override { return m_name; }

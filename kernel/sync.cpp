@@ -53,10 +53,7 @@ namespace
         }
     }
 
-    void ReleaseSpinLock(uint32_t lock)
-    {
-        GuestAtomic(lock).store(0);
-    }
+    void ReleaseSpinLock(uint32_t lock) { GuestAtomic(lock).store(0); }
 
     std::shared_ptr<KernelObject> ObjectFromHandle(uint32_t handle, uint32_t pcr)
     {
@@ -102,10 +99,7 @@ namespace
 
 // Critical sections and spin locks
 
-PPC_FUNC(__imp__RtlInitializeCriticalSection)
-{
-    InitializeCriticalSection(ctx.r3.u32);
-}
+PPC_FUNC(__imp__RtlInitializeCriticalSection) { InitializeCriticalSection(ctx.r3.u32); }
 
 PPC_FUNC(__imp__RtlInitializeCriticalSectionAndSpinCount)
 {
@@ -150,20 +144,11 @@ PPC_FUNC(__imp__KfAcquireSpinLock)
     ctx.r3.u64 = 0; // previous IRQL
 }
 
-PPC_FUNC(__imp__KfReleaseSpinLock)
-{
-    ReleaseSpinLock(ctx.r3.u32);
-}
+PPC_FUNC(__imp__KfReleaseSpinLock) { ReleaseSpinLock(ctx.r3.u32); }
 
-PPC_FUNC(__imp__KeAcquireSpinLockAtRaisedIrql)
-{
-    AcquireSpinLock(ctx.r3.u32, ctx.r13.u32);
-}
+PPC_FUNC(__imp__KeAcquireSpinLockAtRaisedIrql) { AcquireSpinLock(ctx.r3.u32, ctx.r13.u32); }
 
-PPC_FUNC(__imp__KeReleaseSpinLockFromRaisedIrql)
-{
-    ReleaseSpinLock(ctx.r3.u32);
-}
+PPC_FUNC(__imp__KeReleaseSpinLockFromRaisedIrql) { ReleaseSpinLock(ctx.r3.u32); }
 
 // Kernel APCs and the L2 cache lock don't exist here.
 PPC_FUNC(__imp__KeEnterCriticalRegion) {}
@@ -309,10 +294,7 @@ PPC_FUNC(__imp__NtReleaseMutant)
 
 // Handles
 
-PPC_FUNC(__imp__NtClose)
-{
-    ctx.r3.u64 = CloseHandle(ctx.r3.u32) ? StatusSuccess : StatusInvalidHandle;
-}
+PPC_FUNC(__imp__NtClose) { ctx.r3.u64 = CloseHandle(ctx.r3.u32) ? StatusSuccess : StatusInvalidHandle; }
 
 PPC_FUNC(__imp__NtDuplicateObject)
 {
@@ -358,8 +340,8 @@ namespace
         uint32_t timeoutPointer, bool alertable)
     {
         auto thread = alertable ? CurrentGuestThread(ctx.r13.u32) : nullptr;
-        uint32_t status = WaitForObjects(objects, waitAll, timeoutPointer, CurrentKThread(ctx.r13.u32),
-            thread != nullptr ? &thread->apcs : nullptr);
+        uint32_t status = WaitForObjects(
+            objects, waitAll, timeoutPointer, CurrentKThread(ctx.r13.u32), thread != nullptr ? &thread->apcs : nullptr);
         if (status == StatusUserApc)
             DeliverUserApcs(ctx, *thread);
         return status;

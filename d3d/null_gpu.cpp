@@ -70,8 +70,7 @@ namespace
 
         for (const auto& pending : callbacks)
         {
-            QueueGraphicsInterrupt(CommandProcessorInterrupt, [pending]
-            {
+            QueueGraphicsInterrupt(CommandProcessorInterrupt, [pending] {
                 uint32_t info = g_memory.Read<uint32_t>(pending.device + DeviceInterruptInfo);
                 g_memory.Write<uint32_t>(info + InterruptInfoCallback, pending.callback);
                 g_memory.Write<uint32_t>(info + InterruptInfoContext, pending.context);

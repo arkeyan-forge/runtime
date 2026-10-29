@@ -65,10 +65,7 @@ namespace
         return !root.empty() && (fs::is_directory(root, error) || fs::create_directories(root, error));
     }
 
-    bool IsHardDrive(uint32_t deviceId)
-    {
-        return deviceId == HardDriveId && HardDrivePresent();
-    }
+    bool IsHardDrive(uint32_t deviceId) { return deviceId == HardDriveId && HardDrivePresent(); }
 
     std::string GuestCString(uint32_t address, size_t maxLength)
     {
@@ -99,14 +96,9 @@ namespace
         uint32_t result = ErrorSuccess;
         switch (creation)
         {
-        case CreateNew:
-            result = exists ? ErrorAlreadyExists : ErrorSuccess;
-            break;
-        case OpenExisting:
-            result = exists ? ErrorSuccess : ErrorPathNotFound;
-            break;
-        case OpenAlways:
-            break;
+        case CreateNew: result = exists ? ErrorAlreadyExists : ErrorSuccess; break;
+        case OpenExisting: result = exists ? ErrorSuccess : ErrorPathNotFound; break;
+        case OpenAlways: break;
         case TruncateExisting:
         case CreateAlways:
             // Both replace an existing package with an empty one.
@@ -128,9 +120,7 @@ namespace
             result = error ? ErrorAccessDenied : ErrorSuccess;
             exists = false;
             break;
-        default:
-            result = ErrorInvalidParameter;
-            break;
+        default: result = ErrorInvalidParameter; break;
         }
 
         if (result == ErrorSuccess && !exists && !fs::create_directories(directory, error))
@@ -340,7 +330,8 @@ PPC_FUNC(__imp__XamContentCreateEnumerator)
             item[ContentDataDisplayName + c * 2 + 1] = uint8_t(names[i][c]); // big-endian UTF-16
         memcpy(item + ContentDataFileName, names[i].data(), names[i].size());
     }
-    fprintf(stderr, "[content] enumerate type 0x%X on device %u: %zu package(s)\n", contentType, deviceId, names.size());
+    fprintf(
+        stderr, "[content] enumerate type 0x%X on device %u: %zu package(s)\n", contentType, deviceId, names.size());
 
     if (bufferSizePointer != 0)
         g_memory.Write<uint32_t>(bufferSizePointer, itemsPerEnumerate * ContentDataSize);

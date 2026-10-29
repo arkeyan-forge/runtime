@@ -39,30 +39,37 @@ namespace figures
     struct FigureStats
     {
         uint32_t experience = 0;       // 0x00, 24 bits: Spyro's Adventure's part, up to 33000 (level 10)
-        uint32_t giantsExperience = 0; // extra area +0x03, 16 bits: Giants' part, up to 63500 (levels 11-15); 0 without an extra area
+        uint32_t giantsExperience =
+            0; // extra area +0x03, 16 bits: Giants' part, up to 63500 (levels 11-15); 0 without an extra area
         uint16_t gold = 0;             // 0x03
         uint32_t playSeconds = 0;      // 0x05
         uint8_t sequence = 0;          // 0x09, which area is newer
         uint16_t upgrades = 0;         // 0x10, bit field of bought upgrades and the chosen path
         uint8_t platforms = 0;         // 0x13, consoles the figure was used on (2 = Xbox 360)
-        uint16_t ssaHat = 0;           // 0x14, the first area's hat: Spyro's Adventure's own (it has hats too); kept as it is
-                                       // unless a caller changes it
-        uint16_t hat = 0;              // the hat Giants shows: extra area +0x05 if set, else ssaHat. Changing it writes the
-                                       // extra area only, so Spyro's Adventure keeps its own hat
-        uint8_t extraSequence = 0;     // the extra area's sequence number (0 without one)
-        uint32_t swapForceExperience = 0; // extra area +0x08 (LE32): Swap Force's part (levels 16-20, up to 101000) [V];
-                                       // never counted by Spyro's Adventure or Giants
-        uint8_t wowPow = 0;            // Giants' Wow Pow bought (Series 2 figures), 0 or 1: extra area +0x06 bit 0, where the
-                                       // game writes it when Persephone sells it [V] (figures.md, "Upgrades")
+        uint16_t ssaHat = 0; // 0x14, the first area's hat: Spyro's Adventure's own (it has hats too); kept as it is
+        // unless a caller changes it
+        uint16_t hat = 0; // the hat Giants shows: extra area +0x05 if set, else ssaHat. Changing it writes the
+        // extra area only, so Spyro's Adventure keeps its own hat
+        uint8_t extraSequence = 0; // the extra area's sequence number (0 without one)
+        uint32_t swapForceExperience =
+            0; // extra area +0x08 (LE32): Swap Force's part (levels 16-20, up to 101000) [V];
+        // never counted by Spyro's Adventure or Giants
+        uint8_t wowPow = 0; // Giants' Wow Pow bought (Series 2 figures), 0 or 1: extra area +0x06 bit 0, where the
+        // game writes it when Persephone sells it [V] (figures.md, "Upgrades")
         std::array<uint8_t, 8> owner{}; // 0x18, the first owner's id, written by the title
-        std::u16string nickname;       // 0x20 and 0x40, 16 UTF-16 code units, zero padded
-        Date lastPlaced;               // 0x50
+        std::u16string nickname; // 0x20 and 0x40, 16 UTF-16 code units, zero padded
+        Date lastPlaced; // 0x50
         uint32_t heroicChallenges = 0; // 0x56, one bit per challenge
-        uint16_t heroPoints = 0;       // 0x5A
-        Date lastReset;                // 0x60
+        uint16_t heroPoints = 0; // 0x5A
+        Date lastReset; // 0x60
     };
 
-    enum class AreaState { Blank, Valid, Damaged };
+    enum class AreaState
+    {
+        Blank,
+        Valid,
+        Damaged
+    };
 
     // What the extra areas of the figure are: Blank (none written: every figure Spyro's Adventure made), Valid, Damaged.
     AreaState ReadExtraState(const FigureData& tag);
@@ -77,11 +84,11 @@ namespace figures
     void WriteStats(FigureData& tag, const FigureStats& stats);
 
     // Experience needed for each level (index 0 = level 1). Spyro's Adventure caps characters at level 10, Giants at 15, Swap Force at 20.
-    constexpr int MaxLevel = 10;          // Spyro's Adventure
-    constexpr int MaxLevelGiants = 15;    // Giants
+    constexpr int MaxLevel = 10; // Spyro's Adventure
+    constexpr int MaxLevelGiants = 15; // Giants
     constexpr int MaxLevelSwapForce = 20; // Swap Force
-    constexpr uint32_t MaxBaseExperience = 33000;     // the first area's part (level 10)
-    constexpr uint32_t MaxGiantsExperience = 63500;   // the extra area's part (level 15 = 96500 in all)
+    constexpr uint32_t MaxBaseExperience = 33000; // the first area's part (level 10)
+    constexpr uint32_t MaxGiantsExperience = 63500; // the extra area's part (level 15 = 96500 in all)
     constexpr uint32_t MaxSwapForceExperience = 101000; // the extra area's second part (level 20 = 197500 in all)
     extern const uint32_t LevelExperience[MaxLevelSwapForce];
     int LevelForExperience(uint32_t experience, int maxLevel = MaxLevel);

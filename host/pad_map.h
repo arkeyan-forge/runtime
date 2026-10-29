@@ -17,8 +17,13 @@ uint16_t PadButtonMask(int button);
 
 struct PadMap
 {
-    int8_t target[PadButtonCount]; // what each physical button does: its own job, another button's (index), or -1 (nothing)
-    PadMap() { for (int i = 0; i < PadButtonCount; i++) target[i] = int8_t(i); }
+    int8_t target
+        [PadButtonCount]; // what each physical button does: its own job, another button's (index), or -1 (nothing)
+    PadMap()
+    {
+        for (int i = 0; i < PadButtonCount; i++)
+            target[i] = int8_t(i);
+    }
     bool Identity() const;
 };
 

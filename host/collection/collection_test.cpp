@@ -47,10 +47,12 @@ namespace
     {
         bool series2 = false, alternate = false, lightcore = false;
     };
-    const std::set<uint16_t> GiantsSeries2 = { 0, 1, 3, 4, 5, 7, 9, 10, 11, 12, 14, 15, 16, 18, 19, 20, 21, 23, 25, 26, 27, 29, 30, 32 };
+    const std::set<uint16_t> GiantsSeries2 = { 0, 1, 3, 4, 5, 7, 9, 10, 11, 12, 14, 15, 16, 18, 19, 20, 21, 23, 25, 26,
+        27, 29, 30, 32 };
     const std::set<uint16_t> GiantsLightCore = { 7, 9, 20, 29, 100, 106, 108, 113 };
-    const std::set<std::pair<uint16_t, uint8_t>> GiantsDecos = { { 0, 2 }, { 10, 3 }, { 15, 3 }, { 18, 2 }, { 26, 3 }, { 100, 3 },
-        { 102, 2 }, { 103, 2 }, { 105, 2 }, { 106, 3 }, { 108, 2 }, { 109, 2 }, { 110, 3 }, { 112, 2 }, { 208, 2 } };
+    const std::set<std::pair<uint16_t, uint8_t>> GiantsDecos = { { 0, 2 }, { 10, 3 }, { 15, 3 }, { 18, 2 }, { 26, 3 },
+        { 100, 3 }, { 102, 2 }, { 103, 2 }, { 105, 2 }, { 106, 3 }, { 108, 2 }, { 109, 2 }, { 110, 3 }, { 112, 2 },
+        { 208, 2 } };
 
     GiantsSubtype GiantsReads(uint16_t type, uint16_t variant)
     {
@@ -88,15 +90,18 @@ namespace
 
     void RemoveTree(const std::string& path)
     {
-        SDL_EnumerateDirectory(path.c_str(), [](void* parent, const char*, const char* name) {
-            std::string child = std::string(static_cast<const char*>(parent)) + "/" + name;
-            SDL_PathInfo info;
-            if (SDL_GetPathInfo(child.c_str(), &info) && info.type == SDL_PATHTYPE_DIRECTORY)
-                RemoveTree(child);
-            else
-                SDL_RemovePath(child.c_str());
-            return SDL_ENUM_CONTINUE;
-        }, const_cast<char*>(path.c_str()));
+        SDL_EnumerateDirectory(
+            path.c_str(),
+            [](void* parent, const char*, const char* name) {
+                std::string child = std::string(static_cast<const char*>(parent)) + "/" + name;
+                SDL_PathInfo info;
+                if (SDL_GetPathInfo(child.c_str(), &info) && info.type == SDL_PATHTYPE_DIRECTORY)
+                    RemoveTree(child);
+                else
+                    SDL_RemovePath(child.c_str());
+                return SDL_ENUM_CONTINUE;
+            },
+            const_cast<char*>(path.c_str()));
         SDL_RemovePath(path.c_str());
     }
 
@@ -149,34 +154,59 @@ namespace
         using enum figures::Element;
         using enum figures::ToyKind;
         static const OldToy Old[] = {
-            { 0, "Whirlwind", "AirDragon", Air, Character }, { 1, "Sonic Boom", "Griffin", Air, Character },
-            { 2, "Warnado", "SkyTurtle", Air, Character }, { 3, "Lightning Rod", "StormGiant", Air, Character },
-            { 4, "Bash", "RockDragon", Earth, Character }, { 5, "Terrafin", "LandShark", Earth, Character },
-            { 6, "Dino-Rang", "DinoRang", Earth, Character }, { 7, "Prism Break", "GemGolem", Earth, Character },
-            { 8, "Sunburn", "PhoenixDragon", Fire, Character }, { 9, "Eruptor", "Eruptor", Fire, Character },
-            { 10, "Ignitor", "FlameKnight", Fire, Character }, { 11, "Flameslinger", "FireElf", Fire, Character },
-            { 12, "Zap", "WaterDragon", Water, Character }, { 13, "Wham-Shell", "CrustBuckler", Water, Character },
-            { 14, "Gill Grunt", "GillGrunt", Water, Character }, { 15, "Slam Bam", "Yeti", Water, Character },
-            { 16, "Spyro", "SpyroJr", Magic, Character }, { 17, "Voodood", "SkullOrc", Magic, Character },
-            { 18, "Double Trouble", "TikiWizard", Magic, Character }, { 19, "Trigger Happy", "GoldenCheat", Tech, Character },
-            { 20, "Drobot", "MetalDragon", Tech, Character }, { 21, "Drill Sergeant", "DrillBot", Tech, Character },
-            { 22, "Boomer", "BombTroll", Tech, Character }, { 23, "Wrecking Ball", "ForceFieldGrub", Magic, Character },
-            { 24, "Camo", "PlantDragon", Life, Character }, { 25, "Zook", "Bambazooker", Life, Character },
-            { 26, "Stealth Elf", "StealthElf", Life, Character }, { 27, "Stump Smash", "StumpSmashEnt", Life, Character },
-            { 28, "Dark Spyro", "DarkSpyro", Magic, Character }, { 29, "Hex", "ShadowMaid", Undead, Character },
-            { 30, "Chop Chop", "PandoranGuard", Undead, Character }, { 31, "Ghost Roaster", "GhostEater", Undead, Character },
+            { 0, "Whirlwind", "AirDragon", Air, Character },
+            { 1, "Sonic Boom", "Griffin", Air, Character },
+            { 2, "Warnado", "SkyTurtle", Air, Character },
+            { 3, "Lightning Rod", "StormGiant", Air, Character },
+            { 4, "Bash", "RockDragon", Earth, Character },
+            { 5, "Terrafin", "LandShark", Earth, Character },
+            { 6, "Dino-Rang", "DinoRang", Earth, Character },
+            { 7, "Prism Break", "GemGolem", Earth, Character },
+            { 8, "Sunburn", "PhoenixDragon", Fire, Character },
+            { 9, "Eruptor", "Eruptor", Fire, Character },
+            { 10, "Ignitor", "FlameKnight", Fire, Character },
+            { 11, "Flameslinger", "FireElf", Fire, Character },
+            { 12, "Zap", "WaterDragon", Water, Character },
+            { 13, "Wham-Shell", "CrustBuckler", Water, Character },
+            { 14, "Gill Grunt", "GillGrunt", Water, Character },
+            { 15, "Slam Bam", "Yeti", Water, Character },
+            { 16, "Spyro", "SpyroJr", Magic, Character },
+            { 17, "Voodood", "SkullOrc", Magic, Character },
+            { 18, "Double Trouble", "TikiWizard", Magic, Character },
+            { 19, "Trigger Happy", "GoldenCheat", Tech, Character },
+            { 20, "Drobot", "MetalDragon", Tech, Character },
+            { 21, "Drill Sergeant", "DrillBot", Tech, Character },
+            { 22, "Boomer", "BombTroll", Tech, Character },
+            { 23, "Wrecking Ball", "ForceFieldGrub", Magic, Character },
+            { 24, "Camo", "PlantDragon", Life, Character },
+            { 25, "Zook", "Bambazooker", Life, Character },
+            { 26, "Stealth Elf", "StealthElf", Life, Character },
+            { 27, "Stump Smash", "StumpSmashEnt", Life, Character },
+            { 28, "Dark Spyro", "DarkSpyro", Magic, Character },
+            { 29, "Hex", "ShadowMaid", Undead, Character },
+            { 30, "Chop Chop", "PandoranGuard", Undead, Character },
+            { 31, "Ghost Roaster", "GhostEater", Undead, Character },
             { 32, "Cynder", "Cynder", Undead, Character },
-            { 404, "Legendary Bash", "LegendaryRockDragon", Earth, Legendary }, { 416, "Legendary Spyro", "LegendarySpyro", Magic, Legendary },
+            { 404, "Legendary Bash", "LegendaryRockDragon", Earth, Legendary },
+            { 416, "Legendary Spyro", "LegendarySpyro", Magic, Legendary },
             { 419, "Legendary Trigger Happy", "LegendaryGoldenCheat", Tech, Legendary },
             { 430, "Legendary Chop Chop", "LegendaryPandoranGuard", Undead, Legendary },
-            { 505, "Terrabite", "LandShark", Earth, Sidekick }, { 514, "Gill Runt", "GillGrunt", Water, Sidekick },
-            { 519, "Trigger Snappy", "GoldenCheat", Tech, Sidekick }, { 526, "Whisper Elf", "StealthElf", Life, Sidekick },
-            { 200, "Anvil Rain", nullptr, None, MagicItem }, { 201, "Hidden Treasure", nullptr, None, MagicItem },
-            { 202, "Healing Elixir", nullptr, None, MagicItem }, { 203, "Ghost Pirate Swords", nullptr, None, MagicItem },
-            { 204, "Time Twister", nullptr, None, MagicItem }, { 205, "Sky-Iron Shield", nullptr, None, MagicItem },
-            { 206, "Winged Boots", nullptr, None, MagicItem }, { 207, "Sparx Dragonfly", nullptr, None, MagicItem },
-            { 300, "Dragon's Peak", nullptr, None, Adventure }, { 301, "Empire of Ice", nullptr, None, Adventure },
-            { 302, "Pirate Seas", nullptr, None, Adventure }, { 303, "Darklight Crypt", nullptr, None, Adventure },
+            { 505, "Terrabite", "LandShark", Earth, Sidekick },
+            { 514, "Gill Runt", "GillGrunt", Water, Sidekick },
+            { 519, "Trigger Snappy", "GoldenCheat", Tech, Sidekick },
+            { 526, "Whisper Elf", "StealthElf", Life, Sidekick },
+            { 200, "Anvil Rain", nullptr, None, MagicItem },
+            { 201, "Hidden Treasure", nullptr, None, MagicItem },
+            { 202, "Healing Elixir", nullptr, None, MagicItem },
+            { 203, "Ghost Pirate Swords", nullptr, None, MagicItem },
+            { 204, "Time Twister", nullptr, None, MagicItem },
+            { 205, "Sky-Iron Shield", nullptr, None, MagicItem },
+            { 206, "Winged Boots", nullptr, None, MagicItem },
+            { 207, "Sparx Dragonfly", nullptr, None, MagicItem },
+            { 300, "Dragon's Peak", nullptr, None, Adventure },
+            { 301, "Empire of Ice", nullptr, None, Adventure },
+            { 302, "Pirate Seas", nullptr, None, Adventure },
+            { 303, "Darklight Crypt", nullptr, None, Adventure },
             { 304, "Volcanic Vault", nullptr, None, Adventure },
         };
         auto catalog = figures::Catalog();
@@ -184,9 +214,10 @@ namespace
         for (size_t i = 0; i < std::min(catalog.size(), std::size(Old)); i++)
         {
             const figures::ToyInfo& toy = catalog[i];
-            bool same = toy.toyType == Old[i].type && strcmp(toy.name, Old[i].name) == 0 && toy.element == Old[i].element
-                && toy.kind == Old[i].kind && (toy.portrait == nullptr) == (Old[i].portrait == nullptr)
-                && (toy.portrait == nullptr || strcmp(toy.portrait, Old[i].portrait) == 0);
+            bool same = toy.toyType == Old[i].type && strcmp(toy.name, Old[i].name) == 0 &&
+                        toy.element == Old[i].element && toy.kind == Old[i].kind &&
+                        (toy.portrait == nullptr) == (Old[i].portrait == nullptr) &&
+                        (toy.portrait == nullptr || strcmp(toy.portrait, Old[i].portrait) == 0);
             CHECK(same);
             if (!same)
                 fprintf(stderr, "  entry %zu: %u %s\n", i, toy.toyType, toy.name);
@@ -225,8 +256,10 @@ namespace
 
         // Backward compatibility: later games take the older toys, SSA only its own set.
         CHECK(catalogue.Accepts("ssa", 14) && !catalogue.Accepts("ssa", 100) && catalogue.Accepts("ssa", 514));
-        CHECK(catalogue.Accepts("giants", 14) && catalogue.Accepts("giants", 100) && !catalogue.Accepts("giants", 3000));
-        CHECK(catalogue.Accepts("imaginators", 14) && catalogue.Accepts("imaginators", 601) && !catalogue.Accepts("nope", 14));
+        CHECK(
+            catalogue.Accepts("giants", 14) && catalogue.Accepts("giants", 100) && !catalogue.Accepts("giants", 3000));
+        CHECK(catalogue.Accepts("imaginators", 14) && catalogue.Accepts("imaginators", 601) &&
+              !catalogue.Accepts("nope", 14));
         CHECK(catalogue.Accepted("ssa").size() == figures::Catalog().size());
         CHECK(catalogue.Accepted("giants").size() == figures::Catalog("giants").size());
 
@@ -245,12 +278,15 @@ namespace
         };
         CHECK(seatIds("giants") == "p1,p2,item," && seatIds("ssa") == "p1,p2,item,adventure,");
         const Seat& giantsItem = catalogue.FindGame("giants")->seats[2];
-        CHECK(std::find(giantsItem.accepts.begin(), giantsItem.accepts.end(), Category::Adventure) != giantsItem.accepts.end());
+        CHECK(std::find(giantsItem.accepts.begin(), giantsItem.accepts.end(), Category::Adventure) !=
+              giantsItem.accepts.end());
 
         // What each game reads of a figure (Catalogue::Read, VersionsFor): backward compatible variants play as the game sees them.
         {
             const Toy* eruptor = catalogue.Find(9);
-            auto read = [&](const char* game, const Toy* toy, uint16_t variant) { return catalogue.Read(game, toy, variant); };
+            auto read = [&](const char* game, const Toy* toy, uint16_t variant) {
+                return catalogue.Read(game, toy, variant);
+            };
             // Spyro's Adventure reads the toy type only: every variant plays as the plain toy.
             Catalogue::Reading r = read("ssa", eruptor, 0x1801);
             CHECK(r.works && !r.exact && r.seen == nullptr && r.kind == VariantKind::Base);
@@ -263,9 +299,11 @@ namespace
             CHECK(r.exact && r.kind == VariantKind::LightCore);
             r = read("giants", eruptor, 0x2805);
             CHECK(!r.exact && r.kind == VariantKind::Series && r.seen != nullptr && r.seen->id == 0x1801);
-            r = read("giants", eruptor, 0x2C02); // Volcanic: Giants has no deco for it, its repose bit makes it Series 2
+            r = read(
+                "giants", eruptor, 0x2C02); // Volcanic: Giants has no deco for it, its repose bit makes it Series 2
             CHECK(!r.exact && r.kind == VariantKind::Series);
-            r = read("giants", eruptor, 0x3810); // Eon's Elite carries the repose bit too: Giants shows the Series 2 pose
+            r = read(
+                "giants", eruptor, 0x3810); // Eon's Elite carries the repose bit too: Giants shows the Series 2 pose
             CHECK(!r.exact && r.kind == VariantKind::Series && r.seen != nullptr && r.seen->id == 0x1801);
             r = read("giants", eruptor, 0x1814); // a chase figure: only the repose bit counts
             CHECK(!r.exact && r.kind == VariantKind::Series);
@@ -278,17 +316,20 @@ namespace
                 giantsVersions += v->name + ";";
             CHECK(giantsVersions == "Series 2 Eruptor;LightCore Eruptor;");
             // Swap Force tells the 2013 decorations apart, Trap Team Eon's Elite too.
-            CHECK(read("swapforce", eruptor, 0x2C02).exact && read("swapforce", eruptor, 0x2C02).kind == VariantKind::AltDeco);
+            CHECK(read("swapforce", eruptor, 0x2C02).exact &&
+                  read("swapforce", eruptor, 0x2C02).kind == VariantKind::AltDeco);
             CHECK(!read("swapforce", eruptor, 0x3810).exact && read("trap_team", eruptor, 0x3810).exact);
             // Trap Team's re-release of a sidekick (0x3000) is a version only in the games that tell it apart.
             const Toy* terrabite = catalogue.Find(505);
-            CHECK(terrabite != nullptr && catalogue.VersionsFor("giants", *terrabite).empty() && catalogue.VersionsFor("swapforce", *terrabite).empty());
+            CHECK(terrabite != nullptr && catalogue.VersionsFor("giants", *terrabite).empty() &&
+                  catalogue.VersionsFor("swapforce", *terrabite).empty());
             CHECK(catalogue.VersionsFor("trap_team", *terrabite).size() == 1);
             // No version list repeats a toy's own name, shows a base entry or lists a variant its game plays as the plain toy.
             for (const Game& game : catalogue.Games())
                 for (const Toy& toy : catalogue.Toys())
                     for (const Variant* v : catalogue.VersionsFor(game.id, toy))
-                        CHECK(v->kind != VariantKind::Base && v->name != toy.name && (v->sameTag || catalogue.Read(game.id, &toy, v->id).exact));
+                        CHECK(v->kind != VariantKind::Base && v->name != toy.name &&
+                              (v->sameTag || catalogue.Read(game.id, &toy, v->id).exact));
             // Figures as the game names them.
             Figure seen;
             seen.toy = eruptor;
@@ -296,7 +337,8 @@ namespace
             seen.variant = 0x3810;
             seen.variantInfo = catalogue.Describe(eruptor, seen.variant);
             CHECK(NameIn(seen, "giants") == "Series 2 Eruptor" && NameIn(seen, "trap_team") == "Eon's Elite Eruptor" &&
-                  KindIn(seen, "giants") == VariantKind::Series && KindIn(seen, "trap_team") == VariantKind::EonsElite && seen.DisplayName() == "Eon's Elite Eruptor");
+                  KindIn(seen, "giants") == VariantKind::Series &&
+                  KindIn(seen, "trap_team") == VariantKind::EonsElite && seen.DisplayName() == "Eon's Elite Eruptor");
         }
 
         // Variants: listed, worked out from the bits, unknown toys.
@@ -315,18 +357,22 @@ namespace
         info = catalogue.Describe(gill, 0x7777);
         CHECK(info.name == "Gill Grunt (variant 7777)" && info.kind == VariantKind::Other);
         CHECK(catalogue.Describe(nullptr, 0).name == "Unknown toy" && !catalogue.Describe(nullptr, 0).known);
-        CHECK(catalogue.Find(28)->edition == VariantKind::Dark && catalogue.Find(404)->edition == VariantKind::Legendary);
+        CHECK(
+            catalogue.Find(28)->edition == VariantKind::Dark && catalogue.Find(404)->edition == VariantKind::Legendary);
         // Swap Force [V] (its disc's toy data and real figures): bottoms (legs) are 1000-1015, tops (bodies) 2000-2015,
         // its figures carry 0x2000 as sold, and its variants are listed with the ids its data gives.
-        CHECK(catalogue.Find(1000)->category == Category::SwapBottom && catalogue.Find(2000)->category == Category::SwapTop);
-        CHECK(catalogue.Find(2015)->name == "Wash Buckler (top)" && catalogue.Find(1015)->name == "Wash Buckler (bottom)");
+        CHECK(catalogue.Find(1000)->category == Category::SwapBottom &&
+              catalogue.Find(2000)->category == Category::SwapTop);
+        CHECK(catalogue.Find(2015)->name == "Wash Buckler (top)" &&
+              catalogue.Find(1015)->name == "Wash Buckler (bottom)");
         info = catalogue.Describe(catalogue.Find(2015), 0x2402);
         CHECK(info.name == "Dark Wash Buckler (top)" && info.kind == VariantKind::Dark && info.known);
         info = catalogue.Describe(catalogue.Find(3000), 0x2000);
         CHECK(info.name == "Scratch" && info.kind == VariantKind::Base && info.known);
         CHECK(catalogue.Describe(catalogue.Find(3005), 0x2206).kind == VariantKind::LightCore);
         CHECK(catalogue.Describe(catalogue.Find(3013), 0x2603).name == "Legendary Grim Creeper");
-        CHECK(catalogue.Accepts("swapforce", 14) && catalogue.Accepts("swapforce", 2000) && !catalogue.Accepts("swapforce", 450));
+        CHECK(catalogue.Accepts("swapforce", 14) && catalogue.Accepts("swapforce", 2000) &&
+              !catalogue.Accepts("swapforce", 450));
         CHECK(catalogue.Find(210)->category == Category::Trap && catalogue.Find(3220)->category == Category::Vehicle);
 
         // Every variant Giants knows is listed, with an id Giants reads as that variant [V] (the disc's own tables), and
@@ -353,7 +399,9 @@ namespace
                     CHECK(decos.contains(deco));
         }
         printf("catalogue: %d variants of SSA and Giants toys read by Giants as listed\n", giantsKnown);
-        CHECK(giantsKnown == 49); // 47 the disc defines, and the public Rare LightCore Prism Break and Love Potion Pop Fizz (read as Punch)
+        CHECK(
+            giantsKnown ==
+            49); // 47 the disc defines, and the public Rare LightCore Prism Break and Love Potion Pop Fizz (read as Punch)
         // Giants' pictures name listed variants only; every toy and variant it has a picture of is mapped.
         const Game* giants = catalogue.FindGame("giants");
         for (const auto* pictures : { &giants->portraits, &giants->artworks })
@@ -387,11 +435,14 @@ namespace
             bool hasBase = StandardVariant(toy) != 0;
             withBase += hasBase ? 1 : 0;
             if (hasBase)
-                CHECK(toy.variants[0].kind == VariantKind::Base || catalogue.Describe(&toy, StandardVariant(toy)).kind == VariantKind::Base);
+                CHECK(toy.variants[0].kind == VariantKind::Base ||
+                      catalogue.Describe(&toy, StandardVariant(toy)).kind == VariantKind::Base);
         }
-        CHECK(withBase == 85 && StandardVariant(*catalogue.Find(103)) == 0x1000 && StandardVariant(*catalogue.Find(3000)) == 0x2000 &&
-              StandardVariant(*catalogue.Find(404)) == 0x0403 && StandardVariant(*catalogue.Find(9)) == 0 && VersionCount(*catalogue.Find(103)) == 2 &&
-              VersionCount(*catalogue.Find(404)) == 0 && VersionCount(*catalogue.Find(3000)) == 0 && VersionCount(*catalogue.Find(9)) == 6);
+        CHECK(withBase == 85 && StandardVariant(*catalogue.Find(103)) == 0x1000 &&
+              StandardVariant(*catalogue.Find(3000)) == 0x2000 && StandardVariant(*catalogue.Find(404)) == 0x0403 &&
+              StandardVariant(*catalogue.Find(9)) == 0 && VersionCount(*catalogue.Find(103)) == 2 &&
+              VersionCount(*catalogue.Find(404)) == 0 && VersionCount(*catalogue.Find(3000)) == 0 &&
+              VersionCount(*catalogue.Find(9)) == 6);
         int giantsBase = 0; // the Giants toys: Jet-Vac 0x1000, the LightCore ones 0x1206
         for (const Toy& toy : catalogue.Toys())
             giantsBase += toy.game == "giants" && StandardVariant(toy) != 0 ? 1 : 0;
@@ -405,7 +456,8 @@ namespace
             {"type": 9999, "name": "Homemade", "category": "magic_item", "game": "ssa",
              "variants": [{"name": "Crystal Homemade", "kind": "crystal", "same_tag": true}]}]})json";
         CHECK(copy.Load(additions, error));
-        CHECK(copy.Find(14)->name == "Gill Grunt (edited)" && copy.Find(9999) != nullptr && copy.Toys().size() == catalogue.Toys().size() + 1);
+        CHECK(copy.Find(14)->name == "Gill Grunt (edited)" && copy.Find(9999) != nullptr &&
+              copy.Toys().size() == catalogue.Toys().size() + 1);
         CHECK(copy.Find(9999)->variants.size() == 1 && copy.Find(9999)->variants[0].sameTag);
         size_t before = copy.Toys().size();
         CHECK(!copy.Load(R"({"format": 1, "toys": [{"type": 15, "name": "X", "category": "nonsense"}]})", error));
@@ -420,11 +472,14 @@ namespace
         using namespace collection;
         std::string lightcore = Create(100, 0x1206);
         Figure figure;
-        CHECK(Read(lightcore, figure) && figure.type == 100 && figure.variant == 0x1206 && figure.Kind() == VariantKind::LightCore);
-        CHECK(figure.DisplayName() == "LightCore Jet-Vac" && figure.state == figures::AreaState::Blank && figure.level == 1);
+        CHECK(Read(lightcore, figure) && figure.type == 100 && figure.variant == 0x1206 &&
+              figure.Kind() == VariantKind::LightCore);
+        CHECK(figure.DisplayName() == "LightCore Jet-Vac" && figure.state == figures::AreaState::Blank &&
+              figure.level == 1);
         figures::FigureStats stats;
         figures::SetTotalExperience(stats, 42700);
-        CHECK(WriteStats(lightcore, stats) && Read(lightcore, figure) && figure.level == 11 && figure.variant == 0x1206);
+        CHECK(
+            WriteStats(lightcore, stats) && Read(lightcore, figure) && figure.level == 11 && figure.variant == 0x1206);
         CHECK(Duplicate(lightcore) != "" && Read(lightcore, figure) && figure.level == 11);
 
         // Every variant Giants knows, created as the Toy Box and Skylauncher create it: the tag carries the toy type
@@ -437,11 +492,12 @@ namespace
                 if ((toy.game != "ssa" && toy.game != "giants") || !GiantsKnows(toy, variant))
                     continue;
                 std::string path = Create(toy.type, variant.id);
-                bool ok = Read(path, figure) && figure.type == toy.type && figure.variant == variant.id
-                    && figure.DisplayName() == variant.name && figure.Kind() == variant.kind;
+                bool ok = Read(path, figure) && figure.type == toy.type && figure.variant == variant.id &&
+                          figure.DisplayName() == variant.name && figure.Kind() == variant.kind;
                 CHECK(ok);
                 if (!ok)
-                    fprintf(stderr, "  created %s (%u:%04X) is not that figure\n", variant.name.c_str(), toy.type, variant.id);
+                    fprintf(stderr, "  created %s (%u:%04X) is not that figure\n", variant.name.c_str(), toy.type,
+                        variant.id);
                 made += ok;
                 CHECK(Delete(path, "test"));
             }
@@ -457,7 +513,8 @@ namespace
         auto fileOf = [](const std::string& path) { return path.substr(path.rfind('/') + 1); };
         auto count = [](const char* game, const char* seat, const std::string& file) {
             std::vector<WheelPlace> wheel = GetWheel(game, seat);
-            return std::count_if(wheel.begin(), wheel.end(), [&](const WheelPlace& p) { return p.file == file && p.pinned; });
+            return std::count_if(
+                wheel.begin(), wheel.end(), [&](const WheelPlace& p) { return p.file == file && p.pinned; });
         };
         std::string file = fileOf(Create(14)); // Gill Grunt
         CHECK(!OnWheel("ssa", file) && SetOnWheel("ssa", file, true) && OnWheel("ssa", file));
@@ -474,7 +531,8 @@ namespace
         std::vector<WheelPlace> full(8);
         for (size_t i = 0; i < full.size(); i++)
             full[i] = { "x" + std::to_string(i) + ".sky", true };
-        CHECK(SetWheel("giants", "p1", full) && SetWheel("giants", "p2", full) && !SetOnWheel("giants", file, true) && !OnWheel("giants", file));
+        CHECK(SetWheel("giants", "p1", full) && SetWheel("giants", "p2", full) && !SetOnWheel("giants", file, true) &&
+              !OnWheel("giants", file));
     }
 
     void TestUpgrades()
@@ -483,9 +541,11 @@ namespace
         SetVariable("SKYLANDERS_DATA", g_scratch + "/data");
         const Toy* spyro = Catalogue::Get().Find(16);
         UpgradeTable plain = Upgrades(*spyro, "giants", "en");
-        CHECK(!plain.fromDisc && plain.upgrades.size() == 11 && plain.upgrades[0].bit == 2 && plain.upgrades[0].name == "Upgrade 1");
-        CHECK(plain.upgrades[4].bit == 6 && plain.upgrades[4].path == UpgradePath::First && plain.upgrades[7].bit == 6 &&
-            plain.upgrades[7].path == UpgradePath::Second && plain.upgrades[10].bit == UpgradeSoulGemBit && plain.upgrades[10].price == 4000);
+        CHECK(!plain.fromDisc && plain.upgrades.size() == 11 && plain.upgrades[0].bit == 2 &&
+              plain.upgrades[0].name == "Upgrade 1");
+        CHECK(plain.upgrades[4].bit == 6 && plain.upgrades[4].path == UpgradePath::First &&
+              plain.upgrades[7].bit == 6 && plain.upgrades[7].path == UpgradePath::Second &&
+              plain.upgrades[10].bit == UpgradeSoulGemBit && plain.upgrades[10].price == 4000);
         CHECK(Upgrades(*spyro, "giants", "fr").upgrades[0].name == "Amélioration 1" && plain.pathNames[1] == "Path 2");
 
         // The Edit rules: basic ones toggle; a path upgrade chooses its path; the other path is greyed and switching to it
@@ -496,11 +556,14 @@ namespace
         uint16_t bits = ToggleUpgrade(0, basic);
         CHECK(bits == 0x0004 && UpgradeBought(bits, basic) && ToggleUpgrade(bits, basic) == 0);
         bits = ToggleUpgrade(bits, first);
-        CHECK(bits == 0x0045 && UpgradeBought(bits, first) && !UpgradeBought(bits, second) && UpgradeGreyed(bits, second) && !UpgradeGreyed(bits, first));
+        CHECK(bits == 0x0045 && UpgradeBought(bits, first) && !UpgradeBought(bits, second) &&
+              UpgradeGreyed(bits, second) && !UpgradeGreyed(bits, first));
         bits = ToggleUpgrade(bits, plain.upgrades[5]);
         CHECK(bits == 0x00C5 && BoughtCount(bits, plain) == 3);
-        bits = ToggleUpgrade(bits, second); // switches to the second path; the two bought path upgrades move, this one stays bought
-        CHECK(bits == 0x00C7 && UpgradeBought(bits, second) && UpgradeBought(bits, plain.upgrades[8]) && UpgradeGreyed(bits, first));
+        bits = ToggleUpgrade(
+            bits, second); // switches to the second path; the two bought path upgrades move, this one stays bought
+        CHECK(bits == 0x00C7 && UpgradeBought(bits, second) && UpgradeBought(bits, plain.upgrades[8]) &&
+              UpgradeGreyed(bits, first));
         CHECK(AllUpgrades(0, plain) == 0x03FD && AllUpgrades(bits, plain) == 0x03FF && NoUpgrades(0x7FFF) == 0x7000);
         CHECK(BoughtCount(AllUpgrades(0, plain), plain) == 8);
         // Giants' Wow Pow: bit 10 of the editors' bits, stored in FigureStats::wowPow; the field's own bits 10-11 kept.
@@ -513,7 +576,8 @@ namespace
         CHECK(field == 0x0800 && wow == 0);
         // The game's marks become words, the description is its first sentence.
         CHECK(UpgradeLabel("Press &ICON(0,ICON_ENTER) to fly.\nFaster", "en") == "Press the button to fly. Faster");
-        CHECK(UpgradeLine("Press { to fly. Faster", "fr") == "Press le bouton to fly" && UpgradeLine("Big hit!  Really.", "en") == "Big hit!");
+        CHECK(UpgradeLine("Press { to fly. Faster", "fr") == "Press le bouton to fly" &&
+              UpgradeLine("Big hit!  Really.", "en") == "Big hit!");
 
         std::filesystem::path file = UpgradeFile("giants");
         CHECK(file == std::filesystem::path(g_scratch) / "data" / "Giants" / "upgrades.json");
@@ -524,13 +588,16 @@ namespace
                          {"bit": 10, "path": 4, "price": 5000, "name": {"en": "Wow"}, "description": {}}]}}})json";
         SDL_SaveFile(datadir::Text(file).c_str(), made, strlen(made));
         UpgradeTable read = Upgrades(*spyro, "giants", "fr");
-        CHECK(read.fromDisc && read.upgrades.size() == 2 && read.upgrades[0].name == "Amélioration A" && read.upgrades[0].description == "Does A");
-        CHECK(read.upgrades[1].bit == UpgradeWowPowBit && read.upgrades[1].path == UpgradePath::WowPow && read.upgrades[1].price == 5000);
+        CHECK(read.fromDisc && read.upgrades.size() == 2 && read.upgrades[0].name == "Amélioration A" &&
+              read.upgrades[0].description == "Does A");
+        CHECK(read.upgrades[1].bit == UpgradeWowPowBit && read.upgrades[1].path == UpgradePath::WowPow &&
+              read.upgrades[1].price == 5000);
         CHECK(read.pathNames[0] == "Voie A" && read.pathNames[1] == "Path B" && read.pathDescriptions[0] == "First");
-        CHECK(Upgrades(*Catalogue::Get().Find(416), "giants", "en").upgrades[0].name == "Upgrade A"); // Legendary Spyro: Spyro's
-        CHECK(Upgrades(*Catalogue::Get().Find(28), "giants", "en").fromDisc);                         // Dark Spyro too
-        CHECK(!Upgrades(*Catalogue::Get().Find(14), "giants", "en").fromDisc);                        // not in the file
-        CHECK(!Upgrades(*spyro, "ssa", "en").fromDisc);                                               // the other game's file
+        CHECK(Upgrades(*Catalogue::Get().Find(416), "giants", "en").upgrades[0].name ==
+              "Upgrade A"); // Legendary Spyro: Spyro's
+        CHECK(Upgrades(*Catalogue::Get().Find(28), "giants", "en").fromDisc); // Dark Spyro too
+        CHECK(!Upgrades(*Catalogue::Get().Find(14), "giants", "en").fromDisc); // not in the file
+        CHECK(!Upgrades(*spyro, "ssa", "en").fromDisc); // the other game's file
         std::filesystem::remove(file);
         CHECK(!Upgrades(*spyro, "giants", "en").fromDisc);
     }
@@ -556,7 +623,8 @@ namespace
         Figure figure;
         CHECK(Read(gill, figure) && figure.type == 14 && figure.variant == 0 && figure.toy != nullptr);
         CHECK(figure.state == figures::AreaState::Blank && figure.level == 1 && !figure.lock.locked);
-        CHECK(Read(series, figure) && figure.Kind() == VariantKind::Series && figure.DisplayName() == "Series 2 Gill Grunt");
+        CHECK(Read(series, figure) && figure.Kind() == VariantKind::Series &&
+              figure.DisplayName() == "Series 2 Gill Grunt");
 
         // Stats go into the dump itself.
         figures::FigureStats stats;
@@ -564,7 +632,8 @@ namespace
         stats.gold = 3000;
         CHECK(WriteStats(gill, stats));
         CHECK(SetNickname(gill, "Ace"));
-        CHECK(Read(gill, figure) && figure.state == figures::AreaState::Valid && figure.level == 6 && figure.stats.gold == 3000);
+        CHECK(Read(gill, figure) && figure.state == figures::AreaState::Valid && figure.level == 6 &&
+              figure.stats.gold == 3000);
         CHECK(figures::NicknameUtf8(figure.stats) == "Ace");
 
         // Giants through the collection: level 15 with a hat in a Giants toy (a LightCore: TestGiants).
@@ -573,14 +642,17 @@ namespace
         high.hat = 5;
         CHECK(WriteStats(giant, high) && Read(giant, figure) && figure.level == 15 && figure.stats.hat == 5);
         CHECK(figures::TotalExperience(figure.stats) == 96500 && figure.stats.experience == 33000);
-        CHECK(ResetToNew(giant) && Read(giant, figure) && figure.level == 1 && figure.stats.giantsExperience == 0 && figure.state == figures::AreaState::Blank);
+        CHECK(ResetToNew(giant) && Read(giant, figure) && figure.level == 1 && figure.stats.giantsExperience == 0 &&
+              figure.state == figures::AreaState::Blank);
 
         // Metadata in collection.json.
         CHECK(SetLabel(item, "My elixir") && SetFavourite(item, true));
         CHECK(SetEdition(gill, "Crystal Clear Gill Grunt", VariantKind::Crystal));
         Touch(gill, "ssa");
-        CHECK(Read(item, figure) && figure.label == "My elixir" && figure.favourite && figure.DisplayName() == "My elixir");
-        CHECK(Read(gill, figure) && figure.Kind() == VariantKind::Crystal && figure.lastGame == "ssa" && figure.lastUsed.size() == 20);
+        CHECK(Read(item, figure) && figure.label == "My elixir" && figure.favourite &&
+              figure.DisplayName() == "My elixir");
+        CHECK(Read(gill, figure) && figure.Kind() == VariantKind::Crystal && figure.lastGame == "ssa" &&
+              figure.lastUsed.size() == 20);
         CHECK(SetFavourite(item, false) && Read(item, figure) && !figure.favourite);
 
         // Listing and filters.
@@ -666,7 +738,8 @@ namespace
         // A second run copies nothing; originals are all still there.
         result = Migrate(legacy);
         CHECK(result.copied == 0 && result.matched == 0 && result.failed == 1);
-        CHECK(SDL_GetPathInfo((legacy + "/old gill.sky").c_str(), nullptr) && SDL_GetPathInfo((legacy + "/short.bin").c_str(), nullptr));
+        CHECK(SDL_GetPathInfo((legacy + "/old gill.sky").c_str(), nullptr) &&
+              SDL_GetPathInfo((legacy + "/short.bin").c_str(), nullptr));
     }
 
     void TestIcons(const char* sheetFolder)
@@ -690,7 +763,7 @@ namespace
         {
             Image icon = GeneratedIcon(toy, 96);
             CHECK(icon.width == 96 && icon.rgba.size() == 96 * 96);
-            CHECK((icon.rgba[0] >> 24) == 0);                    // transparent corner
+            CHECK((icon.rgba[0] >> 24) == 0); // transparent corner
             uint32_t opaque = 0;
             for (uint32_t pixel : icon.rgba)
                 opaque += (pixel >> 24) == 255;
@@ -700,9 +773,12 @@ namespace
         // The family marks both apps draw: a potion, a compass, a paw; inside at their centre, outside at the corners.
         CHECK(HasKindGlyph(Category::MagicItem) && HasKindGlyph(Category::Adventure) && HasKindGlyph(Category::Mini));
         CHECK(!HasKindGlyph(Category::Core) && KindGlyph(Category::Core, 0, 0) == 1);
-        CHECK(KindGlyph(Category::MagicItem, 0, 0.28f) < 0 && KindGlyph(Category::Adventure, 0, 0) < 0 && KindGlyph(Category::Mini, 0, 0.4f) < 0);
-        CHECK(KindGlyph(Category::MagicItem, 0.95f, 0.95f) > 0 && KindGlyph(Category::Adventure, 0.95f, 0.95f) > 0 && KindGlyph(Category::Mini, -0.95f, 0.95f) > 0);
-        CHECK(KindGlyph(Category::Adventure, 0.78f, 0) < 0 && KindGlyph(Category::Adventure, 0.46f, 0.46f) > 0); // the ring, then the gap
+        CHECK(KindGlyph(Category::MagicItem, 0, 0.28f) < 0 && KindGlyph(Category::Adventure, 0, 0) < 0 &&
+              KindGlyph(Category::Mini, 0, 0.4f) < 0);
+        CHECK(KindGlyph(Category::MagicItem, 0.95f, 0.95f) > 0 && KindGlyph(Category::Adventure, 0.95f, 0.95f) > 0 &&
+              KindGlyph(Category::Mini, -0.95f, 0.95f) > 0);
+        CHECK(KindGlyph(Category::Adventure, 0.78f, 0) < 0 &&
+              KindGlyph(Category::Adventure, 0.46f, 0.46f) > 0); // the ring, then the gap
         Image potion = GeneratedIcon(catalogue.Find(200), 64), compass = GeneratedIcon(catalogue.Find(300), 64);
         CHECK(potion.rgba != compass.rgba);
         Image plain = GeneratedIcon(catalogue.Find(14), 64), badged = plain;
@@ -727,7 +803,8 @@ namespace
         for (int kind = 1; kind < int(VariantKind::Count); kind++)
             cells.push_back({ catalogue.Find(14), VariantKind(kind) });
         int rows = int(cells.size() + columns - 1) / columns;
-        Image sheet{ cell * columns, cell * rows * 2, std::vector<uint32_t>(size_t(cell * columns) * cell * rows * 2, 0xFF402020) };
+        Image sheet{ cell * columns, cell * rows * 2,
+            std::vector<uint32_t>(size_t(cell * columns) * cell * rows * 2, 0xFF402020) };
         for (size_t i = 0; i < cells.size(); i++)
         {
             for (int tile = 0; tile < 2; tile++)
@@ -745,10 +822,13 @@ namespace
                         float dx = x - image.width / 2.0f, dy = y - image.height / 2.0f;
                         if (tile == 0 && dx * dx + dy * dy < image.width * image.width / 4.0f)
                         {
-                            uint32_t rgb = ElementRgb(cells[i].first != nullptr ? cells[i].first->element : Element::None);
+                            uint32_t rgb =
+                                ElementRgb(cells[i].first != nullptr ? cells[i].first->element : Element::None);
                             d = 0xFF000000 | (rgb & 0xFF) << 16 | (rgb & 0xFF00) | (rgb >> 16 & 0xFF);
                         }
-                        auto mix = [&](int shift) { return ((p >> shift & 0xFF) * a + (d >> shift & 0xFF) * (255 - a)) / 255 << shift; };
+                        auto mix = [&](int shift) {
+                            return ((p >> shift & 0xFF) * a + (d >> shift & 0xFF) * (255 - a)) / 255 << shift;
+                        };
                         d = 0xFF000000 | mix(0) | mix(8) | mix(16);
                     }
                 }
@@ -768,7 +848,8 @@ namespace
         const Game* ssa = catalogue.FindGame("ssa");
         CHECK(ssa != nullptr && ssa->seats.size() == 4 && ssa->seats[0].id == "p1" && ssa->seats[0].player == 1);
         CHECK(ssa != nullptr && ssa->seats[2].id == "item" && ssa->seats[2].accepts.front() == Category::MagicItem);
-        CHECK(catalogue.FindGame("trap_team")->seats.size() == 5 && catalogue.FindGame("superchargers")->seats[1].id == "vehicle1");
+        CHECK(catalogue.FindGame("trap_team")->seats.size() == 5 &&
+              catalogue.FindGame("superchargers")->seats[1].id == "vehicle1");
 
         // A clean folder for this test.
         for (const Figure& f : List())
@@ -804,7 +885,8 @@ namespace
         Touch(PathOf("001 Sonic Boom.sky"), "giants");
         std::vector<std::string> recent = Recent("ssa", 8);
         CHECK(recent.size() == 2 && recent[0] == mineToo && recent[1] == mine);
-        CHECK(Read(mineToo, figure) && figure.LastUsedIn("ssa") != "" && figure.uses.size() == 1 && figure.uses[0].uses == 2);
+        CHECK(Read(mineToo, figure) && figure.LastUsedIn("ssa") != "" && figure.uses.size() == 1 &&
+              figure.uses[0].uses == 2);
 
         // Stats writes are backed up first; at most 10 backups are kept.
         figures::FigureStats stats;
@@ -818,7 +900,8 @@ namespace
         // WriteStats clamps to the game's limits.
         stats.experience = 99999999;
         stats.gold = 65535;
-        CHECK(WriteStats(mine, stats) && Read(mine, figure) && figure.stats.experience == 33000 && figure.stats.gold == 65000);
+        CHECK(WriteStats(mine, stats) && Read(mine, figure) && figure.stats.experience == 33000 &&
+              figure.stats.gold == 65000);
         stats.experience = 9000;
         stats.gold = 1234;
         CHECK(WriteStats(mine, stats));
@@ -881,7 +964,8 @@ namespace
         // Smart is the shelf: every figure once, favourites first, then what the game took (newest first).
         std::vector<Section> sections = Group(list, GroupBy::Smart, OrderBy::Recent, "ssa");
         CHECK(sections.size() >= 3 && sections[0].kind == Section::Kind::Shelf);
-        CHECK(sections[sections.size() - 2].kind == Section::Kind::Unknown && sections.back().kind == Section::Kind::Foreign);
+        CHECK(sections[sections.size() - 2].kind == Section::Kind::Unknown &&
+              sections.back().kind == Section::Kind::Foreign);
         CHECK(sections.back().items.size() == 1 && list[sections.back().items[0]].path == giant);
         {
             std::set<size_t> seen;
@@ -916,15 +1000,20 @@ namespace
             CHECK(LevelText(eruptor, "ssa", true) == "Niveau 10 (15)");
             // Swap Force's cap is 20 (its own table: 197500 = 33000 + 63500 + 101000): the same rule, a level 20 figure.
             figures::SetTotalExperience(eruptor.stats, figures::LevelExperience[figures::MaxLevelSwapForce - 1]);
-            CHECK(WriteStats(high, eruptor.stats) && Read(high, eruptor) && eruptor.level == 20 && eruptor.stats.swapForceExperience == 101000);
-            CHECK(LevelText(eruptor, "ssa") == "Level 10 (20)" && LevelText(eruptor, "giants") == "Level 15 (20)" && LevelText(eruptor, "swapforce") == "Level 20");
-            CHECK(LevelText(eruptor, "swapforce", true) == "Niveau 20" && LevelText(eruptor, "giants", true) == "Niveau 15 (20)");
+            CHECK(WriteStats(high, eruptor.stats) && Read(high, eruptor) && eruptor.level == 20 &&
+                  eruptor.stats.swapForceExperience == 101000);
+            CHECK(LevelText(eruptor, "ssa") == "Level 10 (20)" && LevelText(eruptor, "giants") == "Level 15 (20)" &&
+                  LevelText(eruptor, "swapforce") == "Level 20");
+            CHECK(LevelText(eruptor, "swapforce", true) == "Niveau 20" &&
+                  LevelText(eruptor, "giants", true) == "Niveau 15 (20)");
             figures::SetTotalExperience(eruptor.stats, figures::LevelExperience[figures::MaxLevelGiants - 1]);
-            CHECK(WriteStats(high, eruptor.stats) && Read(high, eruptor) && eruptor.level == 15 && LevelText(eruptor, "swapforce") == "Level 15");
+            CHECK(WriteStats(high, eruptor.stats) && Read(high, eruptor) && eruptor.level == 15 &&
+                  LevelText(eruptor, "swapforce") == "Level 15");
             CHECK(Read(item, shield) && !HasProgress(shield) && LevelText(shield, "ssa").empty());
             CHECK(Delete(high) && Delete(item));
             for (const TrashEntry& entry : Trash()) // leave the trash as it was
-                if (entry.file == std::filesystem::path(high).filename().string() || entry.file == std::filesystem::path(item).filename().string())
+                if (entry.file == std::filesystem::path(high).filename().string() ||
+                    entry.file == std::filesystem::path(item).filename().string())
                     DeleteForGood(entry.id);
         }
         // The plain Spyro and its copy sit together, the plain one... ordered by toy, then file.
@@ -947,7 +1036,8 @@ namespace
         using namespace collection;
         for (const Figure& f : List())
             SDL_RemovePath(f.path.c_str());
-        CHECK(MatchingHalf(2003) == 1003 && MatchingHalf(1003) == 2003 && MatchingHalf(14) == 0 && MatchingHalf(2016) == 0);
+        CHECK(MatchingHalf(2003) == 1003 && MatchingHalf(1003) == 2003 && MatchingHalf(14) == 0 &&
+              MatchingHalf(2016) == 0);
         CHECK(CreateSwapper(14, 1003).top.empty() && CreateSwapper(1003, 2003).top.empty() && List().empty());
 
         SwapperPaths a = CreateSwapper(2003, 1003); // Doom Stone
@@ -955,7 +1045,8 @@ namespace
         Figure top, bottom;
         CHECK(Read(a.top, top) && Read(a.bottom, bottom) && top.IsSwapTop() && bottom.IsSwapBottom());
         CHECK(top.partner == bottom.file && bottom.partner == top.file && top.origin == "created");
-        CHECK(top.variant == StandardVariant(*top.toy) && bottom.variant == StandardVariant(*bottom.toy) && top.variant == 0x2000); // the standard swapper: each half under its sold id
+        CHECK(top.variant == StandardVariant(*top.toy) && bottom.variant == StandardVariant(*bottom.toy) &&
+              top.variant == 0x2000); // the standard swapper: each half under its sold id
         std::vector<Figure> list = List({ "swapforce" });
         std::vector<Card> cards = Cards(list);
         CHECK(list.size() == 2 && cards.size() == 1 && cards[0].Swapper() && cards[0].first->file == top.file);
@@ -971,7 +1062,8 @@ namespace
         CHECK(sections.size() == 1 && sections[0].items.size() == 1 && list[sections[0].items[0]].file == top.file);
         sections = Group(list, GroupBy::Element, OrderBy::Recent, "swapforce");
         CHECK(sections.size() == 1 && sections[0].items.size() == 1);
-        sections = Group(list, GroupBy::Smart, OrderBy::Recent, "ssa"); // Spyro's Adventure does not read them: still one card
+        sections =
+            Group(list, GroupBy::Smart, OrderBy::Recent, "ssa"); // Spyro's Adventure does not read them: still one card
         CHECK(sections.size() == 1 && sections[0].kind == Section::Kind::Foreign && sections[0].items.size() == 1);
 
         // Rename keeps the link; a half without the link (an unrelated dump) is a card of its own.
@@ -984,7 +1076,8 @@ namespace
         std::string copyTop = Duplicate(a.top, &error);
         CHECK(!copyTop.empty() && List({ "swapforce" }).size() == 4 && Cards(List({ "swapforce" })).size() == 2);
         Figure copy, copyBottom;
-        CHECK(Read(copyTop, copy) && !copy.partner.empty() && Read(PathOf(copy.partner), copyBottom) && copyBottom.partner == copy.file);
+        CHECK(Read(copyTop, copy) && !copy.partner.empty() && Read(PathOf(copy.partner), copyBottom) &&
+              copyBottom.partner == copy.file);
         CHECK(Read(a.top, top) && top.partner == bottom.file); // the original is untouched
         for (const Figure* f : { &copy, &copyBottom })
             CHECK(Delete(f->path));
@@ -992,12 +1085,15 @@ namespace
             DeleteForGood(entry.id);
 
         // Delete: the other half is left a card of its own; Undelete links them again.
-        CHECK(Delete(a.top) && Read(a.bottom, bottom) && bottom.partner.empty() && Cards(List({ "swapforce" })).size() == 1);
+        CHECK(Delete(a.top) && Read(a.bottom, bottom) && bottom.partner.empty() &&
+              Cards(List({ "swapforce" })).size() == 1);
         std::string back = Undelete(Trash()[0].id);
-        CHECK(back == a.top && Read(a.bottom, bottom) && bottom.partner == "Mine top.sky" && Read(back, top) && top.partner == bottom.file);
+        CHECK(back == a.top && Read(a.bottom, bottom) && bottom.partner == "Mine top.sky" && Read(back, top) &&
+              top.partner == bottom.file);
 
         // Unpair, Pair, and what Pair refuses.
-        CHECK(Unpair(a.top) && Read(a.top, top) && top.partner.empty() && Read(a.bottom, bottom) && bottom.partner.empty());
+        CHECK(Unpair(a.top) && Read(a.top, top) && top.partner.empty() && Read(a.bottom, bottom) &&
+              bottom.partner.empty());
         CHECK(Cards(List({ "swapforce" })).size() == 2 && Unpair(a.top));
         CHECK(Pair(a.bottom, a.top) && Read(a.top, top) && top.partner == bottom.file);
         std::string other = Create(2005); // Fire Kraken top
@@ -1014,10 +1110,13 @@ namespace
         Figure topB, bottomB;
         Read(b.top, topB);
         Read(b.bottom, bottomB);
-        CHECK(top.partner == bottomB.file && bottomB.partner == top.file && topB.partner == bottom.file && bottom.partner == topB.file);
+        CHECK(top.partner == bottomB.file && bottomB.partner == top.file && topB.partner == bottom.file &&
+              bottom.partner == topB.file);
         list = List({ "swapforce" });
         cards = Cards(list);
-        CHECK(cards.size() == 3 && CardName(cards[0]) == "Doom Kraken"); // Doom Stone top on Fire Kraken legs, plus the loose Fire Kraken top
+        CHECK(
+            cards.size() == 3 &&
+            CardName(cards[0]) == "Doom Kraken"); // Doom Stone top on Fire Kraken legs, plus the loose Fire Kraken top
         CHECK(CardName(CardOf(list, 0)) == "Doom Kraken");
         // SwapperName examples
         CHECK(SwapperName("Nitro Magna Charge", "Boom Jet") == "Nitro Magna Jet");
@@ -1031,7 +1130,8 @@ namespace
         CHECK(Read(b.bottom, bottomB) && bottomB.partner.empty());
         // Change the top, from the bottom's side; the wrong category is refused.
         CHECK(ChangeHalf(loose, b.top) && Read(b.top, topB) && topB.partner == "1000 Boom Jet (bottom).sky");
-        CHECK(Read(a.top, top) && Read(a.bottom, bottom) && top.partner == bottom.file && bottom.partner == top.file); // the old swapper is whole again
+        CHECK(Read(a.top, top) && Read(a.bottom, bottom) && top.partner == bottom.file &&
+              bottom.partner == top.file); // the old swapper is whole again
         CHECK(!ChangeHalf(loose, a.bottom));
 
         // A swapper is busy when either half is (a lock of another live process); nothing is changed meanwhile.
@@ -1040,9 +1140,11 @@ namespace
         list = List({ "swapforce" });
         bool seen = false;
         for (const Card& card : Cards(list))
-            seen = seen || (card.first->file == topB.file && card.Busy() && card.second->file == "1000 Boom Jet (bottom).sky");
+            seen = seen ||
+                   (card.first->file == topB.file && card.Busy() && card.second->file == "1000 Boom Jet (bottom).sky");
         CHECK(seen);
-        CHECK(!Unpair(b.top, &error) && error.find("in use") != std::string::npos && !ChangeHalf(b.top, a.bottom) && !Pair(b.top, a.bottom));
+        CHECK(!Unpair(b.top, &error) && error.find("in use") != std::string::npos && !ChangeHalf(b.top, a.bottom) &&
+              !Pair(b.top, a.bottom));
         CHECK(Read(b.top, topB) && topB.partner == "1000 Boom Jet (bottom).sky");
         BreakLock(loose);
         for (const TrashEntry& entry : Trash())
@@ -1059,7 +1161,8 @@ namespace
         CHECK(ssa->seats.size() == 4 && SeatTag(ssa->seats[0]) == "P1" && SeatTag(ssa->seats[1]) == "P2");
         CHECK(SeatTag(ssa->seats[2]) == "Item" && SeatTag(ssa->seats[3]) == "Adventure");
         CHECK(SeatName(ssa->seats[0]) == "Player 1" && SeatName(ssa->seats[2]) == "Magic item");
-        CHECK(SeatTag(ssa->seats[0], true) == "J1" && SeatName(ssa->seats[1], true) == "Joueur 2" && SeatName(ssa->seats[2], true) == "Objet magique");
+        CHECK(SeatTag(ssa->seats[0], true) == "J1" && SeatName(ssa->seats[1], true) == "Joueur 2" &&
+              SeatName(ssa->seats[2], true) == "Objet magique");
         CHECK(SeatTag(trap->seats[2]) == "Trap");
 
         // Nothing on the portal.
@@ -1073,8 +1176,10 @@ namespace
         CHECK(entries.size() == 2);
         if (entries.size() == 2)
         {
-            CHECK(entries[0].seat == 0 && entries[0].slot == 5 && entries[0].tag == "P1" && entries[0].name == "Gill Grunt");
-            CHECK(entries[1].seat == 3 && entries[1].slot == 2 && entries[1].tag == "Adventure" && entries[1].seatName == "Adventure");
+            CHECK(entries[0].seat == 0 && entries[0].slot == 5 && entries[0].tag == "P1" &&
+                  entries[0].name == "Gill Grunt");
+            CHECK(entries[1].seat == 3 && entries[1].slot == 2 && entries[1].tag == "Adventure" &&
+                  entries[1].seatName == "Adventure");
             CHECK(entries[1].name == "300 Pack.sky"); // no name given: the file's
         }
         CHECK(PortalOverviewLine(entries, "Empty") == "P1 Gill Grunt \xC2\xB7 Adventure 300 Pack.sky");
@@ -1083,7 +1188,6 @@ namespace
         CHECK(entries.size() == 1 && entries[0].tag == "P2" && entries[0].slot == -1);
         CHECK(PortalOverview(*ssa, { "", "", "", "", "past-the-seats.sky" }, {}).empty());
     }
-
 
     // A swapper's picture: its two halves drawn in place on one frame and joined (icons.h), on synthetic images, then through
     // the catalogue's "halves" with the files in a scratch portraits folder.
@@ -1102,30 +1206,35 @@ namespace
         Image padded = make(40, 30, 10, 12, 8, 6, 0x0000FF);
         padded.rgba[0] = 0x03FFFFFFu;
         Image cut = CropToVisible(padded);
-        CHECK(cut.width == 8 && cut.height == 6 && cut.rgba.size() == 48 && cut.rgba[0] == 0xFF0000FFu && cut.rgba[47] == 0xFF0000FFu);
+        CHECK(cut.width == 8 && cut.height == 6 && cut.rgba.size() == 48 && cut.rgba[0] == 0xFF0000FFu &&
+              cut.rgba[47] == 0xFF0000FFu);
         Image empty{ 5, 4, std::vector<uint32_t>(20, 0) };
         CHECK(CropToVisible(empty).width == 5 && CropToVisible(empty).height == 4);
 
         // The join: same-size frames, the top over the bottom where they overlap, the union box.
-        Image top = make(64, 64, 10, 8, 20, 20, 0x0000FF), bottom = make(64, 64, 20, 20, 20, 20, 0x00FF00); // overlap (20..30, 20..28)
+        Image top = make(64, 64, 10, 8, 20, 20, 0x0000FF),
+              bottom = make(64, 64, 20, 20, 20, 20, 0x00FF00); // overlap (20..30, 20..28)
         Image joined = JoinHalves(top, bottom);
         CHECK(joined.width == 30 && joined.height == 32 && joined.rgba.size() == 960); // (10..40) x (8..40)
-        CHECK(joined.rgba[0] == 0xFF0000FFu);                                          // the top's corner (10, 8)
-        CHECK(joined.rgba[size_t(12) * 30 + 10] == 0xFF0000FFu);                       // (20, 20): the top over the bottom
-        CHECK(joined.rgba[size_t(31) * 30 + 29] == 0xFF00FF00u);                       // (39, 39): the bottom alone
-        CHECK(joined.rgba[size_t(31) * 30 + 0] == 0u);                                 // (10, 39): neither
+        CHECK(joined.rgba[0] == 0xFF0000FFu); // the top's corner (10, 8)
+        CHECK(joined.rgba[size_t(12) * 30 + 10] == 0xFF0000FFu); // (20, 20): the top over the bottom
+        CHECK(joined.rgba[size_t(31) * 30 + 29] == 0xFF00FF00u); // (39, 39): the bottom alone
+        CHECK(joined.rgba[size_t(31) * 30 + 0] == 0u); // (10, 39): neither
         // A half with nothing visible: no picture (the caller falls back to the inset).
         CHECK(JoinHalves(top, empty).Empty() && JoinHalves(empty, bottom).Empty());
         // A narrow top over a wide bottom keeps its own width: no rescale of either half.
         Image narrow = JoinHalves(make(64, 64, 28, 0, 8, 30, 0xFF0000), make(64, 64, 8, 30, 48, 10, 0x00FF00));
-        CHECK(narrow.width == 48 && narrow.height == 40 && narrow.rgba[size_t(0) * 48 + 20] == 0xFFFF0000u && narrow.rgba[size_t(0) * 48 + 19] == 0u);
+        CHECK(narrow.width == 48 && narrow.height == 40 && narrow.rgba[size_t(0) * 48 + 20] == 0xFFFF0000u &&
+              narrow.rgba[size_t(0) * 48 + 19] == 0u);
         // A bottom frame at half size lands where a full-size one would (+-1 px): 32 x 32 with a 10 x 8 block at (10, 15)
         // is 64 x 64 with 20 x 16 at (20, 30).
         Image half = JoinHalves(make(64, 64, 20, 0, 20, 30, 0xFF0000), make(32, 32, 10, 15, 10, 8, 0x00FF00));
-        CHECK(half.width >= 20 && half.width <= 22 && half.height >= 46 && half.height <= 47);  // +-1 px: the bilinear edge of the grown frame
-        CHECK(half.rgba[size_t(5) * half.width + 10] == 0xFFFF0000u);                      // the top, row 5
-        CHECK(half.rgba[size_t(half.height - 3) * half.width + half.width / 2] == 0xFF00FF00u); // the bottom's last rows
-        CHECK((half.rgba[size_t(29) * half.width + half.width / 2] >> 24) == 255);           // no gap at the waist
+        CHECK(half.width >= 20 && half.width <= 22 && half.height >= 46 &&
+              half.height <= 47); // +-1 px: the bilinear edge of the grown frame
+        CHECK(half.rgba[size_t(5) * half.width + 10] == 0xFFFF0000u); // the top, row 5
+        CHECK(
+            half.rgba[size_t(half.height - 3) * half.width + half.width / 2] == 0xFF00FF00u); // the bottom's last rows
+        CHECK((half.rgba[size_t(29) * half.width + half.width / 2] >> 24) == 255); // no gap at the waist
 
         // Through the catalogue: Blast Zone's halves (2004 and 1004) in the scratch portraits folder.
         const Toy* blastTop = Catalogue::Get().Find(2004);
@@ -1133,16 +1242,20 @@ namespace
         CHECK(blastTop != nullptr && blastBottom != nullptr);
         if (blastTop == nullptr || blastBottom == nullptr)
             return;
-        CHECK(HalfPicturePath(*blastTop, 0x2000).empty() && SwapperPicture(*blastTop, 0, *blastBottom, 0).Empty()); // no file yet
+        CHECK(HalfPicturePath(*blastTop, 0x2000).empty() &&
+              SwapperPicture(*blastTop, 0, *blastBottom, 0).Empty()); // no file yet
         std::string folder = g_scratch + "/portraits/artworks";
         SDL_CreateDirectory((g_scratch + "/portraits").c_str());
         SDL_CreateDirectory(folder.c_str());
         CHECK(SavePng(make(64, 64, 8, 4, 48, 24, 0x2040FF), folder + "/fireknightbody_wii_material.png"));
         CHECK(SavePng(make(64, 64, 16, 30, 32, 20, 0x40FF20), folder + "/fireknightlegs_wii_material.png"));
-        CHECK(HalfPicturePath(*blastTop, 0x2000) == folder + "/fireknightbody_wii_material.png"); // the base version: the plain toy's
+        CHECK(HalfPicturePath(*blastTop, 0x2000) ==
+              folder + "/fireknightbody_wii_material.png"); // the base version: the plain toy's
         CHECK(HalfPicturePath(*blastBottom, 0) == folder + "/fireknightlegs_wii_material.png");
         Image blast = SwapperPicture(*blastTop, 0x2000, *blastBottom, 0);
-        CHECK(blast.width == 48 && blast.height == 46); // frames of 64: the top (8..56, 4..28) and the legs (16..48, 30..50): box 8..56 x 4..50
+        CHECK(blast.width == 48 &&
+              blast.height ==
+                  46); // frames of 64: the top (8..56, 4..28) and the legs (16..48, 30..50): box 8..56 x 4..50
         // Dark Blast Zone has pictures of its own, not on the disc folder yet: its halves fall back to the plain toy's.
         CHECK(HalfPicturePath(*blastTop, 0x2402) == folder + "/fireknightbody_wii_material.png");
         CHECK(SavePng(make(64, 64, 0, 0, 10, 10, 0xFF0000), folder + "/darkblasttop_wii_material.png"));
@@ -1157,9 +1270,15 @@ namespace
         using namespace collection;
         for (const Figure& f : List())
             SDL_RemovePath(f.path.c_str());
-        auto make = [](uint16_t type, uint16_t variant = 0) { Figure f; Read(Create(type, variant), f); return f.path; };
-        std::string spyro = make(16), gill = make(14), flash = make(103, 0x1000), jet = make(100, 0x1206), trigger = make(419, 0x0403);
-        std::string peak = make(300), anvil = make(200), terra = make(505), scratch = make(3000), trapMaster = make(450);
+        auto make = [](uint16_t type, uint16_t variant = 0) {
+            Figure f;
+            Read(Create(type, variant), f);
+            return f.path;
+        };
+        std::string spyro = make(16), gill = make(14), flash = make(103, 0x1000), jet = make(100, 0x1206),
+                    trigger = make(419, 0x0403);
+        std::string peak = make(300), anvil = make(200), terra = make(505), scratch = make(3000),
+                    trapMaster = make(450);
         SwapperPaths swapper = CreateSwapper(2003, 1003); // Doom Stone
         figures::FigureStats stats;
         stats.experience = 33000; // level 10
@@ -1179,54 +1298,72 @@ namespace
             std::set<std::string> names = found(query, game);
             if (names != std::set<std::string>{ name })
             {
-                fprintf(stderr, "search '%s' found %zu cards (first: %s)\n", query.c_str(), names.size(), names.empty() ? "-" : names.begin()->c_str());
+                fprintf(stderr, "search '%s' found %zu cards (first: %s)\n", query.c_str(), names.size(),
+                    names.empty() ? "-" : names.begin()->c_str());
                 return false;
             }
             return true;
         };
-        auto has = [&](const std::string& query, const std::string& name, const std::string& game = "ssa") { return found(query, game).count(name) != 0; };
+        auto has = [&](const std::string& query, const std::string& name, const std::string& game = "ssa") {
+            return found(query, game).count(name) != 0;
+        };
 
         // Empty and spaces: everything.
         CHECK(found("").size() == 11 && found("   ").size() == 11);
         // Names, any case, any part of a word, label and file name.
         CHECK(only("gill", "Gill Grunt") && only("GRUNT", "Gill Grunt") && only("ill gr", "Gill Grunt"));
         CHECK(only("etincelle", "Étincelle") && only("ÉTINCELLE", "Étincelle") && only("Etincelle", "Étincelle"));
-        CHECK(only("rocher", "Mon Rocher") && has("doom", "Mon Rocher") && has("stone", "Mon Rocher")); // the swapper: found by its toy's name too
+        CHECK(only("rocher", "Mon Rocher") && has("doom", "Mon Rocher") &&
+              has("stone", "Mon Rocher")); // the swapper: found by its toy's name too
         CHECK(has("bottom", "Mon Rocher") && has("top", "Mon Rocher"));
         // Elements, English and French; accents and case.
-        CHECK(has("fire", "Gill Grunt") == false && has("water", "Gill Grunt") && has("eau", "Gill Grunt") && has("EAU", "Gill Grunt"));
+        CHECK(has("fire", "Gill Grunt") == false && has("water", "Gill Grunt") && has("eau", "Gill Grunt") &&
+              has("EAU", "Gill Grunt"));
         CHECK(has("magic", "Étincelle") && has("magie", "Étincelle") && has("magique", "Étincelle") == false);
-        CHECK(has("terre", "Flashwing") && has("earth", "Flashwing") && has("earth", "Mon Rocher") && has("terre", "Mon Rocher"));
-        CHECK(!has("undead", "Scratch") && has("air", "LightCore Jet-Vac") && has("air", "Scratch") && has("tech", "Legendary Trigger Happy"));
+        CHECK(has("terre", "Flashwing") && has("earth", "Flashwing") && has("earth", "Mon Rocher") &&
+              has("terre", "Mon Rocher"));
+        CHECK(!has("undead", "Scratch") && has("air", "LightCore Jet-Vac") && has("air", "Scratch") &&
+              has("tech", "Legendary Trigger Happy"));
         CHECK(has("technologie", "Legendary Trigger Happy"));
         CHECK(only("tech", "Legendary Trigger Happy") && found("feu").empty() && found("fire").empty());
         // Games.
-        CHECK(has("giants", "Flashwing") && has("geants", "Flashwing") && has("giants", "LightCore Jet-Vac") && !has("giants", "Gill Grunt"));
+        CHECK(has("giants", "Flashwing") && has("geants", "Flashwing") && has("giants", "LightCore Jet-Vac") &&
+              !has("giants", "Gill Grunt"));
         CHECK(has("ssa", "Gill Grunt") && has("spyro", "Gill Grunt") && !has("ssa", "Flashwing"));
-        CHECK(has("swap force", "Mon Rocher") && has("swapforce", "Scratch") && has("swap", "Scratch") && !has("swap force", "Gill Grunt"));
+        CHECK(has("swap force", "Mon Rocher") && has("swapforce", "Scratch") && has("swap", "Scratch") &&
+              !has("swap force", "Gill Grunt"));
         CHECK(has("trap team", "Gusto") && !has("trap team", "Scratch"));
         // Toy types and kinds, both languages.
         CHECK(only("adventure", "Dragon's Peak") && only("aventure", "Dragon's Peak") && only("pack", "Dragon's Peak"));
-        CHECK(has("item", "Anvil Rain") && has("objet", "Anvil Rain") && has("magic item", "Anvil Rain") && has("objet magique", "Anvil Rain"));
+        CHECK(has("item", "Anvil Rain") && has("objet", "Anvil Rain") && has("magic item", "Anvil Rain") &&
+              has("objet magique", "Anvil Rain"));
         CHECK(!has("magic item", "Étincelle") && !has("item", "Gill Grunt"));
         CHECK(has("mini", "Terrabite") && has("sidekick", "Terrabite") && has("acolyte", "Terrabite"));
         CHECK(has("trap master", "Gusto") && has("trapmaster", "Gusto"));
-        CHECK(has("swapper", "Mon Rocher") && has("swappers", "Mon Rocher") && !has("swapper", "Scratch") && !has("swapper", "Gill Grunt"));
-        CHECK(has("legendary", "Legendary Trigger Happy") && has("légendaire", "Legendary Trigger Happy") && has("legendaire", "Legendary Trigger Happy"));
-        CHECK(has("lightcore", "LightCore Jet-Vac") && has("light core", "LightCore Jet-Vac") && !has("lightcore", "Flashwing") && !has("lightcore", "Gill Grunt"));
+        CHECK(has("swapper", "Mon Rocher") && has("swappers", "Mon Rocher") && !has("swapper", "Scratch") &&
+              !has("swapper", "Gill Grunt"));
+        CHECK(has("legendary", "Legendary Trigger Happy") && has("légendaire", "Legendary Trigger Happy") &&
+              has("legendaire", "Legendary Trigger Happy"));
+        CHECK(has("lightcore", "LightCore Jet-Vac") && has("light core", "LightCore Jet-Vac") &&
+              !has("lightcore", "Flashwing") && !has("lightcore", "Gill Grunt"));
         CHECK(has("giant", "LightCore Jet-Vac") == true); // the game and the toy type share the word
         // Several words: all of them.
-        CHECK(found("giants earth") == std::set<std::string>({ "Flashwing", "Terrabite" }) && found("terre geants") == found("giants earth") && only("water ssa", "Gill Grunt"));
+        CHECK(found("giants earth") == std::set<std::string>({ "Flashwing", "Terrabite" }) &&
+              found("terre geants") == found("giants earth") && only("water ssa", "Gill Grunt"));
         CHECK(found("fire giants").empty() && found("giants zzzz").empty());
         CHECK(only("legendary tech", "Legendary Trigger Happy") && only("tech legendary", "Legendary Trigger Happy"));
         // Levels.
-        CHECK(only("level 10", "Gill Grunt") && only("niveau 10", "Gill Grunt") && only("lvl 10", "Gill Grunt") && only("lv10", "Gill Grunt"));
-        CHECK(only("Level10", "Gill Grunt") && only("NIVEAU10", "Gill Grunt") && only("water level 10", "Gill Grunt") && found("fire level 10").empty());
+        CHECK(only("level 10", "Gill Grunt") && only("niveau 10", "Gill Grunt") && only("lvl 10", "Gill Grunt") &&
+              only("lv10", "Gill Grunt"));
+        CHECK(only("Level10", "Gill Grunt") && only("NIVEAU10", "Gill Grunt") && only("water level 10", "Gill Grunt") &&
+              found("fire level 10").empty());
         CHECK(found("level 9").empty() && found("level 11").empty() && found("niveau 10 giants").empty());
-        CHECK(found("level").size() == 9 && found("niveau").size() == 9); // the characters, minis and swappers: no items or adventure packs
+        CHECK(found("level").size() == 9 &&
+              found("niveau").size() == 9); // the characters, minis and swappers: no items or adventure packs
         CHECK(found("level 1").empty() && found("level 1 water").empty()); // a figure never played has no level to find
         stats.experience = 33000;
-        CHECK(WriteStats(flash, stats)); // 15 cap in Giants: the card shows "Level 10 (15)" in Spyro's Adventure only for a higher one
+        CHECK(WriteStats(flash,
+            stats)); // 15 cap in Giants: the card shows "Level 10 (15)" in Spyro's Adventure only for a higher one
         Figure flashFigure;
         CHECK(Read(flash, flashFigure));
         stats = flashFigure.stats;
@@ -1235,11 +1372,14 @@ namespace
         list = List();
         cards = Cards(list);
         CHECK(has("level 15", "Flashwing", "giants") && has("level 15", "Flashwing", "ssa")); // the figure's own level
-        CHECK(has("level 10", "Flashwing", "ssa") && !has("level 10", "Flashwing", "giants")); // what Spyro's Adventure shows: "Level 10 (15)"
+        CHECK(has("level 10", "Flashwing", "ssa") &&
+              !has("level 10", "Flashwing", "giants")); // what Spyro's Adventure shows: "Level 10 (15)"
         // Typos: one in a word of 5 letters or more, not in shorter ones.
         CHECK(has("giatns", "Flashwing") && has("gaints", "Flashwing") && has("gientz", "Flashwing") == false);
-        CHECK(has("lightcroe", "LightCore Jet-Vac") && has("lihtcore", "LightCore Jet-Vac") && has("legendray", "Legendary Trigger Happy") && has("legandary", "Legendary Trigger Happy"));
-        CHECK(has("flashwng", "Flashwing") && has("flashwinng", "Flashwing") && has("flashwig", "Flashwing") && has("flaxhwing", "Flashwing"));
+        CHECK(has("lightcroe", "LightCore Jet-Vac") && has("lihtcore", "LightCore Jet-Vac") &&
+              has("legendray", "Legendary Trigger Happy") && has("legandary", "Legendary Trigger Happy"));
+        CHECK(has("flashwng", "Flashwing") && has("flashwinng", "Flashwing") && has("flashwig", "Flashwing") &&
+              has("flaxhwing", "Flashwing"));
         CHECK(has("sceratch", "Scratch") && has("scrach", "Scratch"));
         CHECK(has("etincele", "Étincelle") && has("etincelles", "Étincelle") && has("etincelel", "Étincelle"));
         CHECK(has("advnture", "Dragon's Peak") && has("aventrue", "Dragon's Peak"));
@@ -1248,11 +1388,16 @@ namespace
         // The old behaviour stays: a substring of the name.
         CHECK(has("rigger", "Legendary Trigger Happy") && has("hwing", "Flashwing"));
         // Folding and the sorts' words.
-        CHECK(Fold("Électricité Ça Œuf À") == "electricite ca oeuf a" && Fold("MAJ") == "maj" && Fold("d\xE2\x80\x99" "Eon") == "d'eon");
-        CHECK(std::string(SortId(Sort::Name)) == "name" && ParseSort("level") == Sort::Level && ParseSort("nonsense") == Sort::Recent);
+        CHECK(Fold("Électricité Ça Œuf À") == "electricite ca oeuf a" && Fold("MAJ") == "maj" &&
+              Fold("d\xE2\x80\x99"
+                   "Eon") == "d'eon");
+        CHECK(std::string(SortId(Sort::Name)) == "name" && ParseSort("level") == Sort::Level &&
+              ParseSort("nonsense") == Sort::Recent);
         CHECK(FigureCount(0) == "0 figures" && FigureCount(1) == "1 figure" && FigureCount(12) == "12 figures");
-        CHECK(FigureCount(0, true) == "0 figurine" && FigureCount(1, true) == "1 figurine" && FigureCount(12, true) == "12 figurines");
-        CHECK(SortLabel(Sort::Recent) == "Recent" && SortLabel(Sort::Recent, true) == "Récents" && SortLabel(Sort::Element, true) == "Élément");
+        CHECK(FigureCount(0, true) == "0 figurine" && FigureCount(1, true) == "1 figurine" &&
+              FigureCount(12, true) == "12 figurines");
+        CHECK(SortLabel(Sort::Recent) == "Recent" && SortLabel(Sort::Recent, true) == "Récents" &&
+              SortLabel(Sort::Element, true) == "Élément");
 
         // Sort: Recent is the shelf of old; the others order the shelf section.
         auto order = [&](Sort sort) {
@@ -1264,25 +1409,39 @@ namespace
             return names;
         };
         std::vector<Section> plain = Group(list, GroupBy::Smart, OrderBy::Recent, "");
-        CHECK(Shelf(list, Sort::Recent, "").size() == plain.size() && Shelf(list, Sort::Recent, "")[0].items == plain[0].items);
-        auto pos = [](const std::vector<std::string>& names, const std::string& name) { return std::find(names.begin(), names.end(), name) - names.begin(); };
+        CHECK(Shelf(list, Sort::Recent, "").size() == plain.size() &&
+              Shelf(list, Sort::Recent, "")[0].items == plain[0].items);
+        auto pos = [](const std::vector<std::string>& names, const std::string& name) {
+            return std::find(names.begin(), names.end(), name) - names.begin();
+        };
         std::vector<std::string> byName = order(Sort::Name);
-        CHECK(!byName.empty() && std::is_sorted(byName.begin(), byName.end(), [](const std::string& a, const std::string& b) { return Fold(a) < Fold(b); }));
+        CHECK(!byName.empty() && std::is_sorted(byName.begin(), byName.end(),
+                                     [](const std::string& a, const std::string& b) { return Fold(a) < Fold(b); }));
         CHECK(byName.front() == "Anvil Rain" && byName.back() == "Terrabite" && pos(byName, "Étincelle") == 2);
         std::vector<std::string> byLevel = order(Sort::Level);
-        CHECK(byLevel.size() == byName.size() && byLevel.front() == "Flashwing" && byLevel[1] == "Gill Grunt" && byLevel.back() != "Gill Grunt"); // Giants level 15 first, items and adventure packs last
+        CHECK(byLevel.size() == byName.size() && byLevel.front() == "Flashwing" && byLevel[1] == "Gill Grunt" &&
+              byLevel.back() != "Gill Grunt"); // Giants level 15 first, items and adventure packs last
         std::vector<std::string> byElement = order(Sort::Element);
-        CHECK(byElement.size() == byName.size() && byElement.front() == "Étincelle"); // Magic comes first in the menus' order
+        CHECK(byElement.size() == byName.size() &&
+              byElement.front() == "Étincelle"); // Magic comes first in the menus' order
         std::vector<std::string> byGame = order(Sort::Game);
         CHECK(byGame.size() == byName.size());
-        CHECK(pos(byGame, "Gill Grunt") < pos(byGame, "Flashwing") && pos(byGame, "Flashwing") < pos(byGame, "Scratch") && pos(byGame, "Scratch") < pos(byGame, "Gusto"));
+        CHECK(pos(byGame, "Gill Grunt") < pos(byGame, "Flashwing") &&
+              pos(byGame, "Flashwing") < pos(byGame, "Scratch") && pos(byGame, "Scratch") < pos(byGame, "Gusto"));
         // A swapper stays one card in every order.
         for (Sort sort : { Sort::Recent, Sort::Name, Sort::Level, Sort::Element, Sort::Game })
         {
             std::vector<std::string> names = order(sort);
             CHECK(std::count(names.begin(), names.end(), "Mon Rocher") == 1 && names.size() == cards.size());
         }
-        (void)spyro; (void)jet; (void)trigger; (void)peak; (void)anvil; (void)terra; (void)scratch; (void)trapMaster;
+        (void)spyro;
+        (void)jet;
+        (void)trigger;
+        (void)peak;
+        (void)anvil;
+        (void)terra;
+        (void)scratch;
+        (void)trapMaster;
     }
 
     void TestBadIndex()
@@ -1290,7 +1449,10 @@ namespace
         std::string index = PathOf("collection.json");
         SetFavourite(PathOf("none.sky"), true); // creates collection.json
         std::string doomed = Create(14);
-        auto there = [](const std::string& path) { SDL_PathInfo info; return SDL_GetPathInfo(path.c_str(), &info); };
+        auto there = [](const std::string& path) {
+            SDL_PathInfo info;
+            return SDL_GetPathInfo(path.c_str(), &info);
+        };
         size_t inTrash = Trash().size();
         CHECK(!doomed.empty());
         std::string garbage = "{\"format\": 1, \"figures\": {\"a.sky\": {\"label\": \"keep me\"";
@@ -1330,7 +1492,8 @@ int main(int argc, char** argv)
     // A scratch collection, set before the library first reads its folder: in SKYLANDERS_DATA (the harness sets a
     // scratch one), else the temporary folder. Never under the player's application data.
     const char* data = getenv("SKYLANDERS_DATA");
-    g_scratch = (data != nullptr && *data ? std::string(data) : std::filesystem::temp_directory_path().string()) + "/SSACollectionTest";
+    g_scratch = (data != nullptr && *data ? std::string(data) : std::filesystem::temp_directory_path().string()) +
+                "/SSACollectionTest";
     RemoveTree(g_scratch);
     SDL_CreateDirectory(g_scratch.c_str());
     SetVariable("SKY_COLLECTION", g_scratch + "/Collection");

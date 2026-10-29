@@ -249,7 +249,8 @@ namespace gpu::detail
 
     // condition_variable::wait, servicing the Present handoff on the present thread.
     template <typename Predicate>
-    void WaitServicingPresents(std::unique_lock<std::mutex>& lock, std::condition_variable& condition, Predicate predicate)
+    void WaitServicingPresents(
+        std::unique_lock<std::mutex>& lock, std::condition_variable& condition, Predicate predicate)
     {
         if (!IsPresentThread())
         {
@@ -296,10 +297,14 @@ namespace gpu::detail
     void WaitTextureJob(const std::atomic<bool>& done);
     // What the public functions queue (gpu.cpp, draw.cpp).
     void PresentNow(const gpu::Texture* image);
-    bool ReadbackNow(const gpu::Texture* texture, std::vector<uint32_t>& rgba, uint32_t& width, uint32_t& height, bool raw = false);
+    bool ReadbackNow(
+        const gpu::Texture* texture, std::vector<uint32_t>& rgba, uint32_t& width, uint32_t& height, bool raw = false);
     void DrawNow(const gpu::DrawDesc& draw);
     void ClearColorNow(gpu::Texture* target, const float rgba[4], const plume::RenderRect* rect);
-    void ClearDepthStencilNow(gpu::Texture* target, bool depth, bool stencil, float z, uint8_t stencilValue, const plume::RenderRect* rect);
-    void CopyTextureNow(gpu::Texture* destination, uint32_t x, uint32_t y, gpu::Texture* source, const plume::RenderRect& region, uint32_t slice);
-    void ResolveDepthNow(gpu::Texture* destination, uint32_t x, uint32_t y, gpu::Texture* source, const plume::RenderRect& region);
+    void ClearDepthStencilNow(
+        gpu::Texture* target, bool depth, bool stencil, float z, uint8_t stencilValue, const plume::RenderRect* rect);
+    void CopyTextureNow(gpu::Texture* destination, uint32_t x, uint32_t y, gpu::Texture* source,
+        const plume::RenderRect& region, uint32_t slice);
+    void ResolveDepthNow(
+        gpu::Texture* destination, uint32_t x, uint32_t y, gpu::Texture* source, const plume::RenderRect& region);
 }

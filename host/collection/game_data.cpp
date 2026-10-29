@@ -14,15 +14,13 @@ namespace gamedata
     {
         constexpr size_t ChunkSize = 4u << 20;
 
-        fs::path Join(const fs::path& folder, const std::string& path)
-        {
-            return folder / datadir::FromText(path);
-        }
+        fs::path Join(const fs::path& folder, const std::string& path) { return folder / datadir::FromText(path); }
 
         // A disc path must stay inside the folder.
         bool Safe(const std::string& path)
         {
-            if (path.empty() || path.front() == '/' || path.find('\\') != std::string::npos || path.find(':') != std::string::npos)
+            if (path.empty() || path.front() == '/' || path.find('\\') != std::string::npos ||
+                path.find(':') != std::string::npos)
                 return false;
             std::istringstream parts(path);
             for (std::string part; std::getline(parts, part, '/');)
@@ -107,10 +105,7 @@ namespace gamedata
         }
     }
 
-    fs::path Folder(std::string_view gameId)
-    {
-        return datadir::Game(gameId) / "gamedata";
-    }
+    fs::path Folder(std::string_view gameId) { return datadir::Game(gameId) / "gamedata"; }
 
     Status Inspect(const fs::path& folder)
     {
@@ -187,7 +182,10 @@ namespace gamedata
             return Fail("couldn't write " + datadir::Text(folder / ManifestName));
 
         uint64_t done = total - remaining;
-        auto report = [&] { if (options.progress) options.progress(done, total); };
+        auto report = [&] {
+            if (options.progress)
+                options.progress(done, total);
+        };
         auto cancelled = [&] { return options.cancel != nullptr && options.cancel->load(); };
         std::vector<uint8_t> chunk(ChunkSize), check(ChunkSize);
         report();
@@ -237,7 +235,8 @@ namespace gamedata
                 {
                     size_t want = size_t(std::min<uint64_t>(ChunkSize, file.size - position));
                     if (!in.read(reinterpret_cast<char*>(check.data()), std::streamsize(want)) ||
-                        source.read(file, position, chunk.data(), want) != want || std::memcmp(check.data(), chunk.data(), want) != 0)
+                        source.read(file, position, chunk.data(), want) != want ||
+                        std::memcmp(check.data(), chunk.data(), want) != 0)
                         problem = "the copy of " + file.path + " differs from the disc";
                     position += want;
                 }

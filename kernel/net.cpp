@@ -43,7 +43,12 @@ namespace
     // An XHttp session, connection or request handle.
     struct HttpHandle : KernelObject
     {
-        enum Kind { Session, Connection, Request } kind;
+        enum Kind
+        {
+            Session,
+            Connection,
+            Request
+        } kind;
         uint32_t statusCallback = 0;
 
         explicit HttpHandle(Kind kind) : kind(kind) {}
@@ -66,15 +71,15 @@ namespace
     }
 
     // Logs the first call of each import, with its first argument registers.
-#define LOG_FIRST_CALL(name) \
-    do \
-    { \
-        static std::atomic_flag reported; \
-        if (!reported.test_and_set()) \
-        { \
-            fprintf(stderr, "[net] " name " (lr=0x%08X r3=0x%08X r4=0x%08X r5=0x%08X r6=0x%08X r7=0x%08X)\n", \
-                uint32_t(ctx.lr), ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32); \
-        } \
+#define LOG_FIRST_CALL(name)                                                                                           \
+    do                                                                                                                 \
+    {                                                                                                                  \
+        static std::atomic_flag reported;                                                                              \
+        if (!reported.test_and_set())                                                                                  \
+        {                                                                                                              \
+            fprintf(stderr, "[net] " name " (lr=0x%08X r3=0x%08X r4=0x%08X r5=0x%08X r6=0x%08X r7=0x%08X)\n",          \
+                uint32_t(ctx.lr), ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);                         \
+        }                                                                                                              \
     } while (0)
 
     std::shared_ptr<HttpHandle> HttpFromHandle(const PPCContext& ctx, uint32_t handle)
@@ -117,15 +122,9 @@ namespace
     }
 }
 
-PPC_FUNC(__imp__NetDll_XNetStartup)
-{
-    ctx.r3.u64 = 0;
-}
+PPC_FUNC(__imp__NetDll_XNetStartup) { ctx.r3.u64 = 0; }
 
-PPC_FUNC(__imp__NetDll_XNetCleanup)
-{
-    ctx.r3.u64 = 0;
-}
+PPC_FUNC(__imp__NetDll_XNetCleanup) { ctx.r3.u64 = 0; }
 
 // WSAStartup(caller, requested version, WSADATA*): Winsock 2.2.
 PPC_FUNC(__imp__NetDll_WSAStartup)
@@ -140,15 +139,9 @@ PPC_FUNC(__imp__NetDll_WSAStartup)
     ctx.r3.u64 = 0;
 }
 
-PPC_FUNC(__imp__NetDll_WSACleanup)
-{
-    ctx.r3.u64 = 0;
-}
+PPC_FUNC(__imp__NetDll_WSACleanup) { ctx.r3.u64 = 0; }
 
-PPC_FUNC(__imp__NetDll_WSAGetLastError)
-{
-    ctx.r3.u64 = t_lastError;
-}
+PPC_FUNC(__imp__NetDll_WSAGetLastError) { ctx.r3.u64 = t_lastError; }
 
 // XNetGetTitleXnAddr(caller, XNADDR*): no cable, so no address.
 PPC_FUNC(__imp__NetDll_XNetGetTitleXnAddr)
@@ -171,21 +164,12 @@ PPC_FUNC(__imp__NetDll_XNetRandom)
 }
 
 // socket(caller, af, type, protocol)
-PPC_FUNC(__imp__NetDll_socket)
-{
-    ctx.r3.u64 = CreateHandle(std::make_shared<Socket>());
-}
+PPC_FUNC(__imp__NetDll_socket) { ctx.r3.u64 = CreateHandle(std::make_shared<Socket>()); }
 
-PPC_FUNC(__imp__NetDll_closesocket)
-{
-    ctx.r3.u64 = CloseHandle(ctx.r4.u32) ? 0 : Fail(WsaENotSock);
-}
+PPC_FUNC(__imp__NetDll_closesocket) { ctx.r3.u64 = CloseHandle(ctx.r4.u32) ? 0 : Fail(WsaENotSock); }
 
 // setsockopt(caller, socket, level, name, value, length)
-PPC_FUNC(__imp__NetDll_setsockopt)
-{
-    ctx.r3.u64 = SocketFromHandle(ctx.r4.u32) != nullptr ? 0 : SocketError;
-}
+PPC_FUNC(__imp__NetDll_setsockopt) { ctx.r3.u64 = SocketFromHandle(ctx.r4.u32) != nullptr ? 0 : SocketError; }
 
 // ioctlsocket(caller, socket, command, argument*): FIONBIO switches non-blocking mode.
 PPC_FUNC(__imp__NetDll_ioctlsocket)
@@ -202,20 +186,14 @@ PPC_FUNC(__imp__NetDll_ioctlsocket)
 }
 
 // bind(caller, socket, address, length)
-PPC_FUNC(__imp__NetDll_bind)
-{
-    ctx.r3.u64 = SocketFromHandle(ctx.r4.u32) != nullptr ? 0 : SocketError;
-}
+PPC_FUNC(__imp__NetDll_bind) { ctx.r3.u64 = SocketFromHandle(ctx.r4.u32) != nullptr ? 0 : SocketError; }
 
 PPC_FUNC(__imp__NetDll_connect)
 {
     ctx.r3.u64 = SocketFromHandle(ctx.r4.u32) != nullptr ? Fail(WsaENetUnreach) : SocketError;
 }
 
-PPC_FUNC(__imp__NetDll_send)
-{
-    ctx.r3.u64 = SocketFromHandle(ctx.r4.u32) != nullptr ? Fail(WsaENetDown) : SocketError;
-}
+PPC_FUNC(__imp__NetDll_send) { ctx.r3.u64 = SocketFromHandle(ctx.r4.u32) != nullptr ? Fail(WsaENetDown) : SocketError; }
 
 PPC_FUNC(__imp__NetDll_sendto)
 {
@@ -237,10 +215,7 @@ PPC_FUNC(__imp__NetDll_recvfrom)
 }
 
 // listen(caller, socket, backlog)
-PPC_FUNC(__imp__NetDll_listen)
-{
-    ctx.r3.u64 = SocketFromHandle(ctx.r4.u32) != nullptr ? 0 : SocketError;
-}
+PPC_FUNC(__imp__NetDll_listen) { ctx.r3.u64 = SocketFromHandle(ctx.r4.u32) != nullptr ? 0 : SocketError; }
 
 // accept(caller, socket, address, length*): nothing ever connects, so there is never a client.
 PPC_FUNC(__imp__NetDll_accept)
@@ -276,16 +251,10 @@ PPC_FUNC(__imp__NetDll_inet_addr)
 }
 
 // XNetGetEthernetLinkStatus(caller): XNET_ETHERNET_LINK_* flags, none without a cable.
-PPC_FUNC(__imp__NetDll_XNetGetEthernetLinkStatus)
-{
-    ctx.r3.u64 = 0;
-}
+PPC_FUNC(__imp__NetDll_XNetGetEthernetLinkStatus) { ctx.r3.u64 = 0; }
 
 // WSACreateEvent(): a manual-reset event, not signaled, as Xenia (BSD) answers. The WSA*Event calls take no caller.
-PPC_FUNC(__imp__NetDll_WSACreateEvent)
-{
-    ctx.r3.u64 = CreateHandle(std::make_shared<Event>(true, false));
-}
+PPC_FUNC(__imp__NetDll_WSACreateEvent) { ctx.r3.u64 = CreateHandle(std::make_shared<Event>(true, false)); }
 
 // WSACloseEvent(event): TRUE, or FALSE with ERROR_INVALID_HANDLE.
 PPC_FUNC(__imp__NetDll_WSACloseEvent)
@@ -363,10 +332,7 @@ PPC_FUNC(__imp__NetDll_XHttpStartup)
     ctx.r3.u64 = 1;
 }
 
-PPC_FUNC(__imp__NetDll_XHttpShutdown)
-{
-    ctx.r3.u64 = 1;
-}
+PPC_FUNC(__imp__NetDll_XHttpShutdown) { ctx.r3.u64 = 1; }
 
 // XHttpOpen(caller, user agent, access type, proxy name, proxy bypass, flags): a session handle.
 PPC_FUNC(__imp__NetDll_XHttpOpen)
@@ -399,10 +365,7 @@ PPC_FUNC(__imp__NetDll_XHttpSendRequest)
 }
 
 // XHttpReceiveResponse(caller, request, reserved)
-PPC_FUNC(__imp__NetDll_XHttpReceiveResponse)
-{
-    ctx.r3.u64 = HttpRequestCall(ctx, ctx.r4.u32);
-}
+PPC_FUNC(__imp__NetDll_XHttpReceiveResponse) { ctx.r3.u64 = HttpRequestCall(ctx, ctx.r4.u32); }
 
 // XHttpQueryHeaders(caller, request, info level, name, buffer, buffer length*, index*)
 PPC_FUNC(__imp__NetDll_XHttpQueryHeaders)
@@ -451,10 +414,7 @@ PPC_FUNC(__imp__NetDll_XHttpSetStatusCallback)
 }
 
 // XHttpDoWork(caller, session, maximum time): there is never any pending work.
-PPC_FUNC(__imp__NetDll_XHttpDoWork)
-{
-    ctx.r3.u64 = HttpFromHandle(ctx, ctx.r4.u32) != nullptr ? 1 : 0;
-}
+PPC_FUNC(__imp__NetDll_XHttpDoWork) { ctx.r3.u64 = HttpFromHandle(ctx, ctx.r4.u32) != nullptr ? 1 : 0; }
 
 // XHttpCrackUrl(caller, url, url length, flags, URL_COMPONENTS*): not parsed. It fails with ERROR_WINHTTP_INVALID_URL,
 // which stops the title before it builds a request that could only fail later.

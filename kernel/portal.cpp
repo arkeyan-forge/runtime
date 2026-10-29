@@ -36,7 +36,8 @@ namespace
 
         while (size > 1 && report[size - 1] == 0)
             size--;
-        std::string line = "[portal] " + std::string(direction) + " " + char(report[0] >= 0x20 && report[0] < 0x7F ? report[0] : '?');
+        std::string line =
+            "[portal] " + std::string(direction) + " " + char(report[0] >= 0x20 && report[0] < 0x7F ? report[0] : '?');
         for (size_t i = 0; i < size; i++)
         {
             char byte[4];
@@ -49,7 +50,8 @@ namespace
     // printf for the title's portal log: integer and pointer arguments come from r4..r10.
     std::string FormatGuestString(const char* format, const PPCContext& ctx)
     {
-        const uint64_t arguments[] = { ctx.r4.u64, ctx.r5.u64, ctx.r6.u64, ctx.r7.u64, ctx.r8.u64, ctx.r9.u64, ctx.r10.u64 };
+        const uint64_t arguments[] = { ctx.r4.u64, ctx.r5.u64, ctx.r6.u64, ctx.r7.u64, ctx.r8.u64, ctx.r9.u64,
+            ctx.r10.u64 };
         size_t next = 0;
         std::string text;
         for (const char* p = format; *p != '\0'; p++)
@@ -86,12 +88,11 @@ namespace
                 break;
             case 's':
                 snprintf(buffer, sizeof(buffer), (spec + 's').c_str(),
-                    uint32_t(argument) != 0 ? static_cast<const char*>(g_memory.Translate(uint32_t(argument))) : "(null)");
+                    uint32_t(argument) != 0 ? static_cast<const char*>(g_memory.Translate(uint32_t(argument)))
+                                            : "(null)");
                 next++;
                 break;
-            default:
-                snprintf(buffer, sizeof(buffer), "%c", *p);
-                break;
+            default: snprintf(buffer, sizeof(buffer), "%c", *p); break;
             }
             text += buffer;
         }

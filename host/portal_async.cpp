@@ -60,7 +60,8 @@ void AsyncPortal::Run()
         std::lock_guard lock(m_mutex);
         if (!failing)
             fprintf(stderr, "[portal] %s: lost (%s); trying again after %lld s, then up to %lld s apart\n", m_name, why,
-                static_cast<long long>(backoff.count() / 1000), static_cast<long long>(m_timing.maxRetry.count() / 1000));
+                static_cast<long long>(backoff.count() / 1000),
+                static_cast<long long>(m_timing.maxRetry.count() / 1000));
         failing = true;
         m_delay = backoff;
         next = Clock::now() + backoff;

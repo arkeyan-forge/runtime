@@ -39,7 +39,8 @@ namespace
     {
         if (text == nullptr)
             return {};
-        char* converted = SDL_iconv_string("UTF-8", "WCHAR_T", reinterpret_cast<const char*>(text), (SDL_wcslen(text) + 1) * sizeof(wchar_t));
+        char* converted = SDL_iconv_string(
+            "UTF-8", "WCHAR_T", reinterpret_cast<const char*>(text), (SDL_wcslen(text) + 1) * sizeof(wchar_t));
         std::string result = converted != nullptr ? converted : "";
         SDL_free(converted);
         return result;
@@ -48,9 +49,9 @@ namespace
     std::string Describe(const SDL_hid_device_info& device)
     {
         char text[512];
-        snprintf(text, sizeof(text), "%04X:%04X \"%s\", usage page %04X usage %04X, interface %d, path %s", device.vendor_id,
-            device.product_id, Utf8(device.product_string).c_str(), device.usage_page, device.usage, device.interface_number,
-            device.path);
+        snprintf(text, sizeof(text), "%04X:%04X \"%s\", usage page %04X usage %04X, interface %d, path %s",
+            device.vendor_id, device.product_id, Utf8(device.product_string).c_str(), device.usage_page, device.usage,
+            device.interface_number, device.path);
         return text;
     }
 
@@ -93,9 +94,12 @@ namespace
                 HidDll d;
                 if (HMODULE module = LoadLibraryW(L"hid.dll"))
                 {
-                    d.SetOutputReport = reinterpret_cast<decltype(d.SetOutputReport)>(GetProcAddress(module, "HidD_SetOutputReport"));
-                    d.GetPreparsedData = reinterpret_cast<decltype(d.GetPreparsedData)>(GetProcAddress(module, "HidD_GetPreparsedData"));
-                    d.FreePreparsedData = reinterpret_cast<decltype(d.FreePreparsedData)>(GetProcAddress(module, "HidD_FreePreparsedData"));
+                    d.SetOutputReport =
+                        reinterpret_cast<decltype(d.SetOutputReport)>(GetProcAddress(module, "HidD_SetOutputReport"));
+                    d.GetPreparsedData =
+                        reinterpret_cast<decltype(d.GetPreparsedData)>(GetProcAddress(module, "HidD_GetPreparsedData"));
+                    d.FreePreparsedData = reinterpret_cast<decltype(d.FreePreparsedData)>(
+                        GetProcAddress(module, "HidD_FreePreparsedData"));
                     d.GetCaps = reinterpret_cast<decltype(d.GetCaps)>(GetProcAddress(module, "HidP_GetCaps"));
                 }
                 return d;
@@ -123,7 +127,8 @@ namespace
                 error = "hid.dll has no HidD_SetOutputReport";
                 return;
             }
-            handle = CreateFileW(wide.c_str(), GENERIC_WRITE | GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+            handle = CreateFileW(wide.c_str(), GENERIC_WRITE | GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                nullptr, OPEN_EXISTING, 0, nullptr);
             if (handle == INVALID_HANDLE_VALUE)
             {
                 error = LastError("CreateFile");
@@ -162,8 +167,8 @@ namespace
 #endif
 
     // Report id 0 first, then the command zero-padded: 1 + 32 bytes, the output report's exact length that Windows wants.
-    bool SendCommand(WriteMethod method, SDL_hid_device* device, OutputHandle& output, const uint8_t* command, size_t size,
-        std::string& error)
+    bool SendCommand(WriteMethod method, SDL_hid_device* device, OutputHandle& output, const uint8_t* command,
+        size_t size, std::string& error)
     {
         uint8_t report[1 + 64]{};
         size_t length = std::clamp(output.length, size_t(1 + PortalReportSize), sizeof(report));
@@ -217,7 +222,8 @@ namespace
                 if (SendCommand(method, m_device, m_output, command, size, error))
                 {
                     if (!m_wrote || method != m_method)
-                        fprintf(stderr, "[portal] hid: wrote '%c' with %s (%zu-byte output report)\n", letter, MethodName(method), m_output.length);
+                        fprintf(stderr, "[portal] hid: wrote '%c' with %s (%zu-byte output report)\n", letter,
+                            MethodName(method), m_output.length);
                     m_method = method;
                     m_wrote = true;
                     m_said.clear(); // working: the next failure is news
@@ -283,8 +289,9 @@ namespace
                 {
                     m_output.Open(device->path);
                     char line[160];
-                    snprintf(line, sizeof(line), "[portal] hid: opened %04X:%04X (interface %d, output report %zu bytes%s%s)",
-                        device->vendor_id, device->product_id, device->interface_number, m_output.length,
+                    snprintf(line, sizeof(line),
+                        "[portal] hid: opened %04X:%04X (interface %d, output report %zu bytes%s%s)", device->vendor_id,
+                        device->product_id, device->interface_number, m_output.length,
                         m_output.error.empty() ? "" : "; no output-report handle: ", m_output.error.c_str());
                     Say(line);
                 }
@@ -293,7 +300,8 @@ namespace
                     fprintf(stderr, "[portal] hid: cannot open %s (%s)\n", device->path, SDL_GetError());
 #ifdef __linux__
                     // /dev/hidraw* belongs to root: the player's account needs a udev rule (the kit's README.txt).
-                    fprintf(stderr, "[portal] hid: Linux needs this udev rule to open the portal, in "
+                    fprintf(stderr,
+                        "[portal] hid: Linux needs this udev rule to open the portal, in "
                         "/etc/udev/rules.d/70-skylanders-portal.rules (then unplug and replug it): "
                         "SUBSYSTEM==\"hidraw\", ATTRS{idVendor}==\"1430\", ATTRS{idProduct}==\"0150\", MODE=\"0660\", "
                         "TAG+=\"uaccess\"\n");
@@ -337,12 +345,12 @@ namespace
 {
     // Sends `letter` and waits up to 1 s for the report that answers it (the portal may stream status reports
     // meanwhile). Returns "ok, <reply bytes> in <n> ms" or "error: ...".
-    std::string Query(SDL_hid_device* device, OutputHandle& output, WriteMethod method, char letter, std::vector<uint8_t>* answer = nullptr)
+    std::string Query(SDL_hid_device* device, OutputHandle& output, WriteMethod method, char letter,
+        std::vector<uint8_t>* answer = nullptr)
     {
         uint8_t report[64];
         while (SDL_hid_read_timeout(device, report, sizeof(report), 0) > 0)
-        {
-        }
+        {}
         const uint8_t command[] = { uint8_t(letter) };
         std::string error;
         uint64_t start = SDL_GetTicks();
@@ -361,7 +369,8 @@ namespace
                 int length = snprintf(text, sizeof(text), "ok, '%c'", letter);
                 for (int i = 1; i < std::min(size, 9); i++)
                     length += snprintf(text + length, sizeof(text) - length, " %02X", report[i]);
-                snprintf(text + length, sizeof(text) - length, " in %llu ms", static_cast<unsigned long long>(SDL_GetTicks() - start));
+                snprintf(text + length, sizeof(text) - length, " in %llu ms",
+                    static_cast<unsigned long long>(SDL_GetTicks() - start));
                 return text;
             }
         }
@@ -384,8 +393,8 @@ std::string ProbeHidPortals(std::vector<PortalProbe>& portals)
             OutputHandle output;
             output.Open(device->path);
             char details[96];
-            snprintf(details, sizeof(details), "interface %d, usage page %04X, output report %zu bytes", device->interface_number,
-                device->usage_page, output.length);
+            snprintf(details, sizeof(details), "interface %d, usage page %04X, output report %zu bytes",
+                device->interface_number, device->usage_page, output.length);
             probe.details = details;
             if (!output.error.empty())
                 probe.details += " (no output-report handle: " + output.error + ")";

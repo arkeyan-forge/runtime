@@ -142,7 +142,8 @@ namespace
         char name[64] = "";
         pthread_getname_np(pthread_self(), name, sizeof(name));
         Registers r = InterruptedRegisters(context);
-        fprintf(stderr, "thread \"%s\", sp 0x%llx, fp 0x%llx\n", name, (unsigned long long)r.sp, (unsigned long long)r.fp);
+        fprintf(
+            stderr, "thread \"%s\", sp 0x%llx, fp 0x%llx\n", name, (unsigned long long)r.sp, (unsigned long long)r.fp);
         PrintCodeAddress("pc", r.pc);
         if (r.lr != 0)
             PrintCodeAddress("lr", r.lr);
@@ -206,7 +207,13 @@ namespace
         g_reporter = pthread_self();
 
         char description[32];
-        snprintf(description, sizeof(description), "signal %d%s", signal, signal == SIGABRT ? " abort" : signal == SIGSEGV ? " segv" : signal == SIGBUS ? " bus" : signal == SIGILL ? " illegal" : signal == SIGTRAP ? " trap" : "");
+        snprintf(description, sizeof(description), "signal %d%s", signal,
+            signal == SIGABRT   ? " abort"
+            : signal == SIGSEGV ? " segv"
+            : signal == SIGBUS  ? " bus"
+            : signal == SIGILL  ? " illegal"
+            : signal == SIGTRAP ? " trap"
+                                : "");
         g_onFault(description, info->si_addr);
         PrintFaultingCode(context);
         _exit(1);
@@ -222,9 +229,7 @@ namespace
     }
 }
 
-void PlatformInit()
-{
-}
+void PlatformInit() {}
 
 void PlatformInstallFaultHandler(void (*onFault)(const char* description, const void* address))
 {
@@ -238,7 +243,8 @@ void PlatformInstallFaultHandler(void (*onFault)(const char* description, const 
     sigaction(SIGBUS, &action, nullptr);
     sigaction(SIGTRAP, &action, nullptr); // libc++ hardening assertions and __builtin_trap
     sigaction(SIGILL, &action, nullptr);
-    sigaction(SIGABRT, &action, nullptr); // the runtime's own fatal errors (abort(): an unrecompiled indirect call, a full heap)
+    sigaction(SIGABRT, &action,
+        nullptr); // the runtime's own fatal errors (abort(): an unrecompiled indirect call, a full heap)
 }
 
 uint8_t* PlatformReserveMemory(size_t size)
@@ -248,10 +254,7 @@ uint8_t* PlatformReserveMemory(size_t size)
     return memory != MAP_FAILED ? static_cast<uint8_t*>(memory) : nullptr;
 }
 
-bool PlatformProtectNoAccess(void* address, size_t size)
-{
-    return mprotect(address, size, PROT_NONE) == 0;
-}
+bool PlatformProtectNoAccess(void* address, size_t size) { return mprotect(address, size, PROT_NONE) == 0; }
 
 void PlatformStartThread(size_t stackSize, std::function<void()> body)
 {
@@ -295,17 +298,11 @@ void PlatformSetThreadTimingCritical(uint32_t periodUs)
 #endif
 }
 
-PlatformFile PlatformOpenFile(const char* path)
-{
-    return open(path, O_RDONLY);
-}
+PlatformFile PlatformOpenFile(const char* path) { return open(path, O_RDONLY); }
 
 int64_t PlatformReadFile(PlatformFile file, void* buffer, uint32_t size, uint64_t offset)
 {
     return pread(int(file), buffer, size, off_t(offset));
 }
 
-void PlatformCloseFile(PlatformFile file)
-{
-    close(int(file));
-}
+void PlatformCloseFile(PlatformFile file) { close(int(file)); }

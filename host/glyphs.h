@@ -10,7 +10,10 @@
 #include <span>
 #include <vector>
 
-namespace gpu { struct Texture; }
+namespace gpu
+{
+    struct Texture;
+}
 struct RuntimeSettings;
 struct SDL_Gamepad;
 union SDL_Event;
@@ -18,14 +21,39 @@ union SDL_Event;
 namespace glyphs
 {
     // PlayStation: the PS4 / PS5 look (Options, the touchpad for BACK); PlayStation3: START and SELECT.
-    enum class Style : uint8_t { Xbox360, XboxOne, PlayStation, Nintendo, Keyboard, PlayStation3 };
+    enum class Style : uint8_t
+    {
+        Xbox360,
+        XboxOne,
+        PlayStation,
+        Nintendo,
+        Keyboard,
+        PlayStation3
+    };
 
     // A, B, X, Y and Start first (their order indexes the key bindings). RightStick is SSA's 3D prompt (256x256, opaque,
     // the stick seen from above); LeftStickIcon and RightStickIcon are the small stick pictures of a font atlas.
     // Controller, ArrowsLeftRight and ArrowsUpDown are drawn on the keyboard style only (pads keep the game's picture):
     // SSA's Controls page pad (keycaps where its buttons are) and its blue arrows (the left stick's keys).
-    enum class Glyph : uint8_t { A, B, X, Y, Start, RightStick, Back, LeftStickIcon, RightStickIcon,
-        LeftBumper, RightBumper, LeftTrigger, RightTrigger, Controller, ArrowsLeftRight, ArrowsUpDown };
+    enum class Glyph : uint8_t
+    {
+        A,
+        B,
+        X,
+        Y,
+        Start,
+        RightStick,
+        Back,
+        LeftStickIcon,
+        RightStickIcon,
+        LeftBumper,
+        RightBumper,
+        LeftTrigger,
+        RightTrigger,
+        Controller,
+        ArrowsLeftRight,
+        ArrowsUpDown
+    };
 
     // A cell of an atlas, in base-level pixels, inclusive (the picture's bounding box as the game drew it).
     struct Cell

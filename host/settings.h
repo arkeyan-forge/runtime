@@ -25,31 +25,33 @@ struct RuntimeSettings
     bool fullscreen = false;      // desktop fullscreen (no mode change)
     uint32_t anisotropy = 1;      // 1, 2, 4, 8, 16
     uint32_t fpsLimit = 30;       // 30 or 60 (experimental)
-    bool aspectAuto = true;       // [video] aspect: auto follows a window wider than 16:9 (Hor+ camera, wide scene and
-                                  // frame, HUD centred); 16:9 keeps the game's 16:9 picture, with bars on a wider window
-    bool showFps = false;         // [<game>.video] show_fps: the frame rate in a corner (the F3 menu's FPS counter)
-    uint32_t volume = 100;        // [<game>.audio] volume (or [audio]), 0-100: the master volume
+    bool aspectAuto = true; // [video] aspect: auto follows a window wider than 16:9 (Hor+ camera, wide scene and
+    // frame, HUD centred); 16:9 keeps the game's 16:9 picture, with bars on a wider window
+    bool showFps = false; // [<game>.video] show_fps: the frame rate in a corner (the F3 menu's FPS counter)
+    uint32_t volume = 100; // [<game>.audio] volume (or [audio]), 0-100: the master volume
     bool skipIntroMovies = false; // skip the start-up logos (legal, atvilogo, xpeclogo, tfb); story movies still play
-    bool textureDump = false;     // dump the game's textures as DDS files (host/texture_pack.h)
-    bool texturePacks = true;     // replace textures with the files of the game's textures folder, when there is one
+    bool textureDump = false; // dump the game's textures as DDS files (host/texture_pack.h)
+    bool texturePacks = true; // replace textures with the files of the game's textures folder, when there is one
     bool originalResolution = false; // [<game>.video] or [video] original_resolution: the game's own smaller 3D scene,
-                                  // stretched to the frame (Swap Force's 1040x620); default the scene at the frame's size
+    // stretched to the frame (Swap Force's 1040x620); default the scene at the frame's size
     std::string inputDevice = "auto"; // auto, keyboard, gamepad
-    std::string gamepad;          // SDL GUID, empty: the first one connected
-    std::string keys[22];         // SDL key name per g_keyActions entry
-    PadMap padMap;                // [input] / [<game>.input] pad_<button>=<button>: what each pad button does
+    std::string gamepad; // SDL GUID, empty: the first one connected
+    std::string keys[22]; // SDL key name per g_keyActions entry
+    PadMap padMap; // [input] / [<game>.input] pad_<button>=<button>: what each pad button does
     std::string rumble[2] = { "normal", "normal" }; // rumble_p1 / rumble_p2: off, low, normal, strong
-    std::string glyphs = "auto";  // button glyphs: auto (the last device used), xbox (auto among the next two), xbox360,
-                                  // xboxone, playstation, nintendo, keyboard
-    bool nightmareFromStart = false; // [<game>] nightmare_from_start: the hardest difficulty offered from the start (Swap Force)
-    bool toyboxAutoOpen = true;   // the Toy Box opens by itself when the game asks for a figure ([portal] toybox_auto_open)
-    std::string language;         // text language code, empty: the game's choice
+    std::string glyphs = "auto"; // button glyphs: auto (the last device used), xbox (auto among the next two), xbox360,
+    // xboxone, playstation, nintendo, keyboard
+    bool nightmareFromStart =
+        false; // [<game>] nightmare_from_start: the hardest difficulty offered from the start (Swap Force)
+    bool toyboxAutoOpen =
+        true; // the Toy Box opens by itself when the game asks for a figure ([portal] toybox_auto_open)
+    std::string language; // text language code, empty: the game's choice
     std::string voiceLanguage;
 
-    bool help = false;            // --help
-    bool version = false;         // --version
-    bool listGamepads = false;    // --list-gamepads
-    bool portalProbe = false;     // --portal-probe
+    bool help = false; // --help
+    bool version = false; // --version
+    bool listGamepads = false; // --list-gamepads
+    bool portalProbe = false; // --portal-probe
     std::vector<std::string> arguments; // what the settings don't consume: the disc image, --select-iso, --launcher
 };
 

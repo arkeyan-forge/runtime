@@ -25,8 +25,8 @@ namespace art
         {
             int bit, path, price;
         };
-        constexpr Slot Slots[] = { { 2, 0, 0 }, { 3, 0, 1 }, { 4, 0, 2 }, { 5, 0, 3 }, { 6, 1, 4 }, { 7, 1, 5 }, { 8, 1, 6 },
-            { 6, 2, 4 }, { 7, 2, 5 }, { 8, 2, 6 }, { 9, 3, 7 }, { 10, 4, 8 } };
+        constexpr Slot Slots[] = { { 2, 0, 0 }, { 3, 0, 1 }, { 4, 0, 2 }, { 5, 0, 3 }, { 6, 1, 4 }, { 7, 1, 5 },
+            { 8, 1, 6 }, { 6, 2, 4 }, { 7, 2, 5 }, { 8, 2, 6 }, { 9, 3, 7 }, { 10, 4, 8 } };
 
         uint32_t Be32(const std::vector<uint8_t>& b, size_t at)
         {
@@ -82,12 +82,14 @@ namespace art
             bool Open(const Disc& disc, const std::string& path)
             {
                 bytes = ReadAll(disc, path);
-                iga = alchemy::IgaArchive::Open([this](uint64_t offset, size_t count, uint8_t* out) {
-                    if (offset + count > bytes.size())
-                        return false;
-                    memcpy(out, bytes.data() + offset, count);
-                    return true;
-                }, bytes.size());
+                iga = alchemy::IgaArchive::Open(
+                    [this](uint64_t offset, size_t count, uint8_t* out) {
+                        if (offset + count > bytes.size())
+                            return false;
+                        memcpy(out, bytes.data() + offset, count);
+                        return true;
+                    },
+                    bytes.size());
                 return iga.has_value();
             }
 
@@ -105,7 +107,10 @@ namespace art
 
             explicit Script(const alchemy::IgzFile& file) : z(file), objects(file.ObjectOffsets()) {}
 
-            std::optional<uint64_t> At(uint32_t pointer) const { return pointer != 0 ? z.Pointer(pointer) : std::nullopt; }
+            std::optional<uint64_t> At(uint32_t pointer) const
+            {
+                return pointer != 0 ? z.Pointer(pointer) : std::nullopt;
+            }
             std::string Text(uint32_t pointer) const
             {
                 std::optional<uint64_t> at = At(pointer);
@@ -165,7 +170,8 @@ namespace art
             {
                 Archive global;
                 const collection::Json& costs = manifest["costs"];
-                std::optional<alchemy::IgzFile> level = global.Open(disc, costs["archive"].AsString()) ? global.Entry("level.bld") : std::nullopt;
+                std::optional<alchemy::IgzFile> level =
+                    global.Open(disc, costs["archive"].AsString()) ? global.Entry("level.bld") : std::nullopt;
                 if (!level)
                     return 0;
                 Script script(*level);
@@ -180,7 +186,8 @@ namespace art
             for (const auto& [type, path] : manifest["archives"].Members())
             {
                 Archive archive;
-                std::optional<alchemy::IgzFile> z = archive.Open(disc, path.AsString()) ? archive.Entry("level.bld") : std::nullopt;
+                std::optional<alchemy::IgzFile> z =
+                    archive.Open(disc, path.AsString()) ? archive.Entry("level.bld") : std::nullopt;
                 if (!z)
                     continue;
                 Script script(*z);
@@ -207,15 +214,18 @@ namespace art
                     if (z->TypeName(op) != "OpMacroParameter" || (z->Word(op, 6) & 0x80000000) != 0)
                         continue;
                     std::optional<uint64_t> macro = script.At(z->Word(op, 14)), value = script.At(z->Word(op, 12));
-                    if (!macro || script.Text(z->Word(*macro, 2)) != "Portal - Define Minion" || !value || z->TypeName(*value) != "RHSReferenceStack")
+                    if (!macro || script.Text(z->Word(*macro, 2)) != "Portal - Define Minion" || !value ||
+                        z->TypeName(*value) != "RHSReferenceStack")
                         continue;
                     if (std::optional<uint64_t> target = script.At(z->Word(*value, 12)))
                         params[script.Text(z->Word(op, 7))] = *target;
                 }
                 if (!params.contains("unlock names") || !params.contains("unlock descriptions"))
                     continue;
-                std::vector<uint64_t> names = script.Items(params["unlock names"]), descriptions = script.Items(params["unlock descriptions"]);
-                collection::Json entry = collection::Json::Object(), list = collection::Json::Array(), paths = collection::Json::Array();
+                std::vector<uint64_t> names = script.Items(params["unlock names"]),
+                                      descriptions = script.Items(params["unlock descriptions"]);
+                collection::Json entry = collection::Json::Object(), list = collection::Json::Array(),
+                                 paths = collection::Json::Array();
                 for (size_t i = 0; i < names.size() && i < descriptions.size() && i < std::size(Slots); i++)
                     list.Push(Entry(int(i), prices[size_t(Slots[i].price)], text(names[i]), text(descriptions[i])));
                 for (int k = 1; k <= 2; k++)
@@ -296,10 +306,15 @@ namespace art
                 for (size_t k = 0; k < 12; k++)
                 {
                     uint32_t index = Be32(stream, at + k * Record);
-                    (index < 4 ? basic : index <= 6 ? paths : index == 7 ? soul : basic).push_back(index == 8 ? SIZE_MAX : at + k * Record);
+                    (index < 4       ? basic
+                        : index <= 6 ? paths
+                        : index == 7 ? soul
+                                     : basic)
+                        .push_back(index == 8 ? SIZE_MAX : at + k * Record);
                 }
                 std::erase(basic, SIZE_MAX);
-                if (toy == types.end() || basic.size() != 4 || paths.size() != 6 || soul.size() != 1 || toys.Has(std::to_string(toy->second)))
+                if (toy == types.end() || basic.size() != 4 || paths.size() != 6 || soul.size() != 1 ||
+                    toys.Has(std::to_string(toy->second)))
                 {
                     at += 12 * Record - 1;
                     continue;
@@ -307,9 +322,11 @@ namespace art
                 std::vector<size_t> order = basic;
                 order.insert(order.end(), paths.begin(), paths.end());
                 order.push_back(soul[0]);
-                collection::Json entry = collection::Json::Object(), list = collection::Json::Array(), pathList = collection::Json::Array();
+                collection::Json entry = collection::Json::Object(), list = collection::Json::Array(),
+                                 pathList = collection::Json::Array();
                 for (size_t i = 0; i < order.size(); i++)
-                    list.Push(Entry(int(i), int(Be32(stream, order[i] + 12)), text(Be32(stream, order[i] + 4)), text(Be32(stream, order[i] + 8))));
+                    list.Push(Entry(int(i), int(Be32(stream, order[i] + 12)), text(Be32(stream, order[i] + 4)),
+                        text(Be32(stream, order[i] + 8))));
                 for (size_t k = 0; k < 2; k++)
                 {
                     collection::Json one = collection::Json::Object();
@@ -326,17 +343,20 @@ namespace art
         }
     }
 
-    int ExtractUpgrades(std::string_view game, const collection::Json& manifest, const Disc& disc, const std::filesystem::path& out)
+    int ExtractUpgrades(
+        std::string_view game, const collection::Json& manifest, const Disc& disc, const std::filesystem::path& out)
     {
         collection::Json toys = collection::Json::Object();
         int count = manifest.Has("archives") ? GiantsUpgrades(manifest, disc, toys)
-            : manifest.Has("stream") ? SsaUpgrades(manifest, disc, toys) : 0;
+                    : manifest.Has("stream") ? SsaUpgrades(manifest, disc, toys)
+                                             : 0;
         if (count == 0)
             return 0;
         collection::Json file = collection::Json::Object();
         file.Set("format", 1);
         file.Set("game", std::string(game));
-        file.Set("about", "Read from the player's own disc (docs/runtime/host/figures.md, \"Upgrades\"). Game text: never share it.");
+        file.Set("about",
+            "Read from the player's own disc (docs/runtime/host/figures.md, \"Upgrades\"). Game text: never share it.");
         file.Set("toys", std::move(toys));
         std::string text = file.Dump(), target = datadir::Text(out), temporary = target + ".part";
         {

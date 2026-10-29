@@ -68,7 +68,8 @@ namespace collection
     std::string DiscImagePath(const Toy& toy);
 
     // The picture PortraitPath finds, else the generated one, `size` pixels square, with the badge of `kind`.
-    Image Portrait(const std::string& gameId, const Toy* toy, VariantKind kind, int size, uint16_t variant = 0, bool* fromDisc = nullptr);
+    Image Portrait(const std::string& gameId, const Toy* toy, VariantKind kind, int size, uint16_t variant = 0,
+        bool* fromDisc = nullptr);
     // Portrait with no game being viewed.
     Image Icon(const Toy* toy, VariantKind kind, int size, bool* fromDisc = nullptr);
 

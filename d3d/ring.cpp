@@ -31,7 +31,7 @@ namespace
     // Written from an indirect buffer (a shader's own packet) or loaded from memory (LOAD_ALU_CONSTANT): a shader's
     // literal constants, in effect while the shader is used even if the device's shadow of that group is pending.
     std::array<bool, RegisterCount> g_shaderOwned;
-    std::vector<d3d::RegisterWrite> g_recorded;     // writes into the command buffer being recorded
+    std::vector<d3d::RegisterWrite> g_recorded; // writes into the command buffer being recorded
     std::array<uint32_t, 2 * 256 * 4> g_constants; // GpuFloatConstants, big-endian
     // Per group of 16 float constant registers: g_constants holds the stream's values of a clean group whose registers
     // were all written (it then depends on nothing else), and no write came since.
@@ -40,10 +40,7 @@ namespace
     uint64_t g_constantsVersion = 1; // changes with g_constants' content
     std::array<uint32_t, 2 * 256 * 4 / 16> g_groupVersions; // the same per group of 16 registers
 
-    uint32_t Read32(uint32_t address)
-    {
-        return g_memory.Read<uint32_t>(address);
-    }
+    uint32_t Read32(uint32_t address) { return g_memory.Read<uint32_t>(address); }
 
     void Write(uint32_t reg, uint32_t value, bool recording, uint32_t depth = 0)
     {
@@ -95,12 +92,8 @@ namespace
                 at += 4 + count * 4;
                 break;
             }
-            case 1:
-                at += 12;
-                break;
-            case 2:
-                at += 4;
-                break;
+            case 1: at += 12; break;
+            case 2: at += 4; break;
             default:
             {
                 uint32_t opcode = (header >> 8) & 0x7F;
@@ -138,7 +131,8 @@ namespace
                     uint32_t base = ConstantBase(offsetType);
                     if (source != 0 && base != 0)
                         for (uint32_t i = 0; i < size; i++)
-                            Write(base + (offsetType & 0x7FF) + i, Read32(source + i * 4), recording, depth + 1); // a shader's literals
+                            Write(base + (offsetType & 0x7FF) + i, Read32(source + i * 4), recording,
+                                depth + 1); // a shader's literals
                 }
                 at += 4 + count * 4;
                 break;
@@ -180,10 +174,7 @@ namespace
         return false;
     }
 
-    bool ShadowDirty(uint32_t device, uint32_t reg)
-    {
-        return GroupBit(device, reg);
-    }
+    bool ShadowDirty(uint32_t device, uint32_t reg) { return GroupBit(device, reg); }
 
     // Registers only the stream has right: those the engine's state blocks and 0x8213BBB8 write (depth control, blend
     // control 0, colour control, mode control, colour mask, blend colour, stencil reference and alpha reference), and
@@ -194,7 +185,8 @@ namespace
     bool FromRing(uint32_t reg)
     {
         return (reg >= 0x2200 && reg <= 0x2202) || reg == 0x2205 || (reg >= 0x2104 && reg <= 0x2108) || reg == 0x210D ||
-            reg == 0x210E || (reg >= AluConstants && reg < FetchConstants) || (reg >= FetchConstants && reg < FetchConstants + 26 * 6);
+               reg == 0x210E || (reg >= AluConstants && reg < FetchConstants) ||
+               (reg >= FetchConstants && reg < FetchConstants + 26 * 6);
     }
 
     // The stream's value is the GPU's when the draw hooks scan, after the guest's call: D3D's flush sends every dirty
@@ -207,7 +199,8 @@ namespace
         if (!g_written[index])
             return false;
         bool constant = reg >= AluConstants && reg < BoolConstants;
-        return !constant || g_epochOf[index] == g_epoch || g_shaderOwned[index] || d3d::Replaying() || !ShadowDirty(device, reg);
+        return !constant || g_epochOf[index] == g_epoch || g_shaderOwned[index] || d3d::Replaying() ||
+               !ShadowDirty(device, reg);
     }
 
     // ShadowOffset and FromRing of every register, computed once (Value runs ~30 times per draw).
@@ -216,8 +209,7 @@ namespace
         uint32_t shadowOffset;
         bool fromRing;
     };
-    const std::array<RegisterInfo, RegisterCount> g_registerInfo = []
-    {
+    const std::array<RegisterInfo, RegisterCount> g_registerInfo = [] {
         std::array<RegisterInfo, RegisterCount> table;
         for (uint32_t i = 0; i < RegisterCount; i++)
             table[i] = { ShadowOffset(FirstRegister + i), FromRing(FirstRegister + i) };
@@ -247,7 +239,8 @@ void d3d::ScanRing(uint32_t device)
         ~Timer()
         {
             gpu::AddFrameTime(gpu::FrameTime::Ring,
-                uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count()));
+                uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start)
+                        .count()));
         }
     } timer;
     std::lock_guard lock(g_mutex);
@@ -350,7 +343,8 @@ std::vector<d3d::RegisterWrite> d3d::TakeRecordedWrites()
 void d3d::ApplyRecordedWrites(uint32_t device, const std::vector<RegisterWrite>& writes)
 {
     std::lock_guard lock(g_mutex);
-    bool recording = Read32(device + d3d::Device::RecordingBuffer) != 0; // a run inside a recording goes into that buffer
+    bool recording =
+        Read32(device + d3d::Device::RecordingBuffer) != 0; // a run inside a recording goes into that buffer
     for (const RegisterWrite& write : writes)
         Write(write.reg, write.value, recording);
 }
@@ -361,8 +355,7 @@ void d3d::SendInheritedShadows(uint32_t device, uint32_t commandBuffer)
     // The float and fetch constants the stream has right (FromRing), a dirty-bit group at a time: 16 float constant
     // registers, or one 6-dword fetch slot.
     bool recording = Read32(device + d3d::Device::RecordingBuffer) != 0;
-    auto send = [&](uint32_t first, uint32_t end, uint32_t step)
-    {
+    auto send = [&](uint32_t first, uint32_t end, uint32_t step) {
         for (uint32_t group = first; group < end; group += step)
         {
             if (!GroupBit(device, group) || !GroupBit(commandBuffer + 0x18, group))

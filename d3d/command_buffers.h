@@ -8,7 +8,8 @@ namespace d3d
 {
     // While the game records a command buffer, keeps a draw for its runs instead of drawing it. False when nothing
     // is being recorded.
-    bool RecordDraw(uint32_t device, uint32_t primitive, uint32_t first, uint32_t count, bool indexed, int32_t baseVertex);
+    bool RecordDraw(
+        uint32_t device, uint32_t primitive, uint32_t first, uint32_t count, bool indexed, int32_t baseVertex);
     // After the guest's draw call and a ScanRing: the register writes it put into the buffer belong to the recorded draw.
     void FinishRecordedDraw();
 

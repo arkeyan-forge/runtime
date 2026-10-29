@@ -74,8 +74,8 @@ void SnapshotPresentedFrame()
     }();
     static const auto start = std::chrono::steady_clock::now();
     static size_t nextSecond = 0;
-    if (prefix != nullptr && nextSecond < seconds.size()
-        && std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() >= seconds[nextSecond])
+    if (prefix != nullptr && nextSecond < seconds.size() &&
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() >= seconds[nextSecond])
     {
         std::vector<uint32_t> rgba;
         uint32_t width, height;
@@ -87,8 +87,10 @@ void SnapshotPresentedFrame()
         }
         nextSecond++;
     }
-    static const int every = std::max(skyenv::Get("SKY_GPU_SNAPSHOT_EVERY") != nullptr ? atoi(skyenv::Get("SKY_GPU_SNAPSHOT_EVERY")) : 300, 1);
-    static const int from = skyenv::Get("SKY_GPU_SNAPSHOT_FROM") != nullptr ? atoi(skyenv::Get("SKY_GPU_SNAPSHOT_FROM")) : 0;
+    static const int every = std::max(
+        skyenv::Get("SKY_GPU_SNAPSHOT_EVERY") != nullptr ? atoi(skyenv::Get("SKY_GPU_SNAPSHOT_EVERY")) : 300, 1);
+    static const int from =
+        skyenv::Get("SKY_GPU_SNAPSHOT_FROM") != nullptr ? atoi(skyenv::Get("SKY_GPU_SNAPSHOT_FROM")) : 0;
     static int frame = -from;
     if (prefix == nullptr || frame < 0 || frame++ % every != 0 || frame > 36000)
     {
@@ -121,7 +123,8 @@ SDL_Window* CreateDisplayWindow(const char* title, int width, int height, bool f
             width = w;
             height = h;
         }
-    SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | (fullscreen ? SDL_WINDOW_FULLSCREEN : 0);
+    SDL_WindowFlags flags =
+        SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | (fullscreen ? SDL_WINDOW_FULLSCREEN : 0);
     SDL_Window* window = SDL_CreateWindow(title, width, height, flags | gpu::WindowFlags());
     if (window == nullptr)
     {
@@ -140,15 +143,9 @@ SDL_Window* CreateDisplayWindow(const char* title, int width, int height, bool f
     return window;
 }
 
-void SetGameRendering(bool active)
-{
-    g_gameRendering = active;
-}
+void SetGameRendering(bool active) { g_gameRendering = active; }
 
-bool IsGameRendering()
-{
-    return g_gameRendering;
-}
+bool IsGameRendering() { return g_gameRendering; }
 
 void PresentDisplayFrame()
 {
@@ -176,7 +173,8 @@ void PresentDisplayFrame()
         if (g_texture == nullptr || g_textureWidth != width || g_textureHeight != height)
         {
             gpu::DestroyTexture(g_texture);
-            g_texture = gpu::CreateTexture({ .width = uint32_t(width), .height = uint32_t(height), .format = gpu::Format::R8G8B8A8_UNORM });
+            g_texture = gpu::CreateTexture(
+                { .width = uint32_t(width), .height = uint32_t(height), .format = gpu::Format::R8G8B8A8_UNORM });
             g_textureWidth = width;
             g_textureHeight = height;
         }

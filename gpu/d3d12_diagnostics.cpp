@@ -19,10 +19,7 @@ namespace
         "EstimateMotion", "ResolveMotionVectorHeap", "SetPipelineState1", "InitializeExtensionCommand",
         "ExecuteExtensionCommand", "DispatchMesh", "EncodeFrame", "ResolveEncoderOutputMetadata" };
 
-    const char* OpName(D3D12_AUTO_BREADCRUMB_OP op)
-    {
-        return uint32_t(op) < std::size(OpNames) ? OpNames[op] : "?";
-    }
+    const char* OpName(D3D12_AUTO_BREADCRUMB_OP op) { return uint32_t(op) < std::size(OpNames) ? OpNames[op] : "?"; }
 
     const char* ReasonName(HRESULT reason)
     {
@@ -41,8 +38,8 @@ namespace
     void PrintAllocations(const char* what, const D3D12_DRED_ALLOCATION_NODE1* node)
     {
         for (uint32_t count = 0; node != nullptr && count < 16; node = node->pNext, count++)
-            fprintf(stderr, "[gpu]   %s: %s (allocation type %d)\n", what, node->ObjectNameA != nullptr ? node->ObjectNameA : "(unnamed)",
-                int(node->AllocationType));
+            fprintf(stderr, "[gpu]   %s: %s (allocation type %d)\n", what,
+                node->ObjectNameA != nullptr ? node->ObjectNameA : "(unnamed)", int(node->AllocationType));
     }
 }
 
@@ -70,7 +67,8 @@ namespace gpu::detail
         HRESULT reason = d3d->GetDeviceRemovedReason();
         if (reason == S_OK)
             return false;
-        fprintf(stderr, "[gpu] D3D12 device removed: reason 0x%08lX %s\n", static_cast<unsigned long>(reason), ReasonName(reason));
+        fprintf(stderr, "[gpu] D3D12 device removed: reason 0x%08lX %s\n", static_cast<unsigned long>(reason),
+            ReasonName(reason));
 
         ID3D12DeviceRemovedExtendedData1* dred = nullptr;
         if (FAILED(d3d->QueryInterface(IID_PPV_ARGS(&dred))))
@@ -83,17 +81,19 @@ namespace gpu::detail
         if (SUCCEEDED(dred->GetAutoBreadcrumbsOutput1(&breadcrumbs)))
         {
             uint32_t lists = 0;
-            for (const D3D12_AUTO_BREADCRUMB_NODE1* node = breadcrumbs.pHeadAutoBreadcrumbNode; node != nullptr && lists < 8; node = node->pNext)
+            for (const D3D12_AUTO_BREADCRUMB_NODE1* node = breadcrumbs.pHeadAutoBreadcrumbNode;
+                node != nullptr && lists < 8; node = node->pNext)
             {
                 uint32_t completed = node->pLastBreadcrumbValue != nullptr ? *node->pLastBreadcrumbValue : 0;
                 if (completed >= node->BreadcrumbCount)
                     continue; // finished: not where the GPU stopped
                 lists++;
-                fprintf(stderr, "[gpu] DRED: command list %p, %u of %u operations completed\n", static_cast<void*>(node->pCommandList),
-                    completed, node->BreadcrumbCount);
+                fprintf(stderr, "[gpu] DRED: command list %p, %u of %u operations completed\n",
+                    static_cast<void*>(node->pCommandList), completed, node->BreadcrumbCount);
                 uint32_t first = completed > 4 ? completed - 4 : 0;
                 for (uint32_t i = first; i < node->BreadcrumbCount && i < completed + 8; i++)
-                    fprintf(stderr, "[gpu]   %s%u %s\n", i == completed ? "-> " : "   ", i, OpName(node->pCommandHistory[i]));
+                    fprintf(stderr, "[gpu]   %s%u %s\n", i == completed ? "-> " : "   ", i,
+                        OpName(node->pCommandHistory[i]));
             }
             if (lists == 0)
                 fprintf(stderr, "[gpu] DRED: every command list recorded completed\n");
@@ -105,7 +105,8 @@ namespace gpu::detail
         D3D12_DRED_PAGE_FAULT_OUTPUT1 pageFault = {};
         if (SUCCEEDED(dred->GetPageFaultAllocationOutput1(&pageFault)) && pageFault.PageFaultVA != 0)
         {
-            fprintf(stderr, "[gpu] DRED: page fault at GPU address 0x%llX\n", static_cast<unsigned long long>(pageFault.PageFaultVA));
+            fprintf(stderr, "[gpu] DRED: page fault at GPU address 0x%llX\n",
+                static_cast<unsigned long long>(pageFault.PageFaultVA));
             PrintAllocations("existing allocation", pageFault.pHeadExistingAllocationNode);
             PrintAllocations("recently freed allocation", pageFault.pHeadRecentFreedAllocationNode);
         }
@@ -125,10 +126,10 @@ namespace gpu::detail
         IDXGIAdapter3* adapter = nullptr;
         IDXGIAdapter1* adapter1 = static_cast<plume::D3D12Device&>(device).adapter;
         DXGI_QUERY_VIDEO_MEMORY_INFO info = {};
-        if (adapter1 != nullptr && SUCCEEDED(adapter1->QueryInterface(IID_PPV_ARGS(&adapter)))
-            && SUCCEEDED(adapter->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info)))
-            fprintf(stderr, "[gpu] video memory %s: %.0f MB used of a %.0f MB budget\n", when, double(info.CurrentUsage) / (1 << 20),
-                double(info.Budget) / (1 << 20));
+        if (adapter1 != nullptr && SUCCEEDED(adapter1->QueryInterface(IID_PPV_ARGS(&adapter))) &&
+            SUCCEEDED(adapter->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info)))
+            fprintf(stderr, "[gpu] video memory %s: %.0f MB used of a %.0f MB budget\n", when,
+                double(info.CurrentUsage) / (1 << 20), double(info.Budget) / (1 << 20));
         else
             fprintf(stderr, "[gpu] video memory %s: unknown\n", when);
         if (adapter != nullptr)

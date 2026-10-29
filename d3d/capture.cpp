@@ -46,10 +46,7 @@ namespace
         return std::chrono::duration<double>(Clock::now() - start).count();
     }
 
-    uint32_t Read32(uint32_t address)
-    {
-        return g_memory.Read<uint32_t>(address);
-    }
+    uint32_t Read32(uint32_t address) { return g_memory.Read<uint32_t>(address); }
 
     void LogShader(const char* name, uint32_t object)
     {
@@ -83,8 +80,8 @@ namespace
         {
             uint32_t surface = Read32(device + d3d::Device::RenderTargets + i * 4);
             if (surface != 0)
-                fprintf(stderr, " rt%u=%08X(%08X %08X %08X %08X %08X)", i, surface, Read32(surface + 0x18), Read32(surface + 0x1C),
-                    Read32(surface + 0x20), Read32(surface + 0x24), Read32(surface + 0x28));
+                fprintf(stderr, " rt%u=%08X(%08X %08X %08X %08X %08X)", i, surface, Read32(surface + 0x18),
+                    Read32(surface + 0x1C), Read32(surface + 0x20), Read32(surface + 0x24), Read32(surface + 0x28));
         }
         uint32_t depth = Read32(device + d3d::Device::DepthStencil);
         if (depth != 0)
@@ -93,26 +90,31 @@ namespace
         fprintf(stderr, "\n");
 
         using namespace d3d::Reg;
-        fprintf(stderr, "[capture]   regs surface %08X color %08X depth %08X mask %08X depthctl %08X blend0 %08X colorctl %08X "
+        fprintf(stderr,
+            "[capture]   regs surface %08X color %08X depth %08X mask %08X depthctl %08X blend0 %08X colorctl %08X "
             "mode %08X vte %08X clip %08X modectl %08X alpharef %08X stencilref %08X\n",
             d3d::ReadRegister(device, RB_SURFACE_INFO), d3d::ReadRegister(device, RB_COLOR_INFO),
             d3d::ReadRegister(device, RB_DEPTH_INFO), d3d::ReadRegister(device, RB_COLOR_MASK),
             d3d::ReadRegister(device, RB_DEPTHCONTROL), d3d::ReadRegister(device, RB_BLENDCONTROL0),
             d3d::ReadRegister(device, RB_COLORCONTROL), d3d::ReadRegister(device, PA_SU_SC_MODE_CNTL),
             d3d::ReadRegister(device, PA_CL_VTE_CNTL), d3d::ReadRegister(device, PA_CL_CLIP_CNTL),
-            d3d::ReadRegister(device, RB_MODECONTROL), d3d::ReadRegister(device, RB_ALPHA_REF), d3d::ReadRegister(device, RB_STENCILREFMASK));
+            d3d::ReadRegister(device, RB_MODECONTROL), d3d::ReadRegister(device, RB_ALPHA_REF),
+            d3d::ReadRegister(device, RB_STENCILREFMASK));
 
         // What the GPU gets where the engine writes past the shadows (d3d/ring.h); the draw hooks scan the ring first.
-        fprintf(stderr, "[capture]   gpu depthctl %08X stencilref %08X blend0 %08X colorctl %08X mode %08X alpharef %08X mask %08X\n",
+        fprintf(stderr,
+            "[capture]   gpu depthctl %08X stencilref %08X blend0 %08X colorctl %08X mode %08X alpharef %08X mask "
+            "%08X\n",
             d3d::GpuRegister(device, RB_DEPTHCONTROL), d3d::GpuRegister(device, RB_STENCILREFMASK),
             d3d::GpuRegister(device, RB_BLENDCONTROL0), d3d::GpuRegister(device, RB_COLORCONTROL),
-            d3d::GpuRegister(device, PA_SU_SC_MODE_CNTL), d3d::GpuRegister(device, RB_ALPHA_REF), d3d::GpuRegister(device, RB_COLOR_MASK));
+            d3d::GpuRegister(device, PA_SU_SC_MODE_CNTL), d3d::GpuRegister(device, RB_ALPHA_REF),
+            d3d::GpuRegister(device, RB_COLOR_MASK));
 
         float viewport[6];
         for (uint32_t i = 0; i < 6; i++)
             viewport[i] = g_memory.Read<float>(device + d3d::Device::Viewport + i * 4);
-        fprintf(stderr, "[capture]   viewport %.1f %.1f %.1f %.1f z %.2f..%.2f scissor %u %u %u %u\n", viewport[0], viewport[1],
-            viewport[2], viewport[3], viewport[4], viewport[5], Read32(device + d3d::Device::Scissor),
+        fprintf(stderr, "[capture]   viewport %.1f %.1f %.1f %.1f z %.2f..%.2f scissor %u %u %u %u\n", viewport[0],
+            viewport[1], viewport[2], viewport[3], viewport[4], viewport[5], Read32(device + d3d::Device::Scissor),
             Read32(device + d3d::Device::Scissor + 4), Read32(device + d3d::Device::Scissor + 8),
             Read32(device + d3d::Device::Scissor + 12));
 
@@ -122,7 +124,8 @@ namespace
             uint32_t buffer = Read32(device + d3d::Device::Streams + stream * 4);
             if (buffer != 0)
                 fprintf(stderr, "[capture]   stream %u vb %08X fetch %08X %08X stride %u\n", stream, buffer,
-                    Read32(buffer + d3d::Resource::VertexBufferFetch), Read32(buffer + d3d::Resource::VertexBufferFetch + 4),
+                    Read32(buffer + d3d::Resource::VertexBufferFetch),
+                    Read32(buffer + d3d::Resource::VertexBufferFetch + 4),
                     g_memory.Read<uint8_t>(device + d3d::Device::StreamStrides + stream));
         }
         for (uint32_t slot = 0; slot < 26; slot++)
@@ -138,7 +141,7 @@ namespace
     }
 
     // Draws, resolves and swaps of the captured frame are logged from the game's render thread, one at a time.
-    template<typename Body>
+    template <typename Body>
     void Capture(Body&& body)
     {
         if (CaptureTime() < 0)
@@ -152,9 +155,9 @@ namespace
 // D3DDevice_DrawVertices(device, primitiveType, startVertex, vertexCount)
 void d3d::CaptureDrawVertices(const PPCContext& ctx)
 {
-    Capture([&]
-    {
-        fprintf(stderr, "[capture] draw %u DrawVertices prim %u start %u count %u\n", g_drawIndex++, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32);
+    Capture([&] {
+        fprintf(stderr, "[capture] draw %u DrawVertices prim %u start %u count %u\n", g_drawIndex++, ctx.r4.u32,
+            ctx.r5.u32, ctx.r6.u32);
         LogState(ctx.r3.u32);
     });
 }
@@ -162,10 +165,10 @@ void d3d::CaptureDrawVertices(const PPCContext& ctx)
 // D3DDevice_DrawIndexedVertices(device, primitiveType, baseVertex, startIndex, indexCount)
 void d3d::CaptureDrawIndexedVertices(const PPCContext& ctx)
 {
-    Capture([&]
-    {
+    Capture([&] {
         uint32_t indices = Read32(ctx.r3.u32 + d3d::Device::Indices);
-        fprintf(stderr, "[capture] draw %u DrawIndexedVertices prim %u base %u start %u count %u ib %08X (common %08X addr %08X)\n",
+        fprintf(stderr,
+            "[capture] draw %u DrawIndexedVertices prim %u base %u start %u count %u ib %08X (common %08X addr %08X)\n",
             g_drawIndex++, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, indices, indices ? Read32(indices) : 0,
             indices ? Read32(indices + d3d::Resource::IndexBufferAddress) : 0);
         LogState(ctx.r3.u32);
@@ -175,9 +178,9 @@ void d3d::CaptureDrawIndexedVertices(const PPCContext& ctx)
 // D3DDevice_BeginVertices(device, primitiveType, vertexCount, stride) -> pointer the game fills
 void d3d::CaptureBeginVertices(const PPCContext& ctx)
 {
-    Capture([&]
-    {
-        fprintf(stderr, "[capture] draw %u BeginVertices prim %u count %u stride %u\n", g_drawIndex++, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32);
+    Capture([&] {
+        fprintf(stderr, "[capture] draw %u BeginVertices prim %u count %u stride %u\n", g_drawIndex++, ctx.r4.u32,
+            ctx.r5.u32, ctx.r6.u32);
         LogState(ctx.r3.u32);
     });
 }
@@ -185,11 +188,10 @@ void d3d::CaptureBeginVertices(const PPCContext& ctx)
 // D3DDevice_ClearF's worker (device, flags, rect, color float4, -, stencil, f1 = z)
 void d3d::CaptureClear(const PPCContext& ctx)
 {
-    Capture([&]
-    {
+    Capture([&] {
         uint32_t rect = ctx.r5.u32, color = ctx.r6.u32;
-        fprintf(stderr, "[capture] clear flags %08X rect (%d %d %d %d) color", ctx.r4.u32, Read32(rect), Read32(rect + 4), Read32(rect + 8),
-            Read32(rect + 12));
+        fprintf(stderr, "[capture] clear flags %08X rect (%d %d %d %d) color", ctx.r4.u32, Read32(rect),
+            Read32(rect + 4), Read32(rect + 8), Read32(rect + 12));
         for (uint32_t i = 0; i < 4; i++)
             fprintf(stderr, " %g", color != 0 ? g_memory.Read<float>(color + i * 4) : 0.0f);
         fprintf(stderr, " z %g stencil %u\n", ctx.f1.f64, ctx.r8.u32);
@@ -200,8 +202,7 @@ void d3d::CaptureClear(const PPCContext& ctx)
 // D3DDevice_Resolve(device, flags, srcRect, destTexture, destPoint, level, slice, clearColor, f1 = clearZ, ...)
 void d3d::CaptureResolve(const PPCContext& ctx)
 {
-    Capture([&]
-    {
+    Capture([&] {
         uint32_t rect = ctx.r5.u32;
         uint32_t texture = ctx.r6.u32;
         fprintf(stderr, "[capture] resolve flags %08X rect %08X", ctx.r4.u32, rect);
@@ -229,13 +230,15 @@ void d3d::CaptureSwap(const PPCContext& ctx)
         std::lock_guard lock(g_mutex);
         if (g_capturing)
         {
-            fprintf(stderr, "[capture] swap front %08X r5 %08X; end of capture (%u draws)\n", ctx.r4.u32, ctx.r5.u32, g_drawIndex);
+            fprintf(stderr, "[capture] swap front %08X r5 %08X; end of capture (%u draws)\n", ctx.r4.u32, ctx.r5.u32,
+                g_drawIndex);
             g_capturing = false;
             g_done = true;
         }
         else if (!g_done && ++g_swaps >= CaptureFrame() && SecondsSinceStart() >= CaptureTime())
         {
-            fprintf(stderr, "[capture] frame starts after swap %llu at %.1f s\n", (unsigned long long)g_swaps, SecondsSinceStart());
+            fprintf(stderr, "[capture] frame starts after swap %llu at %.1f s\n", (unsigned long long)g_swaps,
+                SecondsSinceStart());
             g_capturing = true;
         }
     }

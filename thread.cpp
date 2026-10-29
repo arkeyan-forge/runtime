@@ -110,8 +110,8 @@ GuestThreadContext::GuestThreadContext(uint32_t stackSize, uint32_t threadId, ui
     ctx.r13.u64 = pcr;
 }
 
-std::shared_ptr<GuestThread> CreateGuestThread(uint32_t start, uint32_t context, uint32_t xapiStartup,
-    uint32_t stackSize, bool suspended, uint8_t cpu)
+std::shared_ptr<GuestThread> CreateGuestThread(
+    uint32_t start, uint32_t context, uint32_t xapiStartup, uint32_t stackSize, bool suspended, uint8_t cpu)
 {
     auto thread = std::make_shared<GuestThread>();
     thread->id = g_nextThreadId++;
@@ -122,15 +122,13 @@ std::shared_ptr<GuestThread> CreateGuestThread(uint32_t start, uint32_t context,
     g_memory.Write<uint8_t>(thread->context->kthread, ThreadObjectType);
     RegisterDispatcher(thread->context->kthread, thread);
 
-    PlatformStartThread(HostStackSize, [info = StartInfo{ thread, start, context, xapiStartup }] { HostThreadMain(&info); });
+    PlatformStartThread(
+        HostStackSize, [info = StartInfo{ thread, start, context, xapiStartup }] { HostThreadMain(&info); });
 
     return thread;
 }
 
-void ExitGuestThread(uint32_t exitCode)
-{
-    throw ThreadExit{ exitCode };
-}
+void ExitGuestThread(uint32_t exitCode) { throw ThreadExit{ exitCode }; }
 
 std::shared_ptr<GuestThread> CurrentGuestThread(uint32_t pcr)
 {
@@ -172,8 +170,7 @@ void DeliverUserApcs(PPCContext& ctx, GuestThread& thread)
 void StartHostDrivenThread(std::function<void(PPCContext&)> body, uint8_t cpu)
 {
     auto* context = new GuestThreadContext(0x10000, g_nextThreadId++, cpu);
-    PlatformStartThread(HostStackSize, [body = std::move(body), context]
-    {
+    PlatformStartThread(HostStackSize, [body = std::move(body), context] {
         t_guestContext = &context->ctx;
         context->ctx.fpscr.loadFromHost();
         body(context->ctx);

@@ -45,8 +45,8 @@ void ultrawide::Configure(bool automatic, uint32_t windowWidth, uint32_t windowH
     else
         g_sceneWidth = std::max(g_baseWidth, uint32_t(std::lround(g_baseHeight * g_aspect / 32.0f)) * 32);
     g_frameWidth = std::max(FrameWidth16x9, uint32_t(std::lround(FrameHeight * g_aspect)));
-    fprintf(stderr, "[ultrawide] window %ux%u: aspect %.3f, scene %ux%u, frame %ux%u\n", windowWidth, windowHeight, g_aspect, g_sceneWidth,
-        g_sceneHeight, g_frameWidth, FrameHeight);
+    fprintf(stderr, "[ultrawide] window %ux%u: aspect %.3f, scene %ux%u, frame %ux%u\n", windowWidth, windowHeight,
+        g_aspect, g_sceneWidth, g_sceneHeight, g_frameWidth, FrameHeight);
 }
 
 bool ultrawide::Active() { return g_active; }

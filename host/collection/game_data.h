@@ -66,7 +66,13 @@ namespace gamedata
     };
     struct CopyResult
     {
-        enum class Outcome { Done, NotEnoughSpace, Cancelled, Failed } outcome = Outcome::Failed;
+        enum class Outcome
+        {
+            Done,
+            NotEnoughSpace,
+            Cancelled,
+            Failed
+        } outcome = Outcome::Failed;
         std::string error;      // Failed: what went wrong
         uint64_t needed = 0;    // NotEnoughSpace: the bytes still to write (and the reserve)
         uint64_t available = 0; // and the bytes free

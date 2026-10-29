@@ -24,7 +24,8 @@ namespace
 {
 #ifdef __APPLE__
     constexpr char SelectAgainHint[] = "hold Shift (or Option) while the app starts, or start it with --launcher";
-    constexpr char PermissionHint[] = "\n\nIf the file is there, allow access in System Settings > Privacy & Security > Files and Folders.";
+    constexpr char PermissionHint[] =
+        "\n\nIf the file is there, allow access in System Settings > Privacy & Security > Files and Folders.";
 #else
     constexpr char SelectAgainHint[] = "hold Shift while the app starts, or start it with --launcher";
     constexpr char PermissionHint[] = "";
@@ -37,7 +38,8 @@ namespace
 
     std::string FormatVersion(uint32_t version)
     {
-        return fmt::format("{}.{}.{}.{}", version >> 28, (version >> 24) & 0xF, (version >> 8) & 0xFFFF, version & 0xFF);
+        return fmt::format(
+            "{}.{}.{}.{}", version >> 28, (version >> 24) & 0xF, (version >> 8) & 0xFFFF, version & 0xFF);
     }
 
     std::string_view Trim(std::string_view text)
@@ -73,21 +75,76 @@ namespace
 
 std::string Sha256Hex(std::span<const uint8_t> data)
 {
-    static constexpr uint32_t K[64] =
-    {
-        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+    static constexpr uint32_t K[64] = {
+        0x428a2f98,
+        0x71374491,
+        0xb5c0fbcf,
+        0xe9b5dba5,
+        0x3956c25b,
+        0x59f111f1,
+        0x923f82a4,
+        0xab1c5ed5,
+        0xd807aa98,
+        0x12835b01,
+        0x243185be,
+        0x550c7dc3,
+        0x72be5d74,
+        0x80deb1fe,
+        0x9bdc06a7,
+        0xc19bf174,
+        0xe49b69c1,
+        0xefbe4786,
+        0x0fc19dc6,
+        0x240ca1cc,
+        0x2de92c6f,
+        0x4a7484aa,
+        0x5cb0a9dc,
+        0x76f988da,
+        0x983e5152,
+        0xa831c66d,
+        0xb00327c8,
+        0xbf597fc7,
+        0xc6e00bf3,
+        0xd5a79147,
+        0x06ca6351,
+        0x14292967,
+        0x27b70a85,
+        0x2e1b2138,
+        0x4d2c6dfc,
+        0x53380d13,
+        0x650a7354,
+        0x766a0abb,
+        0x81c2c92e,
+        0x92722c85,
+        0xa2bfe8a1,
+        0xa81a664b,
+        0xc24b8b70,
+        0xc76c51a3,
+        0xd192e819,
+        0xd6990624,
+        0xf40e3585,
+        0x106aa070,
+        0x19a4c116,
+        0x1e376c08,
+        0x2748774c,
+        0x34b0bcb5,
+        0x391c0cb3,
+        0x4ed8aa4a,
+        0x5b9cca4f,
+        0x682e6ff3,
+        0x748f82ee,
+        0x78a5636f,
+        0x84c87814,
+        0x8cc70208,
+        0x90befffa,
+        0xa4506ceb,
+        0xbef9a3f7,
+        0xc67178f2,
     };
-    uint32_t hash[8] = { 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19 };
+    uint32_t hash[8] = { 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x5be0cd19 };
     auto rotate = [](uint32_t x, int n) { return (x >> n) | (x << (32 - n)); };
-    auto processBlock = [&](const uint8_t* block)
-    {
+    auto processBlock = [&](const uint8_t* block) {
         uint32_t w[64];
         for (int i = 0; i < 16; i++)
             w[i] = ReadBE32(block + i * 4);
@@ -112,8 +169,14 @@ std::string Sha256Hex(std::span<const uint8_t> data)
             b = a;
             a = t1 + t2;
         }
-        hash[0] += a; hash[1] += b; hash[2] += c; hash[3] += d;
-        hash[4] += e; hash[5] += f; hash[6] += g; hash[7] += h;
+        hash[0] += a;
+        hash[1] += b;
+        hash[2] += c;
+        hash[3] += d;
+        hash[4] += e;
+        hash[5] += f;
+        hash[6] += g;
+        hash[7] += h;
     };
 
     size_t whole = data.size() / 64 * 64;
@@ -142,16 +205,23 @@ std::string Sha256Hex(std::span<const uint8_t> data)
 GameSourceCheck CheckGameSource(const std::string& path, const GameInfo& game, const GameSourceProgress& progress)
 {
     using enum GameSourceStatus;
-    auto report = [&](float fraction, std::string_view step) { if (progress) progress(fraction, step); };
+    auto report = [&](float fraction, std::string_view step) {
+        if (progress)
+            progress(fraction, step);
+    };
 
     report(0.03f, "Looking for the disc image");
     SDL_PathInfo info;
     if (!SDL_GetPathInfo(path.c_str(), &info))
-        return { NotFound, fmt::format("\"{}\" doesn't exist. Was it moved, renamed, or is its drive disconnected?", path) };
+        return { NotFound,
+            fmt::format("\"{}\" doesn't exist. Was it moved, renamed, or is its drive disconnected?", path) };
     // A folder is only the copy of the game data (game_data.h); the disc reader reads it like an image.
     const bool copy = info.type == SDL_PATHTYPE_DIRECTORY;
     if (copy && !std::filesystem::exists(datadir::FromText(path) / gamedata::ManifestName))
-        return { Folder, fmt::format("\"{}\" is a folder. Extracted game folders aren't supported yet: choose the disc image (.iso).", path) };
+        return { Folder,
+            fmt::format(
+                "\"{}\" is a folder. Extracted game folders aren't supported yet: choose the disc image (.iso).",
+                path) };
 
     report(0.10f, "Opening the disc image");
     if (!copy)
@@ -170,7 +240,8 @@ GameSourceCheck CheckGameSource(const std::string& path, const GameInfo& game, c
     report(0.42f, "Finding default.xex");
     const DiscFileSystem::Entry* entry = disc.Find("default.xex");
     if (entry == nullptr || entry->directory)
-        return { NotXbox360Game, "This disc image has no default.xex: it isn't an Xbox 360 game, or the image is incomplete." };
+        return { NotXbox360Game,
+            "This disc image has no default.xex: it isn't an Xbox 360 game, or the image is incomplete." };
 
     report(0.55f, "Reading default.xex");
     std::vector<uint8_t> xex = disc.ReadAll("default.xex");
@@ -193,7 +264,8 @@ GameSourceCheck CheckGameSource(const std::string& path, const GameInfo& game, c
     }
     if (owner != &game)
     {
-        std::string found = owner != nullptr ? owner->name : fmt::format("another game (title ID {:08X})", execution->titleId);
+        std::string found =
+            owner != nullptr ? owner->name : fmt::format("another game (title ID {:08X})", execution->titleId);
         return { WrongGame, fmt::format("This disc image is {}, not {}.", found, game.name) };
     }
 
@@ -212,17 +284,22 @@ GameSourceCheck CheckGameSource(const std::string& path, const GameInfo& game, c
     {
         if (release.mediaId == execution->mediaId && release.version == execution->version)
         {
-            return { Damaged, fmt::format("This looks like the {} disc of {}, but its default.xex isn't the original one: "
-                "the image is damaged or modified. Copy or dump the disc again.", release.label, game.name) };
+            return { Damaged,
+                fmt::format("This looks like the {} disc of {}, but its default.xex isn't the original one: "
+                            "the image is damaged or modified. Copy or dump the disc again.",
+                    release.label, game.name) };
         }
     }
 
     std::string supported;
     for (const GameRelease& release : game.releases)
-        supported += fmt::format("\n- {} (media ID {:08X}, version {})", release.label, release.mediaId, FormatVersion(release.version));
-    return { WrongVersion, fmt::format("This is {}, but a disc version this build doesn't support (media ID {:08X}, version {}). "
-        "The game code is recompiled from one exact default.xex, so other regions and revisions can't run yet.\n\nSupported:{}",
-        game.name, execution->mediaId, FormatVersion(execution->version), supported) };
+        supported += fmt::format(
+            "\n- {} (media ID {:08X}, version {})", release.label, release.mediaId, FormatVersion(release.version));
+    return { WrongVersion,
+        fmt::format("This is {}, but a disc version this build doesn't support (media ID {:08X}, version {}). "
+                    "The game code is recompiled from one exact default.xex, so other regions and revisions can't run "
+                    "yet.\n\nSupported:{}",
+            game.name, execution->mediaId, FormatVersion(execution->version), supported) };
 }
 
 std::string LauncherConfigPath()
@@ -284,8 +361,7 @@ bool SaveLauncherConfig(const std::string& path, const LauncherConfig& config)
 LanguageChoice ResolveLanguages(const GameInfo& game)
 {
     LauncherConfig config = LoadLauncherConfig(LauncherConfigPath());
-    auto pick = [&](const char* variable, const char* key)
-    {
+    auto pick = [&](const char* variable, const char* key) {
         const char* value = skyenv::Get(variable);
         return value != nullptr ? std::string(value) : config[game.id][key];
     };
@@ -299,13 +375,15 @@ static std::string CopiedGameData(const GameInfo& game)
     std::filesystem::path folder = gamedata::Folder(game.id);
     gamedata::Status status = gamedata::Inspect(folder);
     if (status.state == gamedata::State::Damaged)
-        fprintf(stderr, "game data: the copy in %s is damaged (%s): reading the disc image instead\n", datadir::Text(folder).c_str(), status.problem.c_str());
+        fprintf(stderr, "game data: the copy in %s is damaged (%s): reading the disc image instead\n",
+            datadir::Text(folder).c_str(), status.problem.c_str());
     if (status.state != gamedata::State::Complete)
         return {};
     std::string path = datadir::Text(folder);
     if (CheckGameSource(path, game).status != GameSourceStatus::Ok)
     {
-        fprintf(stderr, "game data: the copy in %s is not this game's disc: reading the disc image instead\n", path.c_str());
+        fprintf(stderr, "game data: the copy in %s is not this game's disc: reading the disc image instead\n",
+            path.c_str());
         return {};
     }
     return path;

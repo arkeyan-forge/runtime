@@ -53,12 +53,20 @@ struct Event : KernelObject
 
     Event(bool manualReset, bool signaled) : manualReset(manualReset), signaled(signaled) {}
     bool IsSignaled(uint32_t) const override { return signaled; }
-    void Acquire(uint32_t) override { if (!manualReset) signaled = false; }
+    void Acquire(uint32_t) override
+    {
+        if (!manualReset)
+            signaled = false;
+    }
     int32_t SignalState() const override { return signaled; }
 
     // `epoch` is the pulseEpoch a waiter saw when it started waiting.
     bool PulsedSince(uint64_t epoch) const { return pulseEpoch != epoch && (manualReset || pulseReleases > 0); }
-    void ConsumePulse() { if (!manualReset) pulseReleases--; }
+    void ConsumePulse()
+    {
+        if (!manualReset)
+            pulseReleases--;
+    }
     void Pulse()
     {
         if (waiters != 0)
@@ -87,7 +95,11 @@ struct Mutant : KernelObject
     uint32_t recursion = 0;
 
     bool IsSignaled(uint32_t thread) const override { return owner == 0 || owner == thread; }
-    void Acquire(uint32_t thread) override { owner = thread; recursion++; }
+    void Acquire(uint32_t thread) override
+    {
+        owner = thread;
+        recursion++;
+    }
     int32_t SignalState() const override { return owner == 0 ? 1 : 0; }
 };
 
@@ -113,7 +125,7 @@ uint32_t CreateHandle(std::shared_ptr<KernelObject> object);
 std::shared_ptr<KernelObject> LookupHandle(uint32_t handle);
 bool CloseHandle(uint32_t handle);
 
-template<typename T>
+template <typename T>
 std::shared_ptr<T> LookupHandleAs(uint32_t handle)
 {
     return std::dynamic_pointer_cast<T>(LookupHandle(handle));
@@ -144,5 +156,5 @@ struct ApcQueue : std::deque<UserApc>
 // negative = relative, positive = absolute system time). An alertable wait (non-null `apcs`) ends with
 // StatusUserApc as soon as an APC is queued; the caller then delivers them. Returns STATUS_WAIT_0 + index,
 // StatusTimeout or StatusUserApc.
-uint32_t WaitForObjects(const std::vector<std::shared_ptr<KernelObject>>& objects, bool waitAll, uint32_t timeoutPointer,
-    uint32_t thread, ApcQueue* apcs = nullptr);
+uint32_t WaitForObjects(const std::vector<std::shared_ptr<KernelObject>>& objects, bool waitAll,
+    uint32_t timeoutPointer, uint32_t thread, ApcQueue* apcs = nullptr);

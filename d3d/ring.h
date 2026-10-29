@@ -29,7 +29,8 @@ namespace d3d
     // The 512 float constants (vertex then pixel shader) the same way, in the device's layout (big-endian), valid until
     // the next call. `version`: the same number as long as the content is the same; `groupVersions`: the same per group
     // of 16 registers (128 of them, valid until the next call).
-    const void* GpuFloatConstants(uint32_t device, uint64_t* version = nullptr, const uint32_t** groupVersions = nullptr);
+    const void* GpuFloatConstants(
+        uint32_t device, uint64_t* version = nullptr, const uint32_t** groupVersions = nullptr);
 
     // Register writes a command buffer recorded since the last call, in order, and applying them when it runs.
     struct RegisterWrite

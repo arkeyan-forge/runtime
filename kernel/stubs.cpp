@@ -13,11 +13,11 @@ static void ReportUnimplemented(const char* name, std::atomic_flag& reported, co
     }
 }
 
-#define IMPORT(name) \
-    PPC_WEAK_FUNC(__imp__##name) \
-    { \
-        static std::atomic_flag reported; \
-        ReportUnimplemented(#name, reported, ctx); \
-        ctx.r3.u64 = 0; \
+#define IMPORT(name)                                                                                                   \
+    PPC_WEAK_FUNC(__imp__##name)                                                                                       \
+    {                                                                                                                  \
+        static std::atomic_flag reported;                                                                              \
+        ReportUnimplemented(#name, reported, ctx);                                                                     \
+        ctx.r3.u64 = 0;                                                                                                \
     }
 #include "import_list.inc"

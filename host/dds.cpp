@@ -11,8 +11,8 @@ namespace dds
         constexpr uint32_t HeaderSize = 124;
 
         // DDS_HEADER flags and caps.
-        constexpr uint32_t Caps = 0x1, Height = 0x2, Width = 0x4, Pitch = 0x8, PixelFormat = 0x1000, MipMapCount = 0x20000,
-            LinearSize = 0x80000;
+        constexpr uint32_t Caps = 0x1, Height = 0x2, Width = 0x4, Pitch = 0x8, PixelFormat = 0x1000,
+                           MipMapCount = 0x20000, LinearSize = 0x80000;
         constexpr uint32_t CapsComplex = 0x8, CapsTexture = 0x1000, CapsMipMap = 0x400000;
         constexpr uint32_t Caps2Cube = 0x200, Caps2Volume = 0x200000;
         // DDS_PIXELFORMAT flags.
@@ -20,7 +20,8 @@ namespace dds
 
         constexpr uint32_t FourCC(char a, char b, char c, char d)
         {
-            return uint32_t(uint8_t(a)) | uint32_t(uint8_t(b)) << 8 | uint32_t(uint8_t(c)) << 16 | uint32_t(uint8_t(d)) << 24;
+            return uint32_t(uint8_t(a)) | uint32_t(uint8_t(b)) << 8 | uint32_t(uint8_t(c)) << 16 |
+                   uint32_t(uint8_t(d)) << 24;
         }
 
         uint32_t Read32(const uint8_t* bytes, size_t offset)
@@ -30,10 +31,7 @@ namespace dds
             return value; // little-endian host (every target)
         }
 
-        void Put32(std::vector<uint8_t>& out, size_t offset, uint32_t value)
-        {
-            memcpy(out.data() + offset, &value, 4);
-        }
+        void Put32(std::vector<uint8_t>& out, size_t offset, uint32_t value) { memcpy(out.data() + offset, &value, 4); }
 
         // DXGI formats the reader knows: the format, whether red and blue are swapped.
         bool FromDxgi(uint32_t dxgi, Format& format, bool& swapRB)
@@ -41,13 +39,25 @@ namespace dds
             swapRB = false;
             switch (dxgi)
             {
-            case 71: case 72: format = Format::BC1; return true;
-            case 74: case 75: format = Format::BC2; return true;
-            case 77: case 78: format = Format::BC3; return true;
-            case 80: case 81: format = Format::BC4; return true;
-            case 83: case 84: format = Format::BC5; return true;
-            case 28: case 29: format = Format::RGBA8; return true;
-            case 87: case 91: case 88: case 93: format = Format::RGBA8; swapRB = true; return true;
+            case 71:
+            case 72: format = Format::BC1; return true;
+            case 74:
+            case 75: format = Format::BC2; return true;
+            case 77:
+            case 78: format = Format::BC3; return true;
+            case 80:
+            case 81: format = Format::BC4; return true;
+            case 83:
+            case 84: format = Format::BC5; return true;
+            case 28:
+            case 29: format = Format::RGBA8; return true;
+            case 87:
+            case 91:
+            case 88:
+            case 93:
+                format = Format::RGBA8;
+                swapRB = true;
+                return true;
             default: return false;
             }
         }
@@ -57,16 +67,14 @@ namespace dds
     {
         switch (format)
         {
-        case Format::BC1: case Format::BC4: return 8;
+        case Format::BC1:
+        case Format::BC4: return 8;
         case Format::RGBA8: return 4;
         default: return 16;
         }
     }
 
-    bool IsBlock(Format format)
-    {
-        return format != Format::RGBA8;
-    }
+    bool IsBlock(Format format) { return format != Format::RGBA8; }
 
     LevelSize SizeOfLevel(Format format, uint32_t width, uint32_t height, uint32_t level)
     {
@@ -128,10 +136,14 @@ namespace dds
             switch (fourCC)
             {
             case FourCC('D', 'X', 'T', '1'): info.format = Format::BC1; break;
-            case FourCC('D', 'X', 'T', '2'): case FourCC('D', 'X', 'T', '3'): info.format = Format::BC2; break;
-            case FourCC('D', 'X', 'T', '4'): case FourCC('D', 'X', 'T', '5'): info.format = Format::BC3; break;
-            case FourCC('A', 'T', 'I', '1'): case FourCC('B', 'C', '4', 'U'): info.format = Format::BC4; break;
-            case FourCC('A', 'T', 'I', '2'): case FourCC('B', 'C', '5', 'U'): info.format = Format::BC5; break;
+            case FourCC('D', 'X', 'T', '2'):
+            case FourCC('D', 'X', 'T', '3'): info.format = Format::BC2; break;
+            case FourCC('D', 'X', 'T', '4'):
+            case FourCC('D', 'X', 'T', '5'): info.format = Format::BC3; break;
+            case FourCC('A', 'T', 'I', '1'):
+            case FourCC('B', 'C', '4', 'U'): info.format = Format::BC4; break;
+            case FourCC('A', 'T', 'I', '2'):
+            case FourCC('B', 'C', '5', 'U'): info.format = Format::BC5; break;
             case FourCC('D', 'X', '1', '0'):
             {
                 if (bytes.size() < 4 + HeaderSize + 20)
@@ -139,8 +151,10 @@ namespace dds
                     error = "truncated DX10 header";
                     return false;
                 }
-                uint32_t dxgi = Read32(bytes.data(), 4 + HeaderSize), dimension = Read32(bytes.data(), 4 + HeaderSize + 4);
-                uint32_t miscFlag = Read32(bytes.data(), 4 + HeaderSize + 8), arraySize = Read32(bytes.data(), 4 + HeaderSize + 12);
+                uint32_t dxgi = Read32(bytes.data(), 4 + HeaderSize),
+                         dimension = Read32(bytes.data(), 4 + HeaderSize + 4);
+                uint32_t miscFlag = Read32(bytes.data(), 4 + HeaderSize + 8),
+                         arraySize = Read32(bytes.data(), 4 + HeaderSize + 12);
                 if (!FromDxgi(dxgi, info.format, info.swapRB))
                 {
                     error = "DXGI format " + std::to_string(dxgi) + " is not supported (BC1-BC5, RGBA8, BGRA8)";
@@ -154,9 +168,7 @@ namespace dds
                 info.dataOffset += 20;
                 break;
             }
-            default:
-                error = "unsupported pixel format (FourCC " + std::to_string(fourCC) + ")";
-                return false;
+            default: error = "unsupported pixel format (FourCC " + std::to_string(fourCC) + ")"; return false;
             }
         }
         else if ((pixelFlags & PixelRgb) && bits == 32)
@@ -207,7 +219,8 @@ namespace dds
         }
     }
 
-    std::vector<uint8_t> Write(Format format, uint32_t width, uint32_t height, std::span<const std::span<const uint8_t>> levels)
+    std::vector<uint8_t> Write(
+        Format format, uint32_t width, uint32_t height, std::span<const std::span<const uint8_t>> levels)
     {
         std::vector<uint8_t> out(4 + HeaderSize, 0);
         Put32(out, 0, Magic);
@@ -235,8 +248,8 @@ namespace dds
         }
         else
         {
-            static const uint32_t FourCCs[] = { FourCC('D', 'X', 'T', '1'), FourCC('D', 'X', 'T', '3'), FourCC('D', 'X', 'T', '5'),
-                FourCC('A', 'T', 'I', '1'), FourCC('A', 'T', 'I', '2') };
+            static const uint32_t FourCCs[] = { FourCC('D', 'X', 'T', '1'), FourCC('D', 'X', 'T', '3'),
+                FourCC('D', 'X', 'T', '5'), FourCC('A', 'T', 'I', '1'), FourCC('A', 'T', 'I', '2') };
             Put32(out, 80, PixelFourCC);
             Put32(out, 84, FourCCs[uint32_t(format)]);
         }

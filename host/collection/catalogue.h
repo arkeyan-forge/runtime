@@ -9,7 +9,21 @@
 
 namespace collection
 {
-    enum class Element : uint8_t { Air, Earth, Fire, Water, Magic, Tech, Life, Undead, Light, Dark, None, Count };
+    enum class Element : uint8_t
+    {
+        Air,
+        Earth,
+        Fire,
+        Water,
+        Magic,
+        Tech,
+        Life,
+        Undead,
+        Light,
+        Dark,
+        None,
+        Count
+    };
 
     enum class Category : uint8_t
     {
@@ -34,25 +48,41 @@ namespace collection
     // What sets a toy or a variant apart. Base: the plain figure.
     enum class VariantKind : uint8_t
     {
-        Base, Legendary, Dark, Crystal, Glow, Metallic, Gold, Silver, Chrome, Flocked, Series, LightCore, EonsElite,
-        AltDeco, Event, Shape, Other, Count
+        Base,
+        Legendary,
+        Dark,
+        Crystal,
+        Glow,
+        Metallic,
+        Gold,
+        Silver,
+        Chrome,
+        Flocked,
+        Series,
+        LightCore,
+        EonsElite,
+        AltDeco,
+        Event,
+        Shape,
+        Other,
+        Count
     };
 
     struct Variant
     {
         uint16_t id = 0;       // block 1, 0x1C
-        bool sameTag = false;  // a physical edition the tag does not tell apart (Crystal Clear...): picked by the user
+        bool sameTag = false; // a physical edition the tag does not tell apart (Crystal Clear...): picked by the user
         std::string name;
         VariantKind kind = VariantKind::Other;
     };
 
     struct Toy
     {
-        uint16_t type = 0;     // block 1, 0x10
+        uint16_t type = 0; // block 1, 0x10
         std::string name;
         Element element = Element::None;
         Category category = Category::Core;
-        std::string game;      // id of the game it first came with
+        std::string game; // id of the game it first came with
         VariantKind edition = VariantKind::Base; // the toy type itself is special (Legendary Bash, Dark Spyro)
         std::vector<Variant> variants;
     };
@@ -60,18 +90,18 @@ namespace collection
     // A place on the portal as the game's menus show it (docs/runtime/host/toybox_ux.md section 4): Player 1, Magic item...
     struct Seat
     {
-        std::string id;                   // "p1", "p2", "item", "adventure", "trap", "vehicle1"
-        int player = 0;                   // 1, 2 for a player's seats; 0 for shared ones
-        std::vector<Category> accepts;    // the toy families that go there
+        std::string id; // "p1", "p2", "item", "adventure", "trap", "vehicle1"
+        int player = 0; // 1, 2 for a player's seats; 0 for shared ones
+        std::vector<Category> accepts; // the toy families that go there
     };
 
     struct Game
     {
         std::string id, name;
         int year = 0;
-        std::vector<uint16_t> accepts;          // toy types the game reads, in the game's order
-        std::vector<std::string> acceptsGames;  // ...or every toy that first came with these games
-        std::map<uint16_t, std::string> names;  // the game's internal character names (SSA: portraits)
+        std::vector<uint16_t> accepts; // toy types the game reads, in the game's order
+        std::vector<std::string> acceptsGames; // ...or every toy that first came with these games
+        std::map<uint16_t, std::string> names; // the game's internal character names (SSA: portraits)
         std::map<uint16_t, std::string> images; // other toys' pictures among the game's UI images
         // One picture per toy family among the game's UI images (SSA's magic item, location and sidekick icons): the
         // picture of a toy of that family that no game has a picture of. JSON: "kind_pictures", category id to name.
@@ -88,16 +118,16 @@ namespace collection
         std::map<uint32_t, std::string> halves;
         // The hats the game has, by the number a figure stores (0: none), with their English names. JSON: "hats".
         std::map<uint16_t, std::string> hats;
-        std::string runtime;                    // the runtime's executable name ("SSARecomp"); its data is in datadir::Game(id)
-        std::vector<Seat> seats;                // in the order the menus show them
+        std::string runtime; // the runtime's executable name ("SSARecomp"); its data is in datadir::Game(id)
+        std::vector<Seat> seats; // in the order the menus show them
     };
 
     // How a variant id reads: its catalogue entry, or a name worked out from the id's bits (docs/runtime/host/collection.md).
     struct VariantInfo
     {
-        std::string name;    // full display name ("Series 2 Gill Grunt"); the toy's name for variant 0
+        std::string name; // full display name ("Series 2 Gill Grunt"); the toy's name for variant 0
         VariantKind kind = VariantKind::Base;
-        bool known = true;   // false: not in the catalogue, guessed from the bits
+        bool known = true; // false: not in the catalogue, guessed from the bits
     };
 
     class Catalogue

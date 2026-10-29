@@ -46,10 +46,7 @@ namespace
         fprintf(stderr, "[gamemenu] %s = %s\n", key, value.c_str());
     }
 
-    bool SaveVideo(const char* key, const std::string& value)
-    {
-        return Save(".video", key, value);
-    }
+    bool SaveVideo(const char* key, const std::string& value) { return Save(".video", key, value); }
 
     bool SaveForNextStart(const char* key, const std::string& value)
     {
@@ -68,10 +65,7 @@ void gamemenu::Init(const RuntimeSettings& settings, SDL_Window* window, const c
     HostAudioSetVolume(settings.volume);
 }
 
-const gamemenu::Values& gamemenu::Current()
-{
-    return g_values;
-}
+const gamemenu::Values& gamemenu::Current() { return g_values; }
 
 bool gamemenu::SetVolume(uint32_t percent)
 {
@@ -130,10 +124,7 @@ bool gamemenu::SetSkipIntroMovies(bool on)
     return SaveForNextStart("skip_intro_movies", on ? "1" : "0");
 }
 
-bool gamemenu::RestartNeeded()
-{
-    return g_restart;
-}
+bool gamemenu::RestartNeeded() { return g_restart; }
 
 std::string gamemenu::FpsText()
 {

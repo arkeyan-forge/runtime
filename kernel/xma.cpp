@@ -43,17 +43,13 @@ namespace
         return value;
     }
 
-    void WriteRegister(uint32_t address, uint32_t value)
-    {
-        memcpy(g_memory.Translate(address), &value, sizeof(value));
-    }
+    void WriteRegister(uint32_t address, uint32_t value) { memcpy(g_memory.Translate(address), &value, sizeof(value)); }
 
     // In the 64 KB page window, like the console's (the title's init code reads its physical address back).
     uint32_t ContextArray()
     {
         static std::once_flag once;
-        std::call_once(once, []
-        {
+        std::call_once(once, [] {
             g_contexts = PhysicalAlloc(ContextCount * ContextSize, 0x10000, 0xA0000000);
             WriteRegister(ContextArrayAddressRegister, g_contexts & 0x1FFFFFFF);
         });
@@ -134,7 +130,7 @@ namespace
         Create,   // a clear for every context the writer created (its record's address was 0 before)
     };
 
-    template<void (*Original)(PPCContext&, uint8_t*), Writes writes>
+    template <void (*Original)(PPCContext&, uint8_t*), Writes writes>
     void CallWriter(PPCContext& ctx, uint8_t* base)
     {
         std::lock_guard lock(g_mutex);
@@ -209,42 +205,27 @@ PPC_FUNC(GAME_HOOK(Xma2_Init))
 // The register writers: voice group create (Clear), lock and kick, for each engine.
 #ifdef GAME_HOOK_Xma1_VoiceClear
 PPC_FUNC_IMPL(GAME_IMP(Xma1_VoiceClear));
-PPC_FUNC(GAME_HOOK(Xma1_VoiceClear))
-{
-    CallWriter<GAME_IMP(Xma1_VoiceClear), Writes::Create>(ctx, base);
-}
+PPC_FUNC(GAME_HOOK(Xma1_VoiceClear)) { CallWriter<GAME_IMP(Xma1_VoiceClear), Writes::Create>(ctx, base); }
 #endif
 
 #ifdef GAME_HOOK_Xma1_VoiceKick
 PPC_FUNC_IMPL(GAME_IMP(Xma1_VoiceKick));
-PPC_FUNC(GAME_HOOK(Xma1_VoiceKick))
-{
-    CallWriter<GAME_IMP(Xma1_VoiceKick), Writes::Kick>(ctx, base);
-}
+PPC_FUNC(GAME_HOOK(Xma1_VoiceKick)) { CallWriter<GAME_IMP(Xma1_VoiceKick), Writes::Kick>(ctx, base); }
 #endif
 
 #ifdef GAME_HOOK_Xma2_VoiceClear
 PPC_FUNC_IMPL(GAME_IMP(Xma2_VoiceClear));
-PPC_FUNC(GAME_HOOK(Xma2_VoiceClear))
-{
-    CallWriter<GAME_IMP(Xma2_VoiceClear), Writes::Create>(ctx, base);
-}
+PPC_FUNC(GAME_HOOK(Xma2_VoiceClear)) { CallWriter<GAME_IMP(Xma2_VoiceClear), Writes::Create>(ctx, base); }
 #endif
 
 #ifdef GAME_HOOK_Xma2_VoiceLock
 PPC_FUNC_IMPL(GAME_IMP(Xma2_VoiceLock));
-PPC_FUNC(GAME_HOOK(Xma2_VoiceLock))
-{
-    CallWriter<GAME_IMP(Xma2_VoiceLock), Writes::Lock>(ctx, base);
-}
+PPC_FUNC(GAME_HOOK(Xma2_VoiceLock)) { CallWriter<GAME_IMP(Xma2_VoiceLock), Writes::Lock>(ctx, base); }
 #endif
 
 #ifdef GAME_HOOK_Xma2_VoiceKick
 PPC_FUNC_IMPL(GAME_IMP(Xma2_VoiceKick));
-PPC_FUNC(GAME_HOOK(Xma2_VoiceKick))
-{
-    CallWriter<GAME_IMP(Xma2_VoiceKick), Writes::Kick>(ctx, base);
-}
+PPC_FUNC(GAME_HOOK(Xma2_VoiceKick)) { CallWriter<GAME_IMP(Xma2_VoiceKick), Writes::Kick>(ctx, base); }
 #endif
 
 // Engine 1 locks all its voices inside its critical section. Take that first, so the order is always the guest's

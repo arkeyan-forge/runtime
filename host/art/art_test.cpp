@@ -29,29 +29,31 @@ namespace
 {
     int g_checks = 0, g_failures = 0;
 
-#define CHECK(condition)                                                                                                    \
-    do                                                                                                                      \
-    {                                                                                                                       \
-        g_checks++;                                                                                                         \
-        if (!(condition))                                                                                                   \
-        {                                                                                                                   \
-            g_failures++;                                                                                                   \
-            fprintf(stderr, "FAILED %s:%d: %s\n", __FILE__, __LINE__, #condition);                                          \
-        }                                                                                                                   \
+#define CHECK(condition)                                                                                               \
+    do                                                                                                                 \
+    {                                                                                                                  \
+        g_checks++;                                                                                                    \
+        if (!(condition))                                                                                              \
+        {                                                                                                              \
+            g_failures++;                                                                                              \
+            fprintf(stderr, "FAILED %s:%d: %s\n", __FILE__, __LINE__, #condition);                                     \
+        }                                                                                                              \
     } while (0)
 
     void PutBe32(std::vector<uint8_t>& out, size_t at, uint32_t value)
     {
         if (out.size() < at + 4)
             out.resize(at + 4);
-        out[at] = uint8_t(value >> 24), out[at + 1] = uint8_t(value >> 16), out[at + 2] = uint8_t(value >> 8), out[at + 3] = uint8_t(value);
+        out[at] = uint8_t(value >> 24), out[at + 1] = uint8_t(value >> 16), out[at + 2] = uint8_t(value >> 8),
+        out[at + 3] = uint8_t(value);
     }
 
     void PutLe32(std::vector<uint8_t>& out, size_t at, uint32_t value)
     {
         if (out.size() < at + 4)
             out.resize(at + 4);
-        out[at] = uint8_t(value), out[at + 1] = uint8_t(value >> 8), out[at + 2] = uint8_t(value >> 16), out[at + 3] = uint8_t(value >> 24);
+        out[at] = uint8_t(value), out[at + 1] = uint8_t(value >> 8), out[at + 2] = uint8_t(value >> 16),
+        out[at + 3] = uint8_t(value >> 24);
     }
 
     uint16_t To565(uint32_t r, uint32_t g, uint32_t b) { return uint16_t((r >> 3) << 11 | (g >> 2) << 5 | (b >> 3)); }
@@ -59,7 +61,8 @@ namespace
     // A BC3 block of one colour and one alpha (indices 0), as the console stores it: 16-bit words big-endian.
     void Dxt5Block(uint8_t* at, uint16_t color, uint8_t alpha)
     {
-        uint8_t block[16] = { alpha, alpha, 0, 0, 0, 0, 0, 0, uint8_t(color), uint8_t(color >> 8), uint8_t(color), uint8_t(color >> 8), 0, 0, 0, 0 };
+        uint8_t block[16] = { alpha, alpha, 0, 0, 0, 0, 0, 0, uint8_t(color), uint8_t(color >> 8), uint8_t(color),
+            uint8_t(color >> 8), 0, 0, 0, 0 };
         for (int i = 0; i < 16; i += 2)
             at[i] = block[i + 1], at[i + 1] = block[i];
     }
@@ -96,7 +99,8 @@ namespace
     void TestDxt()
     {
         // DXT5 block: alpha 255/0 with index 0 then 1, colours pure red / pure blue with index 0 then 1.
-        const uint8_t Block[16] = { 0xFF, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF8, 0x1F, 0x00, 0x04, 0x00, 0x00, 0x00 };
+        const uint8_t Block[16] = { 0xFF, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF8, 0x1F, 0x00, 0x04, 0x00,
+            0x00, 0x00 };
         uint32_t texels[16];
         art::DecodeBlock(Block, art::TextureFormat::Dxt5, texels);
         CHECK(texels[0] == 0xFF0000FF); // red, opaque
@@ -123,7 +127,8 @@ namespace
         bool right = image.width == 24 && image.height == 18 && image.rgba.size() == 24 * 18;
         for (uint32_t y = 0; y < 18 && right; y++)
             for (uint32_t x = 0; x < 24; x++)
-                right = right && image.rgba[y * 24 + x] == (Expand565(colorOf(x / 4, y / 4)) | uint32_t(10 * (x / 4 + 6 * (y / 4))) << 24);
+                right = right && image.rgba[y * 24 + x] ==
+                                     (Expand565(colorOf(x / 4, y / 4)) | uint32_t(10 * (x / 4 + 6 * (y / 4))) << 24);
         CHECK(right);
         // Too little data: refused, nothing half-decoded.
         CHECK(!art::DecodeTexture(data.data(), 100, texture, image) && image.rgba.empty());
@@ -153,7 +158,8 @@ namespace
             for (uint32_t x = 0; x < 5; x++)
             {
                 uint32_t at = art::TiledOffset(x, y, 32, 2), v = argb(x, y);
-                data[at] = uint8_t(v >> 24), data[at + 1] = uint8_t(v >> 16), data[at + 2] = uint8_t(v >> 8), data[at + 3] = uint8_t(v);
+                data[at] = uint8_t(v >> 24), data[at + 1] = uint8_t(v >> 16), data[at + 2] = uint8_t(v >> 8),
+                data[at + 3] = uint8_t(v);
             }
         art::Image image;
         CHECK(art::DecodeTexture(data.data(), data.size(), texture, image));
@@ -161,7 +167,8 @@ namespace
         for (uint32_t y = 0; y < 3 && right; y++)
             for (uint32_t x = 0; x < 5; x++)
             {
-                uint32_t v = argb(x, y), rgba = (v >> 16 & 0xFF) | (v >> 8 & 0xFF) << 8 | (v & 0xFF) << 16 | (v >> 24) << 24;
+                uint32_t v = argb(x, y),
+                         rgba = (v >> 16 & 0xFF) | (v >> 8 & 0xFF) << 8 | (v & 0xFF) << 16 | (v >> 24) << 24;
                 right = right && image.rgba[y * 5 + x] == rgba;
             }
         CHECK(right);
@@ -181,10 +188,10 @@ namespace
 
     const char LzmaText[] = "Skylanders Giants: Tree Rex, Jet-Vac, Pop Fizz. ";
     // LzmaText x4, raw LZMA (lc=3 lp=0 pb=2, dictionary 0x8000), from Python's lzma module.
-    const uint8_t LzmaStream[] = { 0x00, 0x29, 0x9A, 0xCB, 0x26, 0xDD, 0xDB, 0x00, 0x35, 0xD5, 0x0C, 0xDC, 0x43, 0x55, 0xC8, 0x3C,
-        0x25, 0x6A, 0xF8, 0x23, 0x3A, 0x33, 0xE4, 0x3C, 0x10, 0x18, 0xBA, 0x22, 0x80, 0xB4, 0x29, 0x28, 0xA0, 0x3E, 0x58, 0xDA, 0xE9,
-        0x3D, 0x98, 0x2E, 0xE1, 0x4D, 0xBC, 0x08, 0x75, 0x54, 0xC2, 0x93, 0x41, 0x43, 0x58, 0x7A, 0x48, 0x43, 0xC1, 0xFF, 0xFF, 0xFB,
-        0x3F, 0x20, 0x00 };
+    const uint8_t LzmaStream[] = { 0x00, 0x29, 0x9A, 0xCB, 0x26, 0xDD, 0xDB, 0x00, 0x35, 0xD5, 0x0C, 0xDC, 0x43, 0x55,
+        0xC8, 0x3C, 0x25, 0x6A, 0xF8, 0x23, 0x3A, 0x33, 0xE4, 0x3C, 0x10, 0x18, 0xBA, 0x22, 0x80, 0xB4, 0x29, 0x28,
+        0xA0, 0x3E, 0x58, 0xDA, 0xE9, 0x3D, 0x98, 0x2E, 0xE1, 0x4D, 0xBC, 0x08, 0x75, 0x54, 0xC2, 0x93, 0x41, 0x43,
+        0x58, 0x7A, 0x48, 0x43, 0xC1, 0xFF, 0xFF, 0xFB, 0x3F, 0x20, 0x00 };
 
     std::string Repeated() { return std::string(LzmaText) + LzmaText + LzmaText + LzmaText; }
 
@@ -212,7 +219,8 @@ namespace
                 PutBe32(head, 4, count), PutBe32(head, 8, uint32_t(16 + payload.size())), PutBe32(head, 12, 16);
             }
             else
-                PutBe32(head, 0, type), PutBe32(head, 12, count), PutBe32(head, 16, uint32_t(24 + payload.size())), PutBe32(head, 20, 24);
+                PutBe32(head, 0, type), PutBe32(head, 12, count), PutBe32(head, 16, uint32_t(24 + payload.size())),
+                    PutBe32(head, 20, 24);
             fixups.insert(fixups.end(), head.begin(), head.end());
             fixups.insert(fixups.end(), payload.begin(), payload.end());
         };
@@ -225,9 +233,11 @@ namespace
         record(2, "EXID", 1, ids);
         record(5, "RVTB", 1, { 0x03, 0x00, 0x00, 0x00 }); // one object, at pool 0 + 3 * 4 + 4 = 0x10
         const char* name = "levels/test/portraits/eruptor.png";
-        const uint32_t pixels = linear ? 2 * 32 * 16 : 0x200; // two rows of 32 blocks, or a tiled 32x32-block tile's first part
+        const uint32_t pixels =
+            linear ? 2 * 32 * 16 : 0x200; // two rows of 32 blocks, or a tiled 32x32-block tile's first part
         std::vector<uint8_t> handles;
-        PutBe32(handles, 0, pixels | (v7 ? 0x50u << 24 : 0)), PutBe32(handles, 4, 0x100); // at pool 0 + 0x100; v7: kind 0x50
+        PutBe32(handles, 0, pixels | (v7 ? 0x50u << 24 : 0)),
+            PutBe32(handles, 4, 0x100); // at pool 0 + 0x100; v7: kind 0x50
         record(0xA, v7 ? "TMHN" : "RHND", 1, handles);
         if (v7)
         {
@@ -238,23 +248,25 @@ namespace
         }
 
         std::vector<uint8_t> pool(0x100 + pixels, 0);
-        PutBe32(pool, 0x10, 1);                  // class igImage2
+        PutBe32(pool, 0x10, 1); // class igImage2
         PutBe32(pool, 0x10 + 0x08, v7 ? 0 : 0x80); // the name: v7 string 0, else at pool 0 + 0x80
         PutBe32(pool, 0x10 + 0x30, 8 << 16 | 8); // 8 x 8
-        PutBe32(pool, 0x10 + 0x3C, 0x80000000);  // external id 0
-        PutBe32(pool, 0x10 + 0x48, 0);           // handle 0
+        PutBe32(pool, 0x10 + 0x3C, 0x80000000); // external id 0
+        PutBe32(pool, 0x10 + 0x48, 0); // handle 0
         if (!v7)
             memcpy(&pool[0x80], name, strlen(name));
         for (uint32_t by = 0; by < 2; by++)
             for (uint32_t bx = 0; bx < 2; bx++)
-                Dxt5Block(&pool[0x100 + (linear ? (by * 32 + bx) * 16 : art::TiledOffset(bx, by, 32, 4))], by == 0 ? To565(255, 0, 0) : To565(0, 0, 255), 255);
+                Dxt5Block(&pool[0x100 + (linear ? (by * 32 + bx) * 16 : art::TiledOffset(bx, by, 32, 4))],
+                    by == 0 ? To565(255, 0, 0) : To565(0, 0, 255), 255);
 
         // Sections: tagged { id, offset, size, alignment } at 0x10, v7 { ?, offset, size, alignment } at 0x14; v6 { offset,
         // size, alignment, id } at 0x10.
         const size_t table = v7 ? 0x14 : 0x10, word = tagged ? 4 : 0;
         fixups.resize(std::max<size_t>(fixups.size(), 0x1C), 0);
         PutBe32(igz, table + word, 0x800), PutBe32(igz, table + 4 + word, uint32_t(fixups.size()));
-        PutBe32(igz, table + 0x10 + word, uint32_t(0x800 + fixups.size())), PutBe32(igz, table + 0x14 + word, uint32_t(pool.size()));
+        PutBe32(igz, table + 0x10 + word, uint32_t(0x800 + fixups.size())),
+            PutBe32(igz, table + 0x14 + word, uint32_t(pool.size()));
         igz.insert(igz.end(), fixups.begin(), fixups.end());
         igz.insert(igz.end(), pool.begin(), pool.end());
         return igz;
@@ -272,11 +284,16 @@ namespace
             big ? PutBe32(bytes, at, value) : PutLe32(bytes, at, value);
         };
         std::vector<uint8_t> archive(0x400, 0);
-        memcpy(archive.data(), big ? "\x1a" "AGI" : "IGA\x1a", 4);
+        memcpy(archive.data(),
+            big ? "\x1a"
+                  "AGI"
+                : "IGA\x1a",
+            4);
         Put32(archive, 4, version);
         Put32(archive, 0x0C, count);
         // Names: offsets, then the strings, at 0x100.
-        std::vector<std::string> names = { "C:/tfb/plain.txt", "C:/tfb/packed.txt", "C:/tfb/levels/ui_levelfullscreen/MainMenu.png/0x1.png.igb.tex.igz" };
+        std::vector<std::string> names = { "C:/tfb/plain.txt", "C:/tfb/packed.txt",
+            "C:/tfb/levels/ui_levelfullscreen/MainMenu.png/0x1.png.igb.tex.igz" };
         std::vector<uint8_t> table(4 * count);
         for (uint32_t i = 0; i < count; i++)
         {
@@ -348,7 +365,8 @@ namespace
         CHECK(pictures.size() == 1);
         if (pictures.size() != 1)
             return;
-        CHECK(pictures[0].name == "levels/test/portraits/eruptor.png" && pictures[0].width == 8 && pictures[0].height == 8);
+        CHECK(pictures[0].name == "levels/test/portraits/eruptor.png" && pictures[0].width == 8 &&
+              pictures[0].height == 8);
         CHECK(pictures[0].format == 0xB9BCDC57);
         art::Image image;
         CHECK(art::alchemy::DecodePicture(*file, pictures[0], image));
@@ -357,7 +375,8 @@ namespace
 
         // An unknown format hash is refused.
         auto unknown = art::alchemy::IgzFile::Parse(MakeIgz(0x12345678));
-        CHECK(unknown && unknown->Pictures().size() == 1 && !art::alchemy::DecodePicture(*unknown, unknown->Pictures()[0], image));
+        CHECK(unknown && unknown->Pictures().size() == 1 &&
+              !art::alchemy::DecodePicture(*unknown, unknown->Pictures()[0], image));
         CHECK(!art::alchemy::IgzFile::Parse(std::vector<uint8_t>(0x900, 0)));
         CHECK(archive->Version() == 8 && archive->Verified() && file->Version() == 6 && file->Verified());
 
@@ -385,7 +404,8 @@ namespace
                 auto z = art::alchemy::IgzFile::Parse(a->Read(2));
                 CHECK(z && z->Version() == igzVersion.version && z->Verified() == igzVersion.verified);
                 art::Image decoded;
-                CHECK(z && z->Pictures().size() == 1 && art::alchemy::DecodePicture(*z, z->Pictures()[0], decoded) && decoded.rgba[0] == 0xFFFF0000);
+                CHECK(z && z->Pictures().size() == 1 && art::alchemy::DecodePicture(*z, z->Pictures()[0], decoded) &&
+                      decoded.rgba[0] == 0xFFFF0000);
             }
         CHECK(art::alchemy::IgzVersions().size() == 4);
         std::vector<uint8_t> v12 = MakeIgz(0xB9BCDC57, 12);
@@ -393,7 +413,8 @@ namespace
 
         // Swap Force's 32-bit pictures (250C4EF0: the title's logo): A8R8G8B8, tiled, 8-in-32.
         art::Texture argb;
-        CHECK(art::alchemy::TextureFormatOf(0x250C4EF0, argb) && argb.format == art::TextureFormat::Argb8 && argb.tiled && argb.endian == art::TextureEndian::In32);
+        CHECK(art::alchemy::TextureFormatOf(0x250C4EF0, argb) && argb.format == art::TextureFormat::Argb8 &&
+              argb.tiled && argb.endian == art::TextureEndian::In32);
 
         // IGZ v7 [V]: the picture's name from the strings, the material's dependency, and Swap Force's linear DXT5
         // (049D7FAA), its rows 32 blocks apart.
@@ -402,8 +423,10 @@ namespace
         if (v7 && v7->Pictures().size() == 1)
         {
             art::Image decoded;
-            CHECK(v7->Pictures()[0].name == "levels/test/portraits/eruptor.png" && v7->Pictures()[0].format == 0x049D7FAA);
-            CHECK(art::alchemy::DecodePicture(*v7, v7->Pictures()[0], decoded) && decoded.rgba[0] == 0xFFFF0000 && decoded.rgba[63] == 0xFF0000FF);
+            CHECK(v7->Pictures()[0].name == "levels/test/portraits/eruptor.png" &&
+                  v7->Pictures()[0].format == 0x049D7FAA);
+            CHECK(art::alchemy::DecodePicture(*v7, v7->Pictures()[0], decoded) && decoded.rgba[0] == 0xFFFF0000 &&
+                  decoded.rgba[63] == 0xFF0000FF);
             CHECK(v7->Dependencies() == std::vector<std::string>{ "textures:/JuiceStandard_Test_10.igz" });
         }
 
@@ -416,10 +439,10 @@ namespace
     void TestLux()
     {
         // Fixed-Huffman zlib stream (Python zlib.compress, level 1) and a hand-made stored one.
-        static const uint8_t Fixed[] = { 0x78, 0x01, 0x0B, 0xC9, 0xAF, 0x54, 0x70, 0xCA, 0xAF, 0xB0, 0x52, 0x70, 0xCF, 0xCC,
-            0xC9, 0x51, 0x70, 0x2F, 0x2A, 0xCD, 0x2B, 0xD1, 0x51, 0x08, 0x2E, 0xA8, 0x2C, 0xCA, 0xD7, 0x51, 0x08, 0x29, 0xCA,
-            0x4C, 0x4F, 0x4F, 0x2D, 0x52, 0xF0, 0x48, 0x2C, 0x28, 0xA8, 0xD4, 0x51, 0x70, 0x4A, 0x2C, 0xCE, 0xD0, 0x51, 0x70,
-            0xCE, 0xC8, 0x2F, 0x00, 0x13, 0x7A, 0x23, 0x5D, 0x0B, 0x00, 0xEA, 0xC1, 0x68, 0xC2 };
+        static const uint8_t Fixed[] = { 0x78, 0x01, 0x0B, 0xC9, 0xAF, 0x54, 0x70, 0xCA, 0xAF, 0xB0, 0x52, 0x70, 0xCF,
+            0xCC, 0xC9, 0x51, 0x70, 0x2F, 0x2A, 0xCD, 0x2B, 0xD1, 0x51, 0x08, 0x2E, 0xA8, 0x2C, 0xCA, 0xD7, 0x51, 0x08,
+            0x29, 0xCA, 0x4C, 0x4F, 0x4F, 0x2D, 0x52, 0xF0, 0x48, 0x2C, 0x28, 0xA8, 0xD4, 0x51, 0x70, 0x4A, 0x2C, 0xCE,
+            0xD0, 0x51, 0x70, 0xCE, 0xC8, 0x2F, 0x00, 0x13, 0x7A, 0x23, 0x5D, 0x0B, 0x00, 0xEA, 0xC1, 0x68, 0xC2 };
         std::string expected = "Toy Box: ";
         for (int i = 0; i < 6; i++)
             expected += "Gill Grunt, Spyro, Trigger Happy, Bash, Chop Chop. ";
@@ -441,10 +464,10 @@ namespace
         memcpy(&body[0x20 + 0x30], "toy_test_hud", 12);
         const uint8_t Flushes[8] = { 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00 };
         memcpy(&body[0x80], Flushes, 8);
-        PutBe32(body, 0x88, 0x80000002);                      // tiled, texture
-        PutBe32(body, 0x8C, 20 | 1 << 6);                     // DXT4_5, 8-in-16
-        PutBe32(body, 0x90, (8 - 1) | (4 - 1) << 13);         // 8 x 4
-        PutBe32(body, 0x9C, 1 << 9);                          // 2D
+        PutBe32(body, 0x88, 0x80000002); // tiled, texture
+        PutBe32(body, 0x8C, 20 | 1 << 6); // DXT4_5, 8-in-16
+        PutBe32(body, 0x90, (8 - 1) | (4 - 1) << 13); // 8 x 4
+        PutBe32(body, 0x9C, 1 << 9); // 2D
         memcpy(&body[0xC0], "SYHP", 4);
         PutBe32(body, 0xC8, 0x100), PutBe32(body, 0xD0, 0x200); // pixels at +0x100, 0x200 bytes
         Dxt5Block(&body[0x100 + art::TiledOffset(0, 0, 32, 4)], To565(255, 255, 0), 128);
@@ -455,21 +478,24 @@ namespace
         stream.insert(stream.end(), head.begin(), head.end());
         stream.insert(stream.end(), body.begin(), body.end());
         int found = 0;
-        art::lux::DecodeImages(stream, [](const std::string& name) { return name == "toy_test_hud"; },
+        art::lux::DecodeImages(
+            stream, [](const std::string& name) { return name == "toy_test_hud"; },
             [&](const std::string& name, const art::Image& image) {
                 found++;
                 CHECK(image.width == 8 && image.height == 4 && image.rgba[0] == 0x8000FFFFu);
                 CHECK(image.rgba[4] == 0xFFFFFF00);
             });
         CHECK(found == 1);
-        art::lux::DecodeImages(stream, [](const std::string&) { return false; }, [&](const std::string&, const art::Image&) { found++; });
+        art::lux::DecodeImages(
+            stream, [](const std::string&) { return false; }, [&](const std::string&, const art::Image&) { found++; });
         CHECK(found == 1);
         // A strm file around a stored zlib block of the same stream.
         std::vector<uint8_t> strm = { 's', 't', 'r', 'm' };
         strm.resize(0x14, 0);
         strm.push_back(0x78), strm.push_back(0x01), strm.push_back(0x01);
         uint16_t length = uint16_t(stream.size());
-        strm.push_back(uint8_t(length)), strm.push_back(uint8_t(length >> 8)), strm.push_back(uint8_t(~length)), strm.push_back(uint8_t(~length >> 8));
+        strm.push_back(uint8_t(length)), strm.push_back(uint8_t(length >> 8)), strm.push_back(uint8_t(~length)),
+            strm.push_back(uint8_t(~length >> 8));
         strm.insert(strm.end(), stream.begin(), stream.end());
         std::vector<uint8_t> unpacked;
         CHECK(art::lux::UnpackStream(strm, unpacked) && unpacked == stream);
@@ -495,10 +521,12 @@ namespace
         CHECK(file(collection::PortraitPath("giants", *eruptor)) == "eruptor.png");
         CHECK(file(collection::PortraitPath("ssa", *eruptor)) == "toy_eruptor_hud.png");
         CHECK(file(collection::PortraitPath("giants", *eruptor, 0x1206)) == "eruptor_lightcore.png");
-        CHECK(file(collection::PortraitPath("ssa", *eruptor, 0x1206)) == "toy_eruptor_hud.png"); // the viewed game first
-        CHECK(file(collection::PortraitPath("ssa", *jetVac)) == "eagle.png");                     // else the other's
+        CHECK(
+            file(collection::PortraitPath("ssa", *eruptor, 0x1206)) == "toy_eruptor_hud.png"); // the viewed game first
+        CHECK(file(collection::PortraitPath("ssa", *jetVac)) == "eagle.png"); // else the other's
         bool fromDisc = false;
-        collection::Image lightcore = collection::Portrait("giants", eruptor, collection::VariantKind::LightCore, 8, 0, &fromDisc);
+        collection::Image lightcore =
+            collection::Portrait("giants", eruptor, collection::VariantKind::LightCore, 8, 0, &fromDisc);
         CHECK(fromDisc && lightcore.width == 8);
         // A toy no game has a picture of takes its family's picture (SSA's magic item icon), a toy's own first.
         const collection::Toy* anvil = catalogue.Find(200);
@@ -510,10 +538,12 @@ namespace
             for (const char* name : { "elementiconmagicitem", "elementiconlocation" })
                 CHECK(collection::SavePng(square, datadir::Text(folder / (std::string(name) + ".png"))));
             CHECK(file(collection::PortraitPath("ssa", *anvil)) == "elementiconmagicitem.png");
-            CHECK(file(collection::PortraitPath("giants", *peak)) == "elementiconlocation.png"); // another game's family picture
+            CHECK(file(collection::PortraitPath("giants", *peak)) ==
+                  "elementiconlocation.png"); // another game's family picture
             CHECK(collection::GameKindPicturePath("giants", collection::Category::Adventure).empty());
             CHECK(collection::SavePng(square, datadir::Text(folder / "magicitem_anvilrain.png")));
-            CHECK(file(collection::PortraitPath("ssa", *anvil)) == "magicitem_anvilrain.png");   // the toy's own, from Giants
+            CHECK(file(collection::PortraitPath("ssa", *anvil)) ==
+                  "magicitem_anvilrain.png"); // the toy's own, from Giants
             collection::Portrait("ssa", peak, collection::VariantKind::Base, 8, 0, &fromDisc);
             CHECK(fromDisc);
             for (const char* name : { "elementiconmagicitem", "elementiconlocation", "magicitem_anvilrain" })
@@ -552,7 +582,10 @@ namespace
         SDL_Surface* logo = SDL_ConvertSurface(loaded, SDL_PIXELFORMAT_RGBA32);
         SDL_DestroySurface(loaded);
         const int w = logo->w, h = logo->h;
-        auto pixel = [&](int x, int y) { return reinterpret_cast<const uint32_t*>(static_cast<const uint8_t*>(logo->pixels) + size_t(y) * logo->pitch)[x]; };
+        auto pixel = [&](int x, int y) {
+            return reinterpret_cast<const uint32_t*>(
+                static_cast<const uint8_t*>(logo->pixels) + size_t(y) * logo->pitch)[x];
+        };
         // Sizes: the press logo is 810x411 (1.97); the sheet's pieces give about 1020x540.
         CHECK(w >= 1000 && h >= 500);
         CHECK(double(w) / h > 1.85 && double(w) / h < 2.1);
@@ -574,12 +607,13 @@ namespace
                 tail += x >= w * 0.97 && y >= h * 0.7 && a > 200;
             }
         CHECK(double(opaque) / (w * h) > 0.75 && double(opaque) / (w * h) < 0.9); // press logo: 0.84
-        CHECK(double(plate) / (w * h) > 0.15);                                    // the plate, behind the pieces
-        CHECK(double(bandPlate) / bandTotal > 0.1);                               // the plate between and around the medallions
-        CHECK(double(icy) / bandTotal > 0.2);                                     // the medallion row
-        CHECK(icyLeft < w * 0.15 && icyRight > w * 0.85);                         // 8 medallions across ~80% of the width
-        CHECK(tail > 20);                                                         // the TM, past the plate
-        CHECK((pixel(0, 0) >> 24) == 0 && (pixel(w - 1, 0) >> 24) == 0 && (pixel(0, h - 1) >> 24) == 0); // transparent corners
+        CHECK(double(plate) / (w * h) > 0.15); // the plate, behind the pieces
+        CHECK(double(bandPlate) / bandTotal > 0.1); // the plate between and around the medallions
+        CHECK(double(icy) / bandTotal > 0.2); // the medallion row
+        CHECK(icyLeft < w * 0.15 && icyRight > w * 0.85); // 8 medallions across ~80% of the width
+        CHECK(tail > 20); // the TM, past the plate
+        CHECK((pixel(0, 0) >> 24) == 0 && (pixel(w - 1, 0) >> 24) == 0 &&
+              (pixel(0, h - 1) >> 24) == 0); // transparent corners
         // Under the medallions the plate reaches the bottom edge's margin: an opaque dark blue texel in the last 4% of rows.
         bool footer = false;
         for (int x = int(w * 0.3); x < w * 0.7 && !footer; x++)
@@ -589,7 +623,8 @@ namespace
                 footer |= (p >> 24) > 128 && ((p >> 16) & 0xFF) > (p & 0xFF);
             }
         CHECK(footer);
-        printf("  giants logo: plate %.2f, medallions %.2f, TM %ld texels\n", double(plate) / (w * h), double(icy) / bandTotal, tail);
+        printf("  giants logo: plate %.2f, medallions %.2f, TM %ld texels\n", double(plate) / (w * h),
+            double(icy) / bandTotal, tail);
         SDL_DestroySurface(logo);
     }
 
@@ -603,8 +638,9 @@ namespace
         start = SDL_GetTicksNS();
         art::Extraction again = art::Extract(game, art::ReadFrom(disc));
         double cached = (SDL_GetTicksNS() - start) / 1e9;
-        printf("%s: logo %d, background %d, title icon %d, %d portraits in %s (%.2f s; cached: %.2f s)\n", game, got.logo, got.background,
-            got.titleIcon, got.portraits, datadir::Text(art::PortraitFolder(game)).c_str(), first, cached);
+        printf("%s: logo %d, background %d, title icon %d, %d portraits in %s (%.2f s; cached: %.2f s)\n", game,
+            got.logo, got.background, got.titleIcon, got.portraits, datadir::Text(art::PortraitFolder(game)).c_str(),
+            first, cached);
         CHECK(got.logo && got.background && got.titleIcon && got.portraits >= minimumPortraits);
         CHECK(again.portraits == got.portraits && again.logo && cached < first);
         auto size = [](const std::string& path, int& w, int& h) {
@@ -630,7 +666,8 @@ namespace
         for (const collection::Toy* toy : catalogue.Accepted(game))
         {
             const collection::Game* entry = catalogue.FindGame(game);
-            bool listed = entry->names.contains(toy->type) || entry->images.contains(toy->type) || entry->portraits.contains(uint32_t(toy->type) << 16);
+            bool listed = entry->names.contains(toy->type) || entry->images.contains(toy->type) ||
+                          entry->portraits.contains(uint32_t(toy->type) << 16);
             if (listed && collection::GamePortraitPath(game, *toy).empty())
                 missing++, fprintf(stderr, "  no picture for %s\n", toy->name.c_str());
         }
@@ -654,14 +691,16 @@ namespace
             for (const auto& [key, name] : *pictures)
             {
                 bool art = pictures != &entry->portraits; // the artworks folder holds the halves too
-                std::filesystem::path path = (art ? art::ArtworkFolder(game) : art::PortraitFolder(game)) / (name + ".png");
+                std::filesystem::path path =
+                    (art ? art::ArtworkFolder(game) : art::PortraitFolder(game)) / (name + ".png");
                 std::error_code error;
                 if (!std::filesystem::is_regular_file(path, error))
                     absent++, fprintf(stderr, "  missing %s\n", datadir::Text(path).c_str());
                 (art ? ownArtworks : ownPortraits) += (key & 0xFFFF) != 0 && pictures != &entry->halves;
             }
         CHECK(absent == 0);
-        printf("  %d artworks; variants with their own portrait %d, with their own artwork %d\n", got.artworks, ownPortraits, ownArtworks);
+        printf("  %d artworks; variants with their own portrait %d, with their own artwork %d\n", got.artworks,
+            ownPortraits, ownArtworks);
         if (strcmp(game, "swapforce") == 0)
         {
             // [SwapForce] 179 face-off portraits (640x320, one per Skylander and variant; 175 named by the toy data) and the
@@ -683,28 +722,39 @@ namespace
             // Boom Jet's two halves stack: top above bottom at the wider's width; Dark Blast Zone's own pictures.
             const collection::Toy* boomTop = catalogue.Find(2000);
             const collection::Toy* boomBottom = catalogue.Find(1000);
-            collection::Image boom = boomTop != nullptr && boomBottom != nullptr ? collection::SwapperPicture(*boomTop, 0x2000, *boomBottom, 0x2000) : collection::Image{};
+            collection::Image boom = boomTop != nullptr && boomBottom != nullptr
+                                         ? collection::SwapperPicture(*boomTop, 0x2000, *boomBottom, 0x2000)
+                                         : collection::Image{};
             CHECK(!boom.Empty() && boom.width > 200 && boom.height > boom.width / 2 && boom.height < boom.width * 2);
             // SWAPPER_PICTURES=<folder> writes every matched swapper's picture, the variants and a few mixed ones, to look at.
             if (const char* sheet = getenv("SWAPPER_PICTURES"); sheet != nullptr && *sheet)
             {
                 std::filesystem::create_directories(sheet);
-                auto write = [&](uint16_t top, uint16_t topVariant, uint16_t bottom, uint16_t bottomVariant, const std::string& name) {
-                    collection::Image image = collection::SwapperPicture(*catalogue.Find(top), topVariant, *catalogue.Find(bottom), bottomVariant);
+                auto write = [&](uint16_t top, uint16_t topVariant, uint16_t bottom, uint16_t bottomVariant,
+                                 const std::string& name) {
+                    collection::Image image = collection::SwapperPicture(
+                        *catalogue.Find(top), topVariant, *catalogue.Find(bottom), bottomVariant);
                     CHECK(!image.Empty() && collection::SavePng(image, std::string(sheet) + "/" + name + ".png"));
                 };
                 for (uint16_t i = 0; i < 16; i++)
-                    write(2000 + i, 0, 1000 + i, 0, "matched-" + std::to_string(100 + i).substr(1) + "-" + catalogue.Find(2000 + i)->name);
+                    write(2000 + i, 0, 1000 + i, 0,
+                        "matched-" + std::to_string(100 + i).substr(1) + "-" + catalogue.Find(2000 + i)->name);
                 for (uint16_t i = 0; i < 16; i++)
                     for (const collection::Variant& variant : catalogue.Find(2000 + i)->variants)
                         if (variant.id != 0 && variant.id != 0x2000)
-                            write(2000 + i, variant.id, 1000 + i, variant.id, "variant-" + std::to_string(100 + i).substr(1) + "-" + std::to_string(variant.id));
-                for (auto [top, bottom] : { std::pair{ 2012, 1010 }, std::pair{ 2000, 1015 }, std::pair{ 2007, 1002 }, std::pair{ 2004, 1001 }, std::pair{ 2010, 1006 } })
-                    write(uint16_t(top), 0, uint16_t(bottom), 0, "mixed-" + std::to_string(top) + "-" + std::to_string(bottom));
+                            write(2000 + i, variant.id, 1000 + i, variant.id,
+                                "variant-" + std::to_string(100 + i).substr(1) + "-" + std::to_string(variant.id));
+                for (auto [top, bottom] : { std::pair{ 2012, 1010 }, std::pair{ 2000, 1015 }, std::pair{ 2007, 1002 },
+                         std::pair{ 2004, 1001 }, std::pair{ 2010, 1006 } })
+                    write(uint16_t(top), 0, uint16_t(bottom), 0,
+                        "mixed-" + std::to_string(top) + "-" + std::to_string(bottom));
             }
-            CHECK(collection::HalfPicturePath(*catalogue.Find(2004), 0x2402).ends_with("artworks/darkblasttop_wii_material.png"));
-            CHECK(collection::HalfPicturePath(*catalogue.Find(1013), 0x2402).ends_with("artworks/altdecocowboylegs_wii_material.png"));
-            CHECK(collection::HalfPicturePath(*catalogue.Find(2013), 0x2402).ends_with("artworks/altdecocowboybelt_wii_material.png"));
+            CHECK(collection::HalfPicturePath(*catalogue.Find(2004), 0x2402)
+                    .ends_with("artworks/darkblasttop_wii_material.png"));
+            CHECK(collection::HalfPicturePath(*catalogue.Find(1013), 0x2402)
+                    .ends_with("artworks/altdecocowboylegs_wii_material.png"));
+            CHECK(collection::HalfPicturePath(*catalogue.Find(2013), 0x2402)
+                    .ends_with("artworks/altdecocowboybelt_wii_material.png"));
             const collection::Toy* zook = catalogue.Find(25);
             std::string best = zook != nullptr ? collection::BestPicturePath(game, *zook, 0x1801) : std::string();
             size(best, w, h);
@@ -716,22 +766,25 @@ namespace
         // Soul Gem's bought).
         CHECK(got.upgrades && again.upgrades);
         const collection::Toy* spyro = catalogue.Find(16);
-        collection::UpgradeTable spyroUp = collection::Upgrades(*spyro, game, "en"), spyroFr = collection::Upgrades(*spyro, game, "fr");
+        collection::UpgradeTable spyroUp = collection::Upgrades(*spyro, game, "en"),
+                                 spyroFr = collection::Upgrades(*spyro, game, "fr");
         bool giants = strcmp(game, "giants") == 0;
         CHECK(spyroUp.fromDisc && spyroUp.upgrades.size() == (giants ? 12u : 11u));
         if (spyroUp.upgrades.size() >= 11)
         {
             const auto& u = spyroUp.upgrades;
             CHECK(u[0].bit == 2 && u[0].price == 500 && u[0].name == (giants ? "Long Range Raze" : "Longe Range Raze"));
-            CHECK(u[7].bit == 6 && u[7].path == collection::UpgradePath::Second && u[7].name == "Stun Charge" && u[7].price == 1700);
-            CHECK(u[10].bit == 9 && u[10].path == collection::UpgradePath::SoulGem && u[10].name == "Spyro's Earth Pound" && u[10].price == 4000);
+            CHECK(u[7].bit == 6 && u[7].path == collection::UpgradePath::Second && u[7].name == "Stun Charge" &&
+                  u[7].price == 1700);
+            CHECK(u[10].bit == 9 && u[10].path == collection::UpgradePath::SoulGem &&
+                  u[10].name == "Spyro's Earth Pound" && u[10].price == 4000);
             CHECK(spyroUp.pathNames[0] == "Sheep Burner Spyro" && spyroUp.pathNames[1] == "Blitz Spyro");
             CHECK(spyroFr.upgrades.size() == u.size() && spyroFr.upgrades[7].name == "Charge étourdissante");
         }
         int listed = 0;
         for (const collection::Toy* toy : catalogue.Accepted(game))
             listed += (toy->category == collection::Category::Core || toy->category == collection::Category::Giant) &&
-                collection::Upgrades(*toy, game).fromDisc;
+                      collection::Upgrades(*toy, game).fromDisc;
         printf("  upgrades of %d Skylanders\n", listed);
         CHECK(listed >= (giants ? 53 : 37));
         if (giants)
@@ -742,7 +795,8 @@ namespace
             size(best, w, h);
             CHECK(best.ends_with("artworks/eruptorseries2.png") && h == 960 && w > 960);
             const collection::Toy* chill = catalogue.Find(106);
-            CHECK(chill != nullptr && collection::BestPicturePath(game, *chill, 0x7777).ends_with("artworks/icevalkyrie.png"));
+            CHECK(chill != nullptr &&
+                  collection::BestPicturePath(game, *chill, 0x7777).ends_with("artworks/icevalkyrie.png"));
         }
     }
 }
@@ -750,12 +804,13 @@ namespace
 void TestIco()
 {
     // A 64x64 PNG header (signature, IHDR chunk) is all MakeIco reads.
-    std::vector<uint8_t> png = { 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n', 0, 0, 0, 13, 'I', 'H', 'D', 'R', 0, 0, 0, 64, 0, 0, 0, 64, 8, 6, 0, 0, 0 };
+    std::vector<uint8_t> png = { 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n', 0, 0, 0, 13, 'I', 'H', 'D', 'R', 0, 0, 0,
+        64, 0, 0, 0, 64, 8, 6, 0, 0, 0 };
     png.resize(40, 0);
     std::vector<uint8_t> ico = MakeIco(png);
     CHECK(ico.size() == 22 + png.size());
-    CHECK(ico[2] == 1 && ico[4] == 1);           // an icon, one image
-    CHECK(ico[6] == 64 && ico[7] == 64);         // its size
+    CHECK(ico[2] == 1 && ico[4] == 1); // an icon, one image
+    CHECK(ico[6] == 64 && ico[7] == 64); // its size
     CHECK(ico[14] == png.size() && ico[18] == 22); // its length and offset
     CHECK(std::equal(png.begin(), png.end(), ico.begin() + 22));
     png[19] = 0; // 256 is stored as 0
@@ -768,36 +823,37 @@ void TestIco()
     CHECK(MakeIco({ 1, 2, 3 }).empty());
 }
 
-    // Which languages a disc holds, from file names typed by hand (no game data).
-    void TestDiscLanguages()
-    {
-        using V = std::vector<std::string>;
-        // Spyro's Adventure: text folders and voice banks, per language; other folders (Japanese) and stray files are ignored.
-        V lux = { "/audio/eng/voice.bnk", "/audio/fre/voice.bnk", "/audio/spa/voice.bnk", "/audio/levels/a.bnk", "/text/eng/global.lxb",
-            "/text/fre/global.lxb", "/Text/GER/global.lxb", "/text/jap/global.lxb", "/text/dan", "/movies/eng/legal.bik" };
-        art::DiscLanguages ssa = art::LanguagesOnDisc("ssa", lux);
-        CHECK((ssa.text == V{ "en", "fr", "de" }));
-        CHECK((ssa.voice == V{ "en", "fr", "es" })); // text and voices are decided apart
-        CHECK((art::LanguagesOnDisc("ssa", { "\\audio\\ita\\voice.bnk" }).voice == V{ "it" }));
-        CHECK(art::LanguagesOnDisc("ssa", { "/default.xex" }).text.empty()); // no marker: unknown
+// Which languages a disc holds, from file names typed by hand (no game data).
+void TestDiscLanguages()
+{
+    using V = std::vector<std::string>;
+    // Spyro's Adventure: text folders and voice banks, per language; other folders (Japanese) and stray files are ignored.
+    V lux = { "/audio/eng/voice.bnk", "/audio/fre/voice.bnk", "/audio/spa/voice.bnk", "/audio/levels/a.bnk",
+        "/text/eng/global.lxb", "/text/fre/global.lxb", "/Text/GER/global.lxb", "/text/jap/global.lxb", "/text/dan",
+        "/movies/eng/legal.bik" };
+    art::DiscLanguages ssa = art::LanguagesOnDisc("ssa", lux);
+    CHECK((ssa.text == V{ "en", "fr", "de" }));
+    CHECK((ssa.voice == V{ "en", "fr", "es" })); // text and voices are decided apart
+    CHECK((art::LanguagesOnDisc("ssa", { "\\audio\\ita\\voice.bnk" }).voice == V{ "it" }));
+    CHECK(art::LanguagesOnDisc("ssa", { "/default.xex" }).text.empty()); // no marker: unknown
 
-        // Swap Force: archives/<name>_<code>.pak.
-        V us = { "/archives/boss_kaos_bank_lv_en.pak", "/archives/boss_kaos_bank_lv_fr.pak", "/archives/ui_en.pak", "/archives/shared.pak",
-            "/archives/hat_staging.pak", "/default.xex" };
-        CHECK((art::LanguagesOnDisc("swapforce", us).text == V{ "en", "fr" }));
-        CHECK((art::LanguagesOnDisc("swapforce", us).voice == V{ "en", "fr" }));
-        V europe = { "/archives/a_it.pak", "/archives/a_es.pak", "/archives/b_es.pak", "/other/c_en.pak" };
-        CHECK((art::LanguagesOnDisc("swapforce", europe).text == V{ "es", "it" }));
-        CHECK(art::LanguagesOnDisc("swapforce", { "/archives/a_xx.pak", "/archives/a.pak" }).voice.empty());
+    // Swap Force: archives/<name>_<code>.pak.
+    V us = { "/archives/boss_kaos_bank_lv_en.pak", "/archives/boss_kaos_bank_lv_fr.pak", "/archives/ui_en.pak",
+        "/archives/shared.pak", "/archives/hat_staging.pak", "/default.xex" };
+    CHECK((art::LanguagesOnDisc("swapforce", us).text == V{ "en", "fr" }));
+    CHECK((art::LanguagesOnDisc("swapforce", us).voice == V{ "en", "fr" }));
+    V europe = { "/archives/a_it.pak", "/archives/a_es.pak", "/archives/b_es.pak", "/other/c_en.pak" };
+    CHECK((art::LanguagesOnDisc("swapforce", europe).text == V{ "es", "it" }));
+    CHECK(art::LanguagesOnDisc("swapforce", { "/archives/a_xx.pak", "/archives/a.pak" }).voice.empty());
 
-        // Giants: not in file names; all twelve whatever the list.
-        art::DiscLanguages giants = art::LanguagesOnDisc("giants", {});
-        CHECK(giants.text.size() == 12 && giants.text == giants.voice && giants.text[4] == "es-419");
-        CHECK(art::LanguagesOnDisc("trapteam", us).text.empty());
+    // Giants: not in file names; all twelve whatever the list.
+    art::DiscLanguages giants = art::LanguagesOnDisc("giants", {});
+    CHECK(giants.text.size() == 12 && giants.text == giants.voice && giants.text[4] == "es-419");
+    CHECK(art::LanguagesOnDisc("trapteam", us).text.empty());
 
-        CHECK(art::JoinLanguages({ "en", "fr" }) == "en,fr" && art::JoinLanguages({}).empty());
-        CHECK((art::SplitLanguages("en,,fr,") == V{ "en", "fr" }) && art::SplitLanguages("").empty());
-    }
+    CHECK(art::JoinLanguages({ "en", "fr" }) == "en,fr" && art::JoinLanguages({}).empty());
+    CHECK((art::SplitLanguages("en,,fr,") == V{ "en", "fr" }) && art::SplitLanguages("").empty());
+}
 
 int main(int argc, char** argv)
 {

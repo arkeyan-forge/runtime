@@ -67,8 +67,8 @@ namespace datadir
         std::string LogTime()
         {
             std::string stamp = Stamp();
-            return stamp.substr(0, 4) + "-" + stamp.substr(4, 2) + "-" + stamp.substr(6, 2) + " " + stamp.substr(9, 2) + ":" +
-                stamp.substr(11, 2) + ":" + stamp.substr(13, 2);
+            return stamp.substr(0, 4) + "-" + stamp.substr(4, 2) + "-" + stamp.substr(6, 2) + " " + stamp.substr(9, 2) +
+                   ":" + stamp.substr(11, 2) + ":" + stamp.substr(13, 2);
         }
     }
 
@@ -91,7 +91,8 @@ namespace datadir
             return "SwapForce"; // the one exception: two words
         std::string name(id);
         if (name.size() <= 3)
-            std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return char(std::toupper(c)); });
+            std::transform(
+                name.begin(), name.end(), name.begin(), [](unsigned char c) { return char(std::toupper(c)); });
         else if (!name.empty())
             name[0] = char(std::toupper(static_cast<unsigned char>(name[0])));
         return name;
@@ -123,14 +124,16 @@ namespace datadir
         return std::string(text.begin(), text.end());
     }
 
-    fs::path FromText(std::string_view utf8)
-    {
-        return fs::path(std::u8string(utf8.begin(), utf8.end()));
-    }
+    fs::path FromText(std::string_view utf8) { return fs::path(std::u8string(utf8.begin(), utf8.end())); }
 
     uint64_t TrimFolder(const fs::path& folder, uint64_t maxBytes)
     {
-        struct Item { fs::path path; uint64_t size; fs::file_time_type time; };
+        struct Item
+        {
+            fs::path path;
+            uint64_t size;
+            fs::file_time_type time;
+        };
         std::vector<Item> items;
         uint64_t total = 0;
         std::error_code error;
@@ -198,9 +201,10 @@ namespace datadir
                 return !error;
             }
             if (fs::is_symlink(status))
-                return fs::is_symlink(target, error) && fs::read_symlink(source, error) == fs::read_symlink(target, error);
+                return fs::is_symlink(target, error) &&
+                       fs::read_symlink(source, error) == fs::read_symlink(target, error);
             return fs::is_regular_file(target, error) && fs::file_size(source, error) == fs::file_size(target, error) &&
-                SameBytes(source, target);
+                   SameBytes(source, target);
         }
 
         // Makes a folder's files writable so remove_all can delete a tree holding read-only files (Windows).
@@ -210,7 +214,10 @@ namespace datadir
             fs::remove_all(path, error);
         }
 
-        struct Move { fs::path from, to; };
+        struct Move
+        {
+            fs::path from, to;
+        };
 
         class Migration
         {
@@ -263,7 +270,8 @@ namespace datadir
                 if (!a.empty())
                 {
                     Add(a / "launcher.ini", m_root / "launcher.ini");
-                    for (const char* name : { "SSARecomp.log", "SSARecomp.prev.log", "figures", "portraits", "launcher-cache" })
+                    for (const char* name :
+                        { "SSARecomp.log", "SSARecomp.prev.log", "figures", "portraits", "launcher-cache" })
                         Add(a / name, game / name);
                     for (const char* name : { "skylauncher-game.log", "skylauncher-game.prev.log" })
                         Add(a / name, logs / name);
@@ -417,9 +425,8 @@ namespace datadir
                     return;
                 std::vector<Move> pairs = m_plan;
                 pairs.insert(pairs.end(), m_folders.begin(), m_folders.end());
-                std::stable_sort(pairs.begin(), pairs.end(), [](const Move& a, const Move& b) {
-                    return a.from.native().size() > b.from.native().size();
-                });
+                std::stable_sort(pairs.begin(), pairs.end(),
+                    [](const Move& a, const Move& b) { return a.from.native().size() > b.from.native().size(); });
                 std::vector<std::pair<std::string, fs::path>> table;
                 for (const Move& pair : pairs)
                     table.emplace_back(Slashes(Text(pair.from)), pair.to);
@@ -438,11 +445,13 @@ namespace datadir
                 while (position < text.size())
                 {
                     size_t end = text.find('\n', position);
-                    std::string line = text.substr(position, end == std::string::npos ? std::string::npos : end - position);
+                    std::string line =
+                        text.substr(position, end == std::string::npos ? std::string::npos : end - position);
                     position = end == std::string::npos ? text.size() : end + 1;
                     size_t equals = line.find('=');
                     size_t first = line.find_first_not_of(" \t");
-                    if (equals != std::string::npos && first != std::string::npos && line[first] != '#' && line[first] != ';' && line[first] != '[')
+                    if (equals != std::string::npos && first != std::string::npos && line[first] != '#' &&
+                        line[first] != ';' && line[first] != '[')
                     {
                         size_t start = line.find_first_not_of(" \t", equals + 1);
                         size_t stop = line.find_last_not_of(" \t\r");
@@ -491,7 +500,8 @@ namespace datadir
                 return text;
             }
 
-            static std::string Follow(const std::string& value, const std::vector<std::pair<std::string, fs::path>>& table)
+            static std::string Follow(
+                const std::string& value, const std::vector<std::pair<std::string, fs::path>>& table)
             {
                 std::string slashed = Slashes(value);
                 for (const auto& [from, to] : table)
@@ -500,13 +510,15 @@ namespace datadir
                         continue;
                     if (slashed.size() != from.size() && slashed[from.size()] != '/')
                         continue;
-                    fs::path moved = FromText(std::string_view(slashed).substr(from.size() + (slashed.size() > from.size() ? 1 : 0)));
+                    fs::path moved = FromText(
+                        std::string_view(slashed).substr(from.size() + (slashed.size() > from.size() ? 1 : 0)));
                     fs::path result = to;
                     if (!moved.empty())
                         result /= moved;
                     // Only a path that is gone from the old place and there in the new one.
                     std::error_code error;
-                    if (fs::exists(fs::symlink_status(FromText(slashed), error)) || !fs::exists(fs::symlink_status(result, error)))
+                    if (fs::exists(fs::symlink_status(FromText(slashed), error)) ||
+                        !fs::exists(fs::symlink_status(result, error)))
                         continue;
                     return Text(result.make_preferred());
                 }
@@ -553,7 +565,8 @@ namespace datadir
         if (done)
             return {};
         done = true;
-        for (const char* name : { "SKYLANDERS_DATA", "SKY_LAUNCHER_DATA", "SKY_SAVE_DIR", "SKY_SETTINGS", "SKY_LAUNCHER_INI", "SKY_COLLECTION" })
+        for (const char* name : { "SKYLANDERS_DATA", "SKY_LAUNCHER_DATA", "SKY_SAVE_DIR", "SKY_SETTINGS",
+                 "SKY_LAUNCHER_INI", "SKY_COLLECTION" })
             if (Set(name))
                 return {};
         return Migrate(RealOldRoots(), Root());

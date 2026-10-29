@@ -14,5 +14,6 @@ namespace art
 {
     // Reads the upgrades of `game` as its manifest's "upgrades" part says and writes them to `out` (a temporary file
     // renamed over). Returns how many toys have a list; 0 (and nothing written) when the disc does not have them.
-    int ExtractUpgrades(std::string_view game, const collection::Json& manifest, const Disc& disc, const std::filesystem::path& out);
+    int ExtractUpgrades(
+        std::string_view game, const collection::Json& manifest, const Disc& disc, const std::filesystem::path& out);
 }

@@ -16,7 +16,22 @@
 namespace toybox
 {
     // Everything the player can do with a pad, the keyboard or the mouse, as the design's verbs (section 8).
-    enum class Command { None, Up, Down, Left, Right, Accept, Back, Options, View, PreviousSection, NextSection, Delete, Start };
+    enum class Command
+    {
+        None,
+        Up,
+        Down,
+        Left,
+        Right,
+        Accept,
+        Back,
+        Options,
+        View,
+        PreviousSection,
+        NextSection,
+        Delete,
+        Start
+    };
 
     enum class Screen
     {
@@ -32,19 +47,19 @@ namespace toybox
         Manage,    // screen 10
         Wheel,     // screen 4, over the game
         WheelList, // screen 5, over the game
-        Menu,      // the F3 menu: volume, FPS counter, settings, Report a problem (docs/runtime/host/gamemenu.md), over the game
+        Menu, // the F3 menu: volume, FPS counter, settings, Report a problem (docs/runtime/host/gamemenu.md), over the game
     };
 
     // A place on the portal (catalogue seats) and what is on it.
     struct SeatState
     {
         collection::Seat seat;
-        int slot = -1;              // the emulated portal's hardware slot it uses
-        std::string path;           // the dump on it; empty: free
-        std::string previous;       // what was there before the last change (Undo)
-        uint64_t placedAt = 0;      // SDL_GetTicksNS() of the last change, 0: none
-        bool waiting = false;       // the title has not read it since
-        bool late = false;          // ...for more than 20 s
+        int slot = -1; // the emulated portal's hardware slot it uses
+        std::string path; // the dump on it; empty: free
+        std::string previous; // what was there before the last change (Undo)
+        uint64_t placedAt = 0; // SDL_GetTicksNS() of the last change, 0: none
+        bool waiting = false; // the title has not read it since
+        bool late = false; // ...for more than 20 s
         // A real portal: what the title read from the toy.
         bool physical = false;
         uint16_t physicalType = 0, physicalVariant = 0;
@@ -60,9 +75,14 @@ namespace toybox
     // One cell of the list: a figure, the "+ Add" card of a section, or the folded "Not for this game" line.
     struct Cell
     {
-        enum class Kind { Figure, Add, Fold } kind = Kind::Figure;
-        int figure = -1;     // index in Model::figures
-        int section = 0;     // index in Model::sections
+        enum class Kind
+        {
+            Figure,
+            Add,
+            Fold
+        } kind = Kind::Figure;
+        int figure = -1; // index in Model::figures
+        int section = 0; // index in Model::sections
         int row = 0, column = 0;
         collection::Element element = collection::Element::None; // Add: the section's element
     };
@@ -74,9 +94,9 @@ namespace toybox
         std::string game;
         int count = 0;
         bool foreign = false; // "Not for this game": greyed, cannot be placed
-        bool titled = true;   // a header above its first row (the shelf has none: the screen says what it is for)
+        bool titled = true; // a header above its first row (the shelf has none: the screen says what it is for)
         bool folded = false;
-        int firstRow = 0;     // grid rows, the header is drawn above firstRow
+        int firstRow = 0; // grid rows, the header is drawn above firstRow
     };
 
     // The cells of a sectioned grid with a fixed number of columns.
@@ -85,8 +105,8 @@ namespace toybox
         std::vector<ListSection> sections;
         std::vector<Cell> cells;
         int rows = 0;
-        int cursor = 0;  // index in cells
-        int scroll = 0;  // pixels scrolled
+        int cursor = 0; // index in cells
+        int scroll = 0; // pixels scrolled
         // Layout in pixels, set by the model for the drawing: a header above the first row of each titled section.
         int rowHeight = 100, headerHeight = 40, visibleHeight = 400;
         int RowY(int row) const; // top of a row, from the top of the list
@@ -107,19 +127,26 @@ namespace toybox
     struct Version
     {
         uint16_t type = 0, variant = 0;
-        std::string name, edition;   // edition: a same-tag edition (created as the plain toy, the edition recorded)
+        std::string name, edition; // edition: a same-tag edition (created as the plain toy, the edition recorded)
         collection::VariantKind kind = collection::VariantKind::Base;
         int owned = 0;
     };
 
     struct NameEntry
     {
-        enum class Purpose { NewFigure, Rename, Nickname, Search, ToyName } purpose = Purpose::Rename;
+        enum class Purpose
+        {
+            NewFigure,
+            Rename,
+            Nickname,
+            Search,
+            ToyName
+        } purpose = Purpose::Rename;
         std::string text, title;
-        size_t cursor = 0;       // byte offset
-        size_t limit = 40;       // characters
+        size_t cursor = 0; // byte offset
+        size_t limit = 40; // characters
         std::vector<std::string> suggestions;
-        int focus = 0;           // 0..suggestions-1: suggestions; then the keys
+        int focus = 0; // 0..suggestions-1: suggestions; then the keys
         int keyRow = 0, keyColumn = 0;
         bool onKeys = false;
         bool shift = true;
@@ -129,22 +156,22 @@ namespace toybox
 
     struct ManageState
     {
-        int section = 0;       // Trash, Backups, Import, Export, Unknown, Tidy
+        int section = 0; // Trash, Backups, Import, Export, Unknown, Tidy
         bool inPanel = false;
         int item = 0;
         std::vector<collection::TrashEntry> trash;
-        std::vector<int> withBackups;   // figures with at least one backup
-        std::vector<int> unknown;       // figures the catalogue does not know
+        std::vector<int> withBackups; // figures with at least one backup
+        std::vector<int> unknown; // figures the catalogue does not know
         std::vector<std::string> starters;
         std::string importFolder, exportFolder;
     };
 
     struct WheelState
     {
-        int seat = 0;                                  // index in Model::seats
-        std::vector<collection::WheelPlace> places;    // 8
-        std::vector<int> figures;                      // per place: index in Model::figures, -1 empty
-        int aimed = -1;                                // -1: the centre (cancel)
+        int seat = 0; // index in Model::seats
+        std::vector<collection::WheelPlace> places; // 8
+        std::vector<int> figures; // per place: index in Model::figures, -1 empty
+        int aimed = -1; // -1: the centre (cancel)
         uint64_t pinHoldStart = 0;
     };
 
@@ -160,8 +187,14 @@ namespace toybox
     // One place of the Upgrades screen's grid: an upgrade of the table, or All / None / Done.
     struct UpgradeItem
     {
-        enum class Kind { Upgrade, All, None, Done } kind = Kind::Upgrade;
-        int index = 0;   // into the table's upgrades
+        enum class Kind
+        {
+            Upgrade,
+            All,
+            None,
+            Done
+        } kind = Kind::Upgrade;
+        int index = 0; // into the table's upgrades
         int column = 0, row = 0;
     };
 
@@ -175,10 +208,16 @@ namespace toybox
     // One line of the F3 menu.
     struct MenuRow
     {
-        enum class Kind { Slider, Toggle, Choice, Action } kind = Kind::Action;
-        std::string label, value;   // value: "70 %", "On", "60", "Auto"; empty for an action
-        int percent = 0;            // Slider: 0-100
-        bool nextStart = false;     // applies at the next start (the row says so)
+        enum class Kind
+        {
+            Slider,
+            Toggle,
+            Choice,
+            Action
+        } kind = Kind::Action;
+        std::string label, value; // value: "70 %", "On", "60", "Auto"; empty for an action
+        int percent = 0; // Slider: 0-100
+        bool nextStart = false; // applies at the next start (the row says so)
     };
 
     class Model
@@ -192,37 +231,37 @@ namespace toybox
         std::vector<uint16_t> Hats() const;
         std::string HatName(uint16_t hat) const;
         const collection::Game* gameInfo = nullptr;
-        bool realPortal = false;                 // read-only seats from the traffic
+        bool realPortal = false; // read-only seats from the traffic
         std::vector<collection::Figure> figures; // every dump but the untouched starters
         std::vector<SeatState> seats;
         std::string search;
-        bool foreignOpen = false;                // "Not for this game" unfolded
+        bool foreignOpen = false; // "Not for this game" unfolded
         // The shelf's filters and sort (docs/runtime/host/toybox_ux.md "Search, filters and sort"); -1 or empty: all.
-        int filterElement = -1;                  // a collection::Element
-        std::string filterGame;                  // the game a toy came with ("giants")
-        int filterCategory = -1;                 // a collection::Category
+        int filterElement = -1; // a collection::Element
+        std::string filterGame; // the game a toy came with ("giants")
+        int filterCategory = -1; // a collection::Category
         collection::Sort sort = collection::Sort::Recent;
-        bool filtersOpen = false;                // the Filters panel is open over the shelf
-        int filterRow = 0;                       // its focused row: Element, Game, Type, Sort, Clear all
-        int shownCount = 0;                      // the cards the shelf shows (BuildList)
+        bool filtersOpen = false; // the Filters panel is open over the shelf
+        int filterRow = 0; // its focused row: Element, Game, Type, Sort, Clear all
+        int shownCount = 0; // the cards the shelf shows (BuildList)
 
         // --- Navigation ------------------------------------------------------------------------------------------------
         Screen screen = Screen::Home;
         bool open = false;
-        int seat = 0;               // the focused seat
-        bool inList = true;         // Home: focus in the grid (else the row of seats along the top)
-        int column = 0;             // the top row's place: the seats, then Add a figure, Manage
-        Grid list;                  // your figures for the focused seat (Home, WheelList)
-        int figure = -1;            // the Figure page's figure
+        int seat = 0; // the focused seat
+        bool inList = true; // Home: focus in the grid (else the row of seats along the top)
+        int column = 0; // the top row's place: the seats, then Add a figure, Manage
+        Grid list; // your figures for the focused seat (Home, WheelList)
+        int figure = -1; // the Figure page's figure
         int figureAction = 0;
-        bool figureMore = false;    // the Figure page shows its other actions (More)
+        bool figureMore = false; // the Figure page shows its other actions (More)
         bool figureDetails = false; // ...and the technical details (Details)
         int pinPlace = 0;
         int backup = 0;
         std::vector<std::string> backups;
         StatsState stats;
         UpgradesState upgrades;
-        Grid add;                   // Add a figure: characters
+        Grid add; // Add a figure: characters
         std::vector<const collection::Toy*> addToys; // per cell (Cell::figure indexes it)
         bool addVersions = false;
         int addVersion = 0;
@@ -231,7 +270,7 @@ namespace toybox
         ManageState manage;
         WheelState wheel;
         std::vector<Dialog> dialogs;
-        uint64_t holdStart = 0;     // A held on a hold button (dialog), since
+        uint64_t holdStart = 0; // A held on a hold button (dialog), since
         float holdProgress = 0;
 
         // --- The F3 menu ---------------------------------------------------------------------------------------------------
@@ -242,12 +281,12 @@ namespace toybox
         void FocusMenuRow(int row, int step); // the mouse: focus the row, then step -1 / +1 (a value) or 0 (do it)
 
         // --- Messages --------------------------------------------------------------------------------------------------
-        uint32_t lightRgb = 0;      // the portal's light as the game last set it, in 4 steps per channel (0xRRGGBB); 0 = off
-        std::string fps;            // the FPS counter's text ("30 FPS"), empty: off; set by toybox.cpp, drawn in the corner
-        std::string toast;          // shown 3 s (5 s for long ones), in the Toy Box and over the game
+        uint32_t lightRgb = 0; // the portal's light as the game last set it, in 4 steps per channel (0xRRGGBB); 0 = off
+        std::string fps; // the FPS counter's text ("30 FPS"), empty: off; set by toybox.cpp, drawn in the corner
+        std::string toast; // shown 3 s (5 s for long ones), in the Toy Box and over the game
         uint64_t toastUntil = 0;
         void Notice(const std::string& text, uint64_t seconds) { Toast(text, seconds); } // ToyboxNotice (host/toybox.h)
-        int tidied = 0;             // figures this start's tidy moved (the one-time message)
+        int tidied = 0; // figures this start's tidy moved (the one-time message)
 
         // --- Calls from toybox.cpp -----------------------------------------------------------------------------------
         void Init(bool real);
@@ -255,7 +294,7 @@ namespace toybox
         void Close();
         void Run(Command command);
         void Hold(bool held, uint64_t now); // A (Enter, the mouse) held: hold buttons
-        void Type(const std::string& utf8);  // text from a keyboard
+        void Type(const std::string& utf8); // text from a keyboard
         void Backspace();
         // Once per frame while anything is shown: the portal's state, waiting seats, timeouts. True if it changed.
         bool Tick(uint64_t now);
@@ -265,19 +304,20 @@ namespace toybox
 
         // Wheel (toybox.cpp aims it from the stick, the arrows or 1-8).
         void OpenWheel(int seatIndex);
-        void AimWheel(int place);           // -1: the centre
-        bool WheelPossible(const collection::Figure& f) const; // a player seat of this game reads it: it can be on the wheel
-        void ConfirmWheel();                // swaps to the aimed figure (or cancels) and closes
-        void WheelSeat(int step);           // LB/RB: the next seat with a wheel
-        void WheelList();                   // Y: the full list for that seat
+        void AimWheel(int place); // -1: the centre
+        bool WheelPossible(
+            const collection::Figure& f) const; // a player seat of this game reads it: it can be on the wheel
+        void ConfirmWheel(); // swaps to the aimed figure (or cancels) and closes
+        void WheelSeat(int step); // LB/RB: the next seat with a wheel
+        void WheelList(); // Y: the full list for that seat
         void PinFromWheel(uint64_t now, bool held); // X held on a place
 
         // --- Actions the drawing's mouse areas call ----------------------------------------------------------------
         void FocusSeat(int index);
         void FocusColumnRow(int row);
         void FocusCell(int cell);
-        void ActivateCell(int cell);        // double click: put on
-        void OptionsCell(int cell);         // right click: Figure page
+        void ActivateCell(int cell); // double click: put on
+        void OptionsCell(int cell); // right click: Figure page
         void ScrollList(int rows);
         void FocusAction(int index);
         void FocusAddCell(int cell);
@@ -290,11 +330,11 @@ namespace toybox
         void FocusDialogButton(int index);
 
         // --- What the drawing asks ----------------------------------------------------------------------------------
-        int SeatOf(const std::string& path) const;               // -1 if not on a seat
-        const collection::Figure* SeatFigure(int index) const;   // null if empty or physical
+        int SeatOf(const std::string& path) const; // -1 if not on a seat
+        const collection::Figure* SeatFigure(int index) const; // null if empty or physical
         bool Accepts(const SeatState& s, const collection::Figure& f) const;
-        std::string SeatLabel(int index) const;                  // "Player 1", "Magic item"
-        std::string SeatTag(int index) const;                    // "P1", "Item"
+        std::string SeatLabel(int index) const; // "Player 1", "Magic item"
+        std::string SeatTag(int index) const; // "P1", "Item"
         // Every occupied seat with its hardware slot ("P1 Gill Grunt · Item Shield"), from the seats the portal shows.
         std::vector<collection::PortalEntry> Overview() const;
         // A swapper is one card: its name (FigureName), level line (LevelLine) and busy state cover both halves, and
@@ -304,12 +344,13 @@ namespace toybox
         // Out of health (the game asked for the seat again while its figure was on it, or said the Skylander died): the
         // dumps that cannot play until the next level. The card and the seat show a red cross; they can still be picked.
         bool OutOfHealth(const collection::Figure& f) const { return outOfHealth.count(f.path) != 0; }
-        bool MarkOutOfHealth(int seatIndex, bool certain); // true when a figure was marked; `certain`: the game said it died
+        bool MarkOutOfHealth(
+            int seatIndex, bool certain); // true when a figure was marked; `certain`: the game said it died
         void ClearOutOfHealth();
         std::set<std::string> outOfHealth;
         std::string FigureName(const collection::Figure& f) const;
-        std::vector<std::string> FigureActions() const;          // the Figure page's lines
-        std::vector<std::string> ColumnRows() const;             // the top row's places after the seats
+        std::vector<std::string> FigureActions() const; // the Figure page's lines
+        std::vector<std::string> ColumnRows() const; // the top row's places after the seats
         // The name of a toy on the Add a figure screen: a swapper's top is the swapper ("Boom Jet", not "Boom Jet (top)").
         static std::string AddName(const collection::Toy& toy);
         bool OwnsAnything() const { return !figures.empty(); }
@@ -317,7 +358,7 @@ namespace toybox
         // (the first is "All"), Accept changes it to the next.
         static constexpr int FilterRows = 4;
         std::string FilterRowLabel(int row) const;
-        std::string FilterValueLabel(int row) const;      // the value now, "All elements"...
+        std::string FilterValueLabel(int row) const; // the value now, "All elements"...
         void CycleFilter(int row, int step);
         void ClearSearch();
         void OpenFilters();
@@ -331,7 +372,7 @@ namespace toybox
         std::vector<Tag> Tags() const;
         void RemoveTag(int index);
         bool FiltersActive() const; // a search, a filter or a sort other than Recent
-        void ClearFilters();        // all of them
+        void ClearFilters(); // all of them
         int OwnedCount(uint16_t type, uint16_t variant, const std::string& edition) const;
         std::string SectionLabel(const ListSection& section) const;
         std::string GameName() const;
@@ -341,7 +382,7 @@ namespace toybox
         static const std::vector<std::vector<std::string>>& Keys(bool french, bool symbols, bool shift);
 
     private:
-        void Reload();                       // figures from the collection
+        void Reload(); // figures from the collection
         void RefreshSeats(uint64_t now);
         void BuildList();
         bool HalfMadeWithTop(const collection::Toy& toy) const;
@@ -359,7 +400,7 @@ namespace toybox
         void RunFilters(Command command);
         void RunFigure(Command command);
         void RunPin(Command command);
-        void OpenHalf();                     // Figure → Change the bottom / the top
+        void OpenHalf(); // Figure → Change the bottom / the top
         void RunHalf(Command command);
         void ChangeHalfTo(const std::string& keep, const std::string& replacement);
         void RunBackups(Command command);
@@ -392,7 +433,7 @@ namespace toybox
         void SaveStats();
         void OpenName(NameEntry entry);
         void CreateFrom(const Version& version);
-        void SaveCopy(int seatIndex);       // real portal: keep a dump of the toy
+        void SaveCopy(int seatIndex); // real portal: keep a dump of the toy
         void OpenManage();
         void RefreshManage();
         void ManageAction();

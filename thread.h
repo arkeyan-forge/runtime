@@ -32,8 +32,8 @@ struct GuestThread : KernelObject
 };
 
 // Runs `start(context)`, or `xapiStartup(start, context)` when given, on a new host thread.
-std::shared_ptr<GuestThread> CreateGuestThread(uint32_t start, uint32_t context, uint32_t xapiStartup,
-    uint32_t stackSize, bool suspended, uint8_t cpu);
+std::shared_ptr<GuestThread> CreateGuestThread(
+    uint32_t start, uint32_t context, uint32_t xapiStartup, uint32_t stackSize, bool suspended, uint8_t cpu);
 
 // Unwinds the calling guest thread back to its host entry (ExTerminateThread).
 [[noreturn]] void ExitGuestThread(uint32_t exitCode);

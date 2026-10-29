@@ -65,7 +65,8 @@ namespace
         CHECK(commit.backedUp && IsStamp(commit.backupStamp));
         CHECK(Read(save) == "half");
         CHECK(!fs::exists(temp));
-        CHECK(Read(BackupRoot(saves) / commit.backupStamp / "00000002" / "Skylanders - Slot 1" / "SLOT.DAT") == "previous");
+        CHECK(Read(BackupRoot(saves) / commit.backupStamp / "00000002" / "Skylanders - Slot 1" / "SLOT.DAT") ==
+              "previous");
 
         // Writing the same bytes again is not a new version: no backup, no rename.
         Write(temp, "half");
@@ -150,8 +151,10 @@ namespace
         CHECK(Read(slot) == "slot one");
         // The saves as they were before the restore are kept in a folder of their own.
         CHECK(IsStamp(restored.safetyStamp) && restored.safetyStamp != "20261025-120000");
-        CHECK(Read(BackupRoot(saves) / restored.safetyStamp / "00000002" / "Skylanders - Global Data" / "GLOBAL.DAT") == "global changed");
-        CHECK(Read(BackupRoot(saves) / restored.safetyStamp / "00000002" / "Skylanders - Slot 1" / "SLOT.DAT") == "slot changed");
+        CHECK(Read(BackupRoot(saves) / restored.safetyStamp / "00000002" / "Skylanders - Global Data" / "GLOBAL.DAT") ==
+              "global changed");
+        CHECK(Read(BackupRoot(saves) / restored.safetyStamp / "00000002" / "Skylanders - Slot 1" / "SLOT.DAT") ==
+              "slot changed");
         // A restore does not delete a save the backup does not hold.
         CHECK(Read(saves / "00000002" / "Skylanders - Slot 2" / "SLOT.DAT") == "a slot the backup does not have");
 

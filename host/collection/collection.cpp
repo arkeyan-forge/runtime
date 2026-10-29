@@ -83,10 +83,7 @@ namespace collection
             return text;
         }
 
-        bool Exists(const std::string& path)
-        {
-            return SDL_GetPathInfo(path.c_str(), nullptr);
-        }
+        bool Exists(const std::string& path) { return SDL_GetPathInfo(path.c_str(), nullptr); }
 
         bool LoadBytes(const std::string& path, std::string& bytes)
         {
@@ -300,20 +297,11 @@ namespace collection
         return reading.seen != nullptr ? reading.seen->name : figure.toy->name;
     }
 
-    bool Figure::IsSwapTop() const
-    {
-        return toy != nullptr && toy->category == Category::SwapTop;
-    }
+    bool Figure::IsSwapTop() const { return toy != nullptr && toy->category == Category::SwapTop; }
 
-    bool Figure::IsSwapBottom() const
-    {
-        return toy != nullptr && toy->category == Category::SwapBottom;
-    }
+    bool Figure::IsSwapBottom() const { return toy != nullptr && toy->category == Category::SwapBottom; }
 
-    bool HasProgress(const Figure& figure)
-    {
-        return figure.toy != nullptr && figure.toy->category <= Category::Mini;
-    }
+    bool HasProgress(const Figure& figure) { return figure.toy != nullptr && figure.toy->category <= Category::Mini; }
 
     std::string LevelText(const Figure& figure, const std::string& game, bool french)
     {
@@ -355,10 +343,7 @@ namespace collection
         return folder;
     }
 
-    std::string PathOf(const std::string& file)
-    {
-        return Folder() + "/" + file;
-    }
+    std::string PathOf(const std::string& file) { return Folder() + "/" + file; }
 
     bool IsDumpName(const std::string& name)
     {
@@ -407,10 +392,7 @@ namespace collection
             SDL_RemovePath((path + ".lock").c_str());
     }
 
-    void BreakLock(const std::string& path)
-    {
-        SDL_RemovePath((path + ".lock").c_str());
-    }
+    void BreakLock(const std::string& path) { SDL_RemovePath((path + ".lock").c_str()); }
 
     int ClearStaleLocks()
     {
@@ -446,7 +428,8 @@ namespace collection
             figure.toy = catalogue.Find(figure.type);
             figure.variantInfo = catalogue.Describe(figure.toy, figure.variant);
             figure.state = figures::ReadStats(tag, figure.stats);
-            figure.level = figures::LevelForExperience(figures::TotalExperience(figure.stats), figures::MaxLevelSwapForce);
+            figure.level =
+                figures::LevelForExperience(figures::TotalExperience(figure.stats), figures::MaxLevelSwapForce);
             figure.lock = GetLock(path);
 
             const Json& entry = index["figures"][figure.file];
@@ -467,8 +450,11 @@ namespace collection
                 index["figures"][partner]["partner"].AsString() == figure.file)
             {
                 FigureData other;
-                const Toy* otherToy = LoadDump(Directory(path) + "/" + partner, other) ? catalogue.Find(figures::ToyType(other)) : nullptr;
-                if (otherToy != nullptr && otherToy->category == (figure.IsSwapTop() ? Category::SwapBottom : Category::SwapTop))
+                const Toy* otherToy = LoadDump(Directory(path) + "/" + partner, other)
+                                          ? catalogue.Find(figures::ToyType(other))
+                                          : nullptr;
+                if (otherToy != nullptr &&
+                    otherToy->category == (figure.IsSwapTop() ? Category::SwapBottom : Category::SwapTop))
                     figure.partner = partner;
             }
             return true;
@@ -507,8 +493,8 @@ namespace collection
                 return false;
             if (!text.empty())
             {
-                std::string haystack = Lower(figure.variantInfo.name + "\n" + figure.label + "\n" + figure.edition + "\n"
-                    + figures::NicknameUtf8(figure.stats) + "\n" + figure.file);
+                std::string haystack = Lower(figure.variantInfo.name + "\n" + figure.label + "\n" + figure.edition +
+                                             "\n" + figures::NicknameUtf8(figure.stats) + "\n" + figure.file);
                 if (haystack.find(text) == std::string::npos)
                     return false;
             }
@@ -595,7 +581,8 @@ namespace collection
         const Catalogue& catalogue = Catalogue::Get();
         const Toy* top = catalogue.Find(topType);
         const Toy* bottom = catalogue.Find(bottomType);
-        if (top == nullptr || bottom == nullptr || top->category != Category::SwapTop || bottom->category != Category::SwapBottom)
+        if (top == nullptr || bottom == nullptr || top->category != Category::SwapTop ||
+            bottom->category != Category::SwapBottom)
             return {};
         SwapperPaths made;
         // No version given: the standard swapper, each half under the id it is sold with.
@@ -632,7 +619,8 @@ namespace collection
         int created = 0;
         for (uint16_t type : types)
         {
-            if (std::find(present.begin(), present.end(), type) == present.end() && !CreateUnmarked(type, 0, {}).empty())
+            if (std::find(present.begin(), present.end(), type) == present.end() &&
+                !CreateUnmarked(type, 0, {}).empty())
                 created++;
         }
         return created;
@@ -847,7 +835,8 @@ namespace collection
             for (size_t block = 4; block < FigureBlockCount; block++)
             {
                 if (block % 4 != 3)
-                    memcpy(copy.data() + block * FigureBlockSize, plain.data() + block * FigureBlockSize, FigureBlockSize);
+                    memcpy(
+                        copy.data() + block * FigureBlockSize, plain.data() + block * FigureBlockSize, FigureBlockSize);
             }
             size_t dot = figure.file.find_last_of('.');
             std::string stem = dot == std::string::npos ? figure.file : figure.file.substr(0, dot);
@@ -889,7 +878,8 @@ namespace collection
         // Whether the half or its partner is in use by another process (the reason in `error`).
         bool InUse(const Figure& figure, std::string* error)
         {
-            for (const std::string& path : { figure.path, figure.partner.empty() ? std::string() : PathOf(figure.partner) })
+            for (const std::string& path :
+                { figure.path, figure.partner.empty() ? std::string() : PathOf(figure.partner) })
             {
                 LockInfo lock = GetLock(path);
                 if (!path.empty() && lock.Busy())
@@ -1027,7 +1017,8 @@ namespace collection
         if (topPart.empty())
             topPart = topPlain;
         size_t bottomLastSpace = bottomPlain.find_last_of(' ');
-        std::string bottomLast = bottomLastSpace == std::string::npos ? bottomPlain : bottomPlain.substr(bottomLastSpace + 1);
+        std::string bottomLast =
+            bottomLastSpace == std::string::npos ? bottomPlain : bottomPlain.substr(bottomLastSpace + 1);
         return topPart + " " + bottomLast;
     }
 
@@ -1082,9 +1073,9 @@ namespace collection
 
     bool UntouchedStarter(const Figure& figure)
     {
-        return figure.state == figures::AreaState::Blank && figure.variant == 0 && figure.toy != nullptr
-            && figure.file == DefaultName(figure.type, 0) && figure.origin.empty() && figure.label.empty()
-            && !figure.favourite && figure.edition.empty();
+        return figure.state == figures::AreaState::Blank && figure.variant == 0 && figure.toy != nullptr &&
+               figure.file == DefaultName(figure.type, 0) && figure.origin.empty() && figure.label.empty() &&
+               !figure.favourite && figure.edition.empty();
     }
 
     std::vector<std::string> UntouchedStarters()
@@ -1109,14 +1100,12 @@ namespace collection
         }
         UpdateIndex([](Json& index) { index.Set("tidy_done", true); });
         if (moved != 0)
-            fprintf(stderr, "[collection] tidy: %d never-played figure(s) the game had made moved to the trash\n", moved);
+            fprintf(
+                stderr, "[collection] tidy: %d never-played figure(s) the game had made moved to the trash\n", moved);
         return moved;
     }
 
-    bool TidyDone()
-    {
-        return LoadJson(PathOf(IndexName))["tidy_done"].AsBool();
-    }
+    bool TidyDone() { return LoadJson(PathOf(IndexName))["tidy_done"].AsBool(); }
 
     // --- Trash -----------------------------------------------------------------------------------------------------------
 
@@ -1181,9 +1170,11 @@ namespace collection
         {
             std::string path = Folder() + "/trash/" + id;
             if (Exists(path))
-                entries.push_back({ id, item["file"].AsString(), item["deleted"].AsString(), item["reason"].AsString(), path });
+                entries.push_back(
+                    { id, item["file"].AsString(), item["deleted"].AsString(), item["reason"].AsString(), path });
         }
-        std::stable_sort(entries.begin(), entries.end(), [](const TrashEntry& a, const TrashEntry& b) { return a.deleted > b.deleted; });
+        std::stable_sort(entries.begin(), entries.end(),
+            [](const TrashEntry& a, const TrashEntry& b) { return a.deleted > b.deleted; });
         return entries;
     }
 
@@ -1291,7 +1282,8 @@ namespace collection
                 report.duplicates++;
                 continue;
             }
-            std::string name = FreeName(SafeName(IsDumpName(FileName(file)) ? FileName(file) : FileName(file) + ".sky"));
+            std::string name =
+                FreeName(SafeName(IsDumpName(FileName(file)) ? FileName(file) : FileName(file) + ".sky"));
             SDL_CreateDirectory(Folder().c_str());
             if (!SDL_SaveFile(PathOf(name).c_str(), bytes.data(), bytes.size()))
             {
@@ -1444,7 +1436,8 @@ namespace collection
                 return seats;
             for (const Seat& seat : g->seats)
             {
-                if (seat.player > 0 && std::find(seat.accepts.begin(), seat.accepts.end(), figure.toy->category) != seat.accepts.end())
+                if (seat.player > 0 &&
+                    std::find(seat.accepts.begin(), seat.accepts.end(), figure.toy->category) != seat.accepts.end())
                     seats.push_back(seat.id);
             }
             return seats;
@@ -1486,9 +1479,11 @@ namespace collection
             std::erase(skipped, file);
             if (on)
             {
-                auto here = std::find_if(places.begin(), places.end(), [&](const WheelPlace& p) { return p.file == file; });
+                auto here =
+                    std::find_if(places.begin(), places.end(), [&](const WheelPlace& p) { return p.file == file; });
                 if (here == places.end())
-                    here = std::find_if(places.begin(), places.end(), [](const WheelPlace& p) { return p.file.empty(); });
+                    here =
+                        std::find_if(places.begin(), places.end(), [](const WheelPlace& p) { return p.file.empty(); });
                 if (here == places.end())
                     here = std::find_if(places.begin(), places.end(), [](const WheelPlace& p) { return !p.pinned; });
                 if (here == places.end())
@@ -1539,8 +1534,8 @@ namespace collection
     namespace
     {
         // The elements in the order the games' menus show them.
-        constexpr Element ElementOrder[] = { Element::Magic, Element::Earth, Element::Water, Element::Air, Element::Fire,
-            Element::Life, Element::Undead, Element::Tech, Element::Light, Element::Dark };
+        constexpr Element ElementOrder[] = { Element::Magic, Element::Earth, Element::Water, Element::Air,
+            Element::Fire, Element::Life, Element::Undead, Element::Tech, Element::Light, Element::Dark };
 
         // Variants and other editions of a character sort together: "Legendary Spyro" next to "Spyro".
         std::string CharacterKey(const Figure& figure)
@@ -1558,7 +1553,9 @@ namespace collection
     std::vector<Section> Group(const std::vector<Figure>& list, GroupBy group, OrderBy order, const std::string& game)
     {
         const Catalogue& catalogue = Catalogue::Get();
-        auto foreign = [&](const Figure& f) { return f.toy != nullptr && !game.empty() && !catalogue.Accepts(game, f.type); };
+        auto foreign = [&](const Figure& f) {
+            return f.toy != nullptr && !game.empty() && !catalogue.Accepts(game, f.type);
+        };
 
         // Order inside a section: characters by the chosen key (a character's best member), the plain toy first.
         std::map<std::string, std::string> recentOf; // character key -> its newest use (text compares as time)
@@ -1589,7 +1586,8 @@ namespace collection
                 }
                 return ia < ib; // List's order: category, element, toy type
             }
-            if ((a.toy != nullptr && a.toy->edition != VariantKind::Base) != (b.toy != nullptr && b.toy->edition != VariantKind::Base))
+            if ((a.toy != nullptr && a.toy->edition != VariantKind::Base) !=
+                (b.toy != nullptr && b.toy->edition != VariantKind::Base))
                 return b.toy != nullptr && b.toy->edition != VariantKind::Base;
             if (a.type != b.type || a.variant != b.variant)
                 return a.type != b.type ? a.type < b.type : a.variant < b.variant;
@@ -1599,7 +1597,8 @@ namespace collection
         };
 
         std::vector<Section> sections;
-        auto add = [&](Section::Kind kind, int value, const std::string& gameId, std::vector<size_t> items, bool sort = true) {
+        auto add = [&](Section::Kind kind, int value, const std::string& gameId, std::vector<size_t> items,
+                       bool sort = true) {
             if (items.empty())
                 return;
             if (sort)
@@ -1891,7 +1890,8 @@ namespace collection
             entry.tag = SeatTag(game.seats[i], french);
             entry.seatName = SeatName(game.seats[i], french);
             entry.path = paths[i];
-            entry.name = i < names.size() && !names[i].empty() ? names[i] : paths[i].substr(paths[i].find_last_of("/\\") + 1);
+            entry.name =
+                i < names.size() && !names[i].empty() ? names[i] : paths[i].substr(paths[i].find_last_of("/\\") + 1);
             entries.push_back(std::move(entry));
         }
         return entries;

@@ -68,20 +68,28 @@ namespace
     };
 
     constexpr ConsoleLanguage ConsoleLanguages[] = {
-        { "en", 1, CountryUnitedStates }, { "ja", 2, CountryUnitedStates }, { "de", 3, CountryUnitedStates },
-        { "fr", 4, CountryUnitedStates }, { "es", 5, CountryUnitedStates }, { "it", 6, CountryUnitedStates },
-        { "ko", 7, CountryUnitedStates }, { "zh-tw", 8, CountryUnitedStates }, { "pt", 9, CountryUnitedStates },
-        { "zh-cn", 10, CountryUnitedStates }, { "pl", 11, CountryUnitedStates }, { "ru", 12, CountryUnitedStates },
-        { "nl", 1, 74 /* Netherlands */ }, { "sv", 1, 90 /* Sweden */ }, { "no", 1, 75 /* Norway */ },
-        { "da", 1, 25 /* Denmark */ }, { "fi", 1, 32 /* Finland */ },
+        { "en", 1, CountryUnitedStates },
+        { "ja", 2, CountryUnitedStates },
+        { "de", 3, CountryUnitedStates },
+        { "fr", 4, CountryUnitedStates },
+        { "es", 5, CountryUnitedStates },
+        { "it", 6, CountryUnitedStates },
+        { "ko", 7, CountryUnitedStates },
+        { "zh-tw", 8, CountryUnitedStates },
+        { "pt", 9, CountryUnitedStates },
+        { "zh-cn", 10, CountryUnitedStates },
+        { "pl", 11, CountryUnitedStates },
+        { "ru", 12, CountryUnitedStates },
+        { "nl", 1, 74 /* Netherlands */ },
+        { "sv", 1, 90 /* Sweden */ },
+        { "no", 1, 75 /* Norway */ },
+        { "da", 1, 25 /* Denmark */ },
+        { "fi", 1, 32 /* Finland */ },
     };
 
     const ConsoleLanguage* g_language = &ConsoleLanguages[0]; // English
 
-    uint32_t Language()
-    {
-        return g_language->language;
-    }
+    uint32_t Language() { return g_language->language; }
 
     void ReportUnknownSetting(uint16_t category, uint16_t setting)
     {
@@ -104,7 +112,10 @@ PPC_FUNC(__imp__ExGetXConfigSetting)
 
     uint8_t value[4];
     uint16_t size = 4;
-    auto store32 = [&](uint32_t v) { v = ByteSwap(v); memcpy(value, &v, 4); };
+    auto store32 = [&](uint32_t v) {
+        v = ByteSwap(v);
+        memcpy(value, &v, 4);
+    };
 
     if (category == UserCategory && setting == UserTimeZoneBias)
         store32(uint32_t(TimeZoneBias()));
@@ -116,8 +127,9 @@ PPC_FUNC(__imp__ExGetXConfigSetting)
         strftime(name, sizeof(name), "%Z", localtime(&now));
         memcpy(value, name, 4);
     }
-    else if (category == UserCategory && (setting == UserTimeZoneStandardDate || setting == UserTimeZoneDaylightDate
-        || setting == UserTimeZoneStandardBias || setting == UserTimeZoneDaylightBias || setting == UserRetailFlags))
+    else if (category == UserCategory && (setting == UserTimeZoneStandardDate || setting == UserTimeZoneDaylightDate ||
+                                             setting == UserTimeZoneStandardBias ||
+                                             setting == UserTimeZoneDaylightBias || setting == UserRetailFlags))
         store32(0);
     else if (category == SecuredCategory && setting == SecuredAvRegion)
         store32(AvRegionNorthAmerica);
@@ -135,7 +147,8 @@ PPC_FUNC(__imp__ExGetXConfigSetting)
     else
     {
         ReportUnknownSetting(category, setting);
-        ctx.r3.u64 = category == SecuredCategory || category == UserCategory ? StatusInvalidParameter2 : StatusInvalidParameter1;
+        ctx.r3.u64 =
+            category == SecuredCategory || category == UserCategory ? StatusInvalidParameter2 : StatusInvalidParameter1;
         return;
     }
 
@@ -164,27 +177,12 @@ bool SetTextLanguage(std::string_view code)
     return false;
 }
 
-std::string_view TextLanguage()
-{
-    return g_language->code;
-}
+std::string_view TextLanguage() { return g_language->code; }
 
-PPC_FUNC(__imp__XGetAVPack)
-{
-    ctx.r3.u64 = AvPackHd;
-}
+PPC_FUNC(__imp__XGetAVPack) { ctx.r3.u64 = AvPackHd; }
 
-PPC_FUNC(__imp__XGetGameRegion)
-{
-    ctx.r3.u64 = GameRegionNorthAmerica;
-}
+PPC_FUNC(__imp__XGetGameRegion) { ctx.r3.u64 = GameRegionNorthAmerica; }
 
-PPC_FUNC(__imp__XGetLanguage)
-{
-    ctx.r3.u64 = Language();
-}
+PPC_FUNC(__imp__XGetLanguage) { ctx.r3.u64 = Language(); }
 
-PPC_FUNC(__imp__XamGetSystemVersion)
-{
-    ctx.r3.u64 = SystemVersion;
-}
+PPC_FUNC(__imp__XamGetSystemVersion) { ctx.r3.u64 = SystemVersion; }

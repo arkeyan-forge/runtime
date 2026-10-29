@@ -26,7 +26,15 @@ namespace collection
 
     // How the shelf is ordered. Recent is the shelf of old: favourites first, then what the game took last, then by
     // element; the others ignore favourites.
-    enum class Sort { Recent, Name, Level, Element, Game, Count };
+    enum class Sort
+    {
+        Recent,
+        Name,
+        Level,
+        Element,
+        Game,
+        Count
+    };
     const char* SortId(Sort sort);          // "recent", "name", "level", "element", "game"
     Sort ParseSort(const std::string& id);  // Recent when unknown
     // The sort's name in the apps' menus and tags ("Recent" / "Récents"), the same words in both apps.

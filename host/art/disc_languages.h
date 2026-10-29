@@ -11,7 +11,8 @@ namespace art
 {
     struct DiscLanguages
     {
-        std::vector<std::string> text;  // settings codes (`en fr de es es-419 it nl pt sv no da fi`), in that order; empty: unknown
+        std::vector<std::string>
+            text;  // settings codes (`en fr de es es-419 it nl pt sv no da fi`), in that order; empty: unknown
         std::vector<std::string> voice; // same, for the spoken lines
     };
 

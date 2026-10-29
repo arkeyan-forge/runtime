@@ -78,9 +78,20 @@ public:
     // Path of the figure in `slot`; empty if free or kept in memory only.
     std::string SlotPath(int slot);
     // The last `C r g b` the title sent, and how many it sent (Giants fades the portal's light all the time).
-    struct Light { uint8_t r = 0, g = 0, b = 0; };
-    Light LightColor() { std::lock_guard lock(m_mutex); return m_light; }
-    uint64_t LightCommands() { std::lock_guard lock(m_mutex); return m_lightCommands; }
+    struct Light
+    {
+        uint8_t r = 0, g = 0, b = 0;
+    };
+    Light LightColor()
+    {
+        std::lock_guard lock(m_mutex);
+        return m_light;
+    }
+    uint64_t LightCommands()
+    {
+        std::lock_guard lock(m_mutex);
+        return m_lightCommands;
+    }
 
 private:
     using Report = std::array<uint8_t, PortalReportSize>;

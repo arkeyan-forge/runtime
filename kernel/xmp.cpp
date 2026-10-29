@@ -52,10 +52,7 @@ namespace
 }
 
 // XMsgInProcessCall(app, message, buffer, buffer length)
-PPC_FUNC(__imp__XMsgInProcessCall)
-{
-    ctx.r3.u64 = DispatchMessage(ctx.r3.u32, ctx.r4.u32, ctx.r5.u32);
-}
+PPC_FUNC(__imp__XMsgInProcessCall) { ctx.r3.u64 = DispatchMessage(ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
 
 // XMsgStartIORequestEx(app, message, overlapped, buffer, buffer length, unknown)
 PPC_FUNC(__imp__XMsgStartIORequestEx)

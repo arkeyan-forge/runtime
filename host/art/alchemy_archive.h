@@ -76,10 +76,11 @@ namespace art::alchemy
 
         struct Picture
         {
-            std::string name;     // the source path ("levels/includes/.../portraits/cynder.png"; v7: the .tga it was made from); empty in streamed .arc files
+            std::string
+                name; // the source path ("levels/includes/.../portraits/cynder.png"; v7: the .tga it was made from); empty in streamed .arc files
             uint32_t width = 0, height = 0;
-            uint32_t format = 0;  // the format's hash (an external id); see TextureFormatOf
-            uint64_t object = 0;  // file offset of the igImage2
+            uint32_t format = 0; // the format's hash (an external id); see TextureFormatOf
+            uint64_t object = 0; // file offset of the igImage2
         };
         std::vector<Picture> Pictures() const;
         // The picture's pixel bytes as stored (tiled, big-endian words); empty if they can't be found.

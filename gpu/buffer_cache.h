@@ -26,7 +26,8 @@ namespace gpu
     // Vertex data is swapped 8-in-32.
     BufferRange CacheVertices(const void* data, uint32_t guestAddress, uint32_t bytes);
     // 16-bit indices, swapped 8-in-16; also gives the smallest and largest index of the range.
-    BufferRange CacheIndices(const void* data, uint32_t guestAddress, uint32_t bytes, uint32_t& minIndex, uint32_t& maxIndex);
+    BufferRange CacheIndices(
+        const void* data, uint32_t guestAddress, uint32_t bytes, uint32_t& minIndex, uint32_t& maxIndex);
 
     // Called by gpu::Present, under the producer lock like the two above, at the end of each producer frame (the frames
     // these calls belong to, worker.cpp): frees what the GPU no longer needs and evicts for space. The GPU has finished

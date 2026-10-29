@@ -53,7 +53,6 @@ namespace plume
 #endif
 }
 
-
 namespace
 {
 #if defined(SSA_METAL)
@@ -80,10 +79,7 @@ namespace gpu::detail
     std::unique_ptr<Context> g_context;
     std::recursive_mutex g_mutex;
 
-    uint64_t AlignUp(uint64_t value, uint64_t alignment)
-    {
-        return (value + alignment - 1) / alignment * alignment;
-    }
+    uint64_t AlignUp(uint64_t value, uint64_t alignment) { return (value + alignment - 1) / alignment * alignment; }
 
     void Step(const char* what)
     {
@@ -104,10 +100,7 @@ namespace gpu::detail
 #endif
     }
 
-    bool DeviceLost()
-    {
-        return g_context != nullptr && g_context->lost;
-    }
+    bool DeviceLost() { return g_context != nullptr && g_context->lost; }
 
     void CheckDeviceLost()
     {
@@ -264,7 +257,8 @@ namespace gpu::detail
         DrawFrameDone();
     }
 
-    void Transition(RenderCommandList& list, const gpu::Texture& texture, RenderTextureLayout layout, RenderBarrierStages stages)
+    void Transition(
+        RenderCommandList& list, const gpu::Texture& texture, RenderTextureLayout layout, RenderBarrierStages stages)
     {
         if (texture.layout == layout)
             return;
@@ -281,8 +275,9 @@ namespace gpu::detail
             if (c.staging != nullptr)
                 c.retiredStaging.push_back(std::move(c.staging));
             c.stagingCapacity = std::max({ size, c.stagingCapacity * 2, MinStagingSize });
-            c.staging = c.device->createBuffer(RenderBufferDesc::UploadBuffer(c.stagingCapacity,
-                RenderBufferFlag::VERTEX | RenderBufferFlag::INDEX | RenderBufferFlag::CONSTANT | RenderBufferFlag::DEVICE_ADDRESSABLE));
+            c.staging = c.device->createBuffer(RenderBufferDesc::UploadBuffer(
+                c.stagingCapacity, RenderBufferFlag::VERTEX | RenderBufferFlag::INDEX | RenderBufferFlag::CONSTANT |
+                                       RenderBufferFlag::DEVICE_ADDRESSABLE));
             offset = 0;
         }
         c.stagingUsed = offset + size;
@@ -306,15 +301,19 @@ namespace
         std::span<const std::pair<const char*, std::span<const uint8_t>>> blobs;
 #if defined(_WIN32)
         static const std::pair<const char*, std::span<const uint8_t>> dxil[] = {
-            { "PresentVS", g_presentPresentVSDxil }, { "PresentPS", g_presentPresentPSDxil }, { "ReadbackCS", g_presentReadbackCSDxil },
-            { "ReadbackRawCS", g_presentReadbackRawCSDxil }, { "ResolveDepthPS", g_presentResolveDepthPSDxil }, { "OverlayPS", g_presentOverlayPSDxil } };
+            { "PresentVS", g_presentPresentVSDxil }, { "PresentPS", g_presentPresentPSDxil },
+            { "ReadbackCS", g_presentReadbackCSDxil }, { "ReadbackRawCS", g_presentReadbackRawCSDxil },
+            { "ResolveDepthPS", g_presentResolveDepthPSDxil }, { "OverlayPS", g_presentOverlayPSDxil }
+        };
         if (format == RenderShaderFormat::DXIL)
             blobs = dxil;
 #endif
 #if !defined(PLUME_D3D12_COREWINDOW)
         static const std::pair<const char*, std::span<const uint8_t>> spirv[] = {
-            { "PresentVS", g_presentPresentVSSpirv }, { "PresentPS", g_presentPresentPSSpirv }, { "ReadbackCS", g_presentReadbackCSSpirv },
-            { "ReadbackRawCS", g_presentReadbackRawCSSpirv }, { "ResolveDepthPS", g_presentResolveDepthPSSpirv }, { "OverlayPS", g_presentOverlayPSSpirv } };
+            { "PresentVS", g_presentPresentVSSpirv }, { "PresentPS", g_presentPresentPSSpirv },
+            { "ReadbackCS", g_presentReadbackCSSpirv }, { "ReadbackRawCS", g_presentReadbackRawCSSpirv },
+            { "ResolveDepthPS", g_presentResolveDepthPSSpirv }, { "OverlayPS", g_presentOverlayPSSpirv }
+        };
         if (format == RenderShaderFormat::SPIRV)
             blobs = spirv;
 #endif
@@ -343,7 +342,8 @@ namespace
         c.readbackRawCS = CreatePresentShader("ReadbackRawCS");
         c.resolveDepthPS = CreatePresentShader("ResolveDepthPS");
         c.overlayPS = CreatePresentShader("OverlayPS");
-        if (c.presentVS == nullptr || c.presentPS == nullptr || c.readbackCS == nullptr || c.readbackRawCS == nullptr || c.resolveDepthPS == nullptr || c.overlayPS == nullptr)
+        if (c.presentVS == nullptr || c.presentPS == nullptr || c.readbackCS == nullptr || c.readbackRawCS == nullptr ||
+            c.resolveDepthPS == nullptr || c.overlayPS == nullptr)
             return false;
 
         // Present: set 0 = { image texture, immutable linear clamp sampler }.
@@ -391,14 +391,16 @@ namespace
         layoutBuilder.addDescriptorSet(setBuilder);
         layoutBuilder.end();
         c.readbackLayout = layoutBuilder.create(c.device.get());
-        c.readbackPipeline = c.device->createComputePipeline(RenderComputePipelineDesc(c.readbackLayout.get(), c.readbackCS.get(), 8, 8, 1));
+        c.readbackPipeline = c.device->createComputePipeline(
+            RenderComputePipelineDesc(c.readbackLayout.get(), c.readbackCS.get(), 8, 8, 1));
         // Raw read-back: the same set, push constants (binding 0, space 1) = the step.
         layoutBuilder.begin();
         layoutBuilder.addDescriptorSet(setBuilder);
         layoutBuilder.addPushConstant(0, 1, 8, RenderShaderStageFlag::COMPUTE);
         layoutBuilder.end();
         c.rawReadbackLayout = layoutBuilder.create(c.device.get());
-        c.readbackRawPipeline = c.device->createComputePipeline(RenderComputePipelineDesc(c.rawReadbackLayout.get(), c.readbackRawCS.get(), 8, 8, 1));
+        c.readbackRawPipeline = c.device->createComputePipeline(
+            RenderComputePipelineDesc(c.rawReadbackLayout.get(), c.readbackRawCS.get(), 8, 8, 1));
 
         // Depth resolve: set 0 = { depth texture }, push constants (binding 0, space 1) = the source offset.
         setBuilder.begin();
@@ -413,7 +415,8 @@ namespace
         pipelineDesc.pixelShader = c.resolveDepthPS.get();
         pipelineDesc.renderTargetFormat[0] = RenderFormat::R32_FLOAT;
         c.resolveDepthPipeline = c.device->createGraphicsPipeline(pipelineDesc);
-        return c.presentPipeline != nullptr && c.overlayPipeline != nullptr && c.readbackPipeline != nullptr && c.readbackRawPipeline != nullptr && c.resolveDepthPipeline != nullptr;
+        return c.presentPipeline != nullptr && c.overlayPipeline != nullptr && c.readbackPipeline != nullptr &&
+               c.readbackRawPipeline != nullptr && c.resolveDepthPipeline != nullptr;
     }
 
     // The native surface the backend presents to, when the window has one (not with SDL's offscreen driver).
@@ -437,7 +440,8 @@ namespace
             uint32_t(width), uint32_t(height) };
         return renderWindow.coreWindow != nullptr;
 #elif defined(_WIN32)
-        renderWindow = static_cast<HWND>(SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
+        renderWindow =
+            static_cast<HWND>(SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
         return renderWindow != nullptr;
 #else
         // PLUME_SDL3_VULKAN_ENABLED: plume creates the surface through SDL.
@@ -479,7 +483,9 @@ namespace
         Context& c = *g_context;
         WaitForSubmissions();
         c.offscreenFramebuffer.reset();
-        c.offscreen.desc = { .width = width, .height = height, .format = OutputFormat, .usage = gpu::TextureUsage::RenderTarget };
+        c.offscreen.desc = {
+            .width = width, .height = height, .format = OutputFormat, .usage = gpu::TextureUsage::RenderTarget
+        };
         c.offscreen.texture = c.device->createTexture(RenderTextureDesc::ColorTarget(width, height, OutputFormat));
         c.offscreen.layout = RenderTextureLayout::UNKNOWN;
 
@@ -495,7 +501,8 @@ namespace
         float scale = std::min(float(outputWidth) / image.width, float(outputHeight) / image.height);
         uint32_t width = std::clamp(uint32_t(std::lround(image.width * scale)), 1u, outputWidth);
         uint32_t height = std::clamp(uint32_t(std::lround(image.height * scale)), 1u, outputHeight);
-        return RenderViewport(float((outputWidth - width) / 2), float((outputHeight - height) / 2), float(width), float(height));
+        return RenderViewport(
+            float((outputWidth - width) / 2), float((outputHeight - height) / 2), float(width), float(height));
     }
 }
 
@@ -510,9 +517,11 @@ namespace
         unsigned long long v = description.driverVersion;
         char text[64] = "n/a";
         if (format == RenderShaderFormat::DXIL)
-            snprintf(text, sizeof(text), "%llu.%llu.%llu.%llu", v >> 48, v >> 32 & 0xFFFF, v >> 16 & 0xFFFF, v & 0xFFFF);
+            snprintf(
+                text, sizeof(text), "%llu.%llu.%llu.%llu", v >> 48, v >> 32 & 0xFFFF, v >> 16 & 0xFFFF, v & 0xFFFF);
         else if (format == RenderShaderFormat::SPIRV && description.vendor == RenderDeviceVendor::NVIDIA)
-            snprintf(text, sizeof(text), "%llu.%llu.%llu.%llu", v >> 22 & 0x3FF, v >> 14 & 0xFF, v >> 6 & 0xFF, v & 0x3F);
+            snprintf(
+                text, sizeof(text), "%llu.%llu.%llu.%llu", v >> 22 & 0x3FF, v >> 14 & 0xFF, v >> 6 & 0xFF, v & 0x3F);
         else if (format == RenderShaderFormat::SPIRV)
             snprintf(text, sizeof(text), "%llu.%llu.%llu", v >> 22 & 0x3FF, v >> 12 & 0x3FF, v & 0xFFF);
         return text;
@@ -521,7 +530,8 @@ namespace
     // resolution_scale=auto: 2 only where the GPU is known to keep up at 2240x1408 (Apple silicon, discrete GPUs with
     // 2 GB or more), else 1. Integrated GPUs are fill-bound with the pixel count: a Radeon 840M (shared memory) lags at
     // x3, a little at x2, and is fine at x1.
-    uint32_t AutoScale(const RenderDeviceDescription& description, const RenderDeviceCapabilities& capabilities, const char*& why)
+    uint32_t AutoScale(
+        const RenderDeviceDescription& description, const RenderDeviceCapabilities& capabilities, const char*& why)
     {
         constexpr uint64_t MinimumVideoMemory = 2ull << 30;
         if (description.vendor == RenderDeviceVendor::APPLE)
@@ -542,9 +552,11 @@ namespace
         const RenderDeviceDescription& description = c.device->getDescription();
         const RenderDeviceCapabilities& capabilities = c.device->getCapabilities();
         static const char* const types[] = { "unknown type", "integrated", "discrete", "virtual", "CPU" };
-        fprintf(stderr, "[gpu] adapter %s: vendor %04X, %s%s, %llu MB of video memory, driver %s\n", description.name.c_str(),
-            unsigned(description.vendor), types[std::min<size_t>(size_t(description.type), std::size(types) - 1)],
-            capabilities.uma ? ", unified memory" : "", static_cast<unsigned long long>(description.dedicatedVideoMemory >> 20),
+        fprintf(stderr, "[gpu] adapter %s: vendor %04X, %s%s, %llu MB of video memory, driver %s\n",
+            description.name.c_str(), unsigned(description.vendor),
+            types[std::min<size_t>(size_t(description.type), std::size(types) - 1)],
+            capabilities.uma ? ", unified memory" : "",
+            static_cast<unsigned long long>(description.dedicatedVideoMemory >> 20),
             DriverVersion(description, c.renderInterface->getCapabilities().shaderFormat).c_str());
 
         if (window != nullptr)
@@ -554,7 +566,8 @@ namespace
             SDL_GetWindowSizeInPixels(window, &pixelWidth, &pixelHeight);
             const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
             fprintf(stderr, "[gpu] window %dx%d (%dx%d pixels), display %dx%d at %.0f%%\n", width, height, pixelWidth,
-                pixelHeight, mode != nullptr ? mode->w : 0, mode != nullptr ? mode->h : 0, 100.0 * SDL_GetWindowDisplayScale(window));
+                pixelHeight, mode != nullptr ? mode->w : 0, mode != nullptr ? mode->h : 0,
+                100.0 * SDL_GetWindowDisplayScale(window));
         }
 
         if (requestedScale == 0)
@@ -704,9 +717,11 @@ gpu::Texture* gpu::CreateTexture(const TextureDesc& desc)
     if (desc.cube)
         flags |= RenderTextureFlag::CUBE;
 
-    RenderTextureDesc textureDesc = desc.depth > 1
-        ? RenderTextureDesc::Texture3D(desc.width, desc.height, desc.depth, desc.mipLevels, desc.format, flags)
-        : RenderTextureDesc::Texture(RenderTextureDimension::TEXTURE_2D, desc.width, desc.height, 1, desc.mipLevels, desc.arraySize, desc.format, flags);
+    RenderTextureDesc textureDesc =
+        desc.depth > 1
+            ? RenderTextureDesc::Texture3D(desc.width, desc.height, desc.depth, desc.mipLevels, desc.format, flags)
+            : RenderTextureDesc::Texture(RenderTextureDimension::TEXTURE_2D, desc.width, desc.height, 1, desc.mipLevels,
+                  desc.arraySize, desc.format, flags);
 
     // Render and depth targets are committed resources: D3D12 then initializes their compression metadata. A placed one
     // must be cleared, discarded or copied to before any other use, or the GPU may read garbage metadata and fault (AMD).
@@ -716,11 +731,12 @@ gpu::Texture* gpu::CreateTexture(const TextureDesc& desc)
 #if defined(_WIN32)
     // D3D12: the big allocations, for the memory budget (the console renders at scale 2).
     uint64_t bytes = uint64_t(desc.width) * desc.height * desc.depth * desc.arraySize * RenderFormatSize(desc.format) /
-        (RenderFormatBlockWidth(desc.format) * RenderFormatBlockWidth(desc.format));
-    bool big = bytes >= (16u << 20) && g_context->renderInterface->getCapabilities().shaderFormat == RenderShaderFormat::DXIL;
+                     (RenderFormatBlockWidth(desc.format) * RenderFormatBlockWidth(desc.format));
+    bool big =
+        bytes >= (16u << 20) && g_context->renderInterface->getCapabilities().shaderFormat == RenderShaderFormat::DXIL;
     if (big)
-        fprintf(stderr, "[gpu] texture %ux%u x%u, format %d, %u mips: %.0f MB\n", desc.width, desc.height, desc.depth * desc.arraySize,
-            int(desc.format), desc.mipLevels, double(bytes) / (1 << 20));
+        fprintf(stderr, "[gpu] texture %ux%u x%u, format %d, %u mips: %.0f MB\n", desc.width, desc.height,
+            desc.depth * desc.arraySize, int(desc.format), desc.mipLevels, double(bytes) / (1 << 20));
 #endif
     if (!DeviceLost())
     {
@@ -734,10 +750,7 @@ gpu::Texture* gpu::CreateTexture(const TextureDesc& desc)
     return texture;
 }
 
-const gpu::TextureDesc& gpu::Desc(const Texture* texture)
-{
-    return texture->desc;
-}
+const gpu::TextureDesc& gpu::Desc(const Texture* texture) { return texture->desc; }
 
 void gpu::DestroyTexture(Texture* texture)
 {
@@ -833,10 +846,12 @@ void gpu::UploadTextureAsync(Texture* texture, uint32_t mipLevel, uint32_t array
     if (g_context == nullptr || texture == nullptr || DeviceLost() || !PlaceUpload(*texture, mipLevel, place))
         return;
     auto done = std::make_shared<std::atomic<bool>>(false);
-    RunTextureJob([fill = std::move(fill), place] {
-        fill(place.mapped, place.pitch);
-        place.buffer->unmap();
-    }, done);
+    RunTextureJob(
+        [fill = std::move(fill), place] {
+            fill(place.mapped, place.pitch);
+            place.buffer->unmap();
+        },
+        done);
     QueueUploadCopy(texture, mipLevel, arraySlice, place, done);
 }
 
@@ -885,7 +900,10 @@ namespace
         lock.unlock();
         static uint32_t timeouts = 0;
         if (++timeouts <= 5 || timeouts % 100 == 0)
-            fprintf(stderr, "[gpu] warning: the UI thread did not take the Present within 200 ms (%u times): presenting from this thread\n", timeouts);
+            fprintf(stderr,
+                "[gpu] warning: the UI thread did not take the Present within 200 ms (%u times): presenting from this "
+                "thread\n",
+                timeouts);
         return c.swapChain->present(index, &rendered, 1);
     }
 
@@ -928,10 +946,13 @@ namespace
             auto ms = [frames](uint64_t ns) { return double(ns) / 1e6 / double(frames); };
             double meanMs = double(sum) / 1e6 / double(frames);
             double accounted = ms(total.drawNs) + ms(total.gpuWaitNs) + ms(total.presentNs);
-            fprintf(stderr, "[perf] %.1f fps; frame median %.1f ms, p95 %.1f ms; per frame: %u draws taking %.1f ms, GPU wait %.1f ms, "
+            fprintf(stderr,
+                "[perf] %.1f fps; frame median %.1f ms, p95 %.1f ms; per frame: %u draws taking %.1f ms, GPU wait %.1f "
+                "ms, "
                 "present %.1f ms, %.1f command lists, rest (guest CPU, renderer, waits) %.1f ms\n",
-                double(frames) / seconds, double(frameNs[frames / 2]) / 1e6, double(frameNs[std::min(frames - 1, frames * 95 / 100)]) / 1e6,
-                uint32_t(total.draws / frames), ms(total.drawNs), ms(total.gpuWaitNs), ms(total.presentNs), double(total.flushes) / double(frames),
+                double(frames) / seconds, double(frameNs[frames / 2]) / 1e6,
+                double(frameNs[std::min(frames - 1, frames * 95 / 100)]) / 1e6, uint32_t(total.draws / frames),
+                ms(total.drawNs), ms(total.gpuWaitNs), ms(total.presentNs), double(total.flushes) / double(frames),
                 std::max(meanMs - accounted, 0.0));
             // GPU-bound: the frame rate stays under the limit while the GPU thread (or the caller, without it) spends
             // much of each frame waiting for the GPU or the present. A larger scale is then what costs: say so once,
@@ -939,9 +960,11 @@ namespace
             double fps = double(frames) / seconds, gpuShare = (ms(total.gpuWaitNs) + ms(total.presentNs)) / meanMs;
             slowWindows = fps < 0.9 * double(gpu::g_settings.fpsLimit) && gpuShare >= 0.4 ? slowWindows + 1 : 0;
             if (slowWindows == 3 && gpu::g_settings.resolutionScale > 1)
-                fprintf(stderr, "[perf] hint: the GPU limits the frame rate (%.1f fps, %.0f%% of each frame waiting for it) at "
-                    "resolution scale %u; resolution_scale=1 renders %u times fewer pixels\n", fps, 100.0 * gpuShare,
-                    gpu::g_settings.resolutionScale, gpu::g_settings.resolutionScale * gpu::g_settings.resolutionScale);
+                fprintf(stderr,
+                    "[perf] hint: the GPU limits the frame rate (%.1f fps, %.0f%% of each frame waiting for it) at "
+                    "resolution scale %u; resolution_scale=1 renders %u times fewer pixels\n",
+                    fps, 100.0 * gpuShare, gpu::g_settings.resolutionScale,
+                    gpu::g_settings.resolutionScale * gpu::g_settings.resolutionScale);
             // "rest" split: the renderer's own work on the game's render thread, the vblank wait, and what remains: the
             // guest's own code (game logic, its D3D calls) and the render thread's waits for the GPU thread or the guest.
             uint64_t times[uint32_t(gpu::FrameTime::Count)];
@@ -949,17 +972,24 @@ namespace
                 times[i] = g_frameTimes[i].exchange(0, std::memory_order_relaxed);
             double renderer = ms(times[uint32_t(gpu::FrameTime::Renderer)]);
             double vblank = ms(times[uint32_t(gpu::FrameTime::VblankWait)]);
-            double presentPath = WorkerRunning() ? double(workers.producerWaitNs) / 1e6 / double(frames) : ms(total.gpuWaitNs) + ms(total.presentNs);
-            fprintf(stderr, "[perf] render thread per frame: renderer %.1f ms (ring %.1f, textures %.1f, gpu::Draw %.1f), vblank wait %.1f ms, "
-                "%s %.1f ms, guest code and other %.1f ms\n", renderer, ms(times[uint32_t(gpu::FrameTime::Ring)]),
-                ms(times[uint32_t(gpu::FrameTime::Textures)]), ms(total.drawNs), vblank,
-                WorkerRunning() ? "waiting for the GPU thread" : "GPU wait and present", presentPath,
-                std::max(meanMs - renderer - vblank - presentPath, 0.0));
+            double presentPath = WorkerRunning() ? double(workers.producerWaitNs) / 1e6 / double(frames)
+                                                 : ms(total.gpuWaitNs) + ms(total.presentNs);
+            fprintf(stderr,
+                "[perf] render thread per frame: renderer %.1f ms (ring %.1f, textures %.1f, gpu::Draw %.1f), vblank "
+                "wait %.1f ms, "
+                "%s %.1f ms, guest code and other %.1f ms\n",
+                renderer, ms(times[uint32_t(gpu::FrameTime::Ring)]), ms(times[uint32_t(gpu::FrameTime::Textures)]),
+                ms(total.drawNs), vblank, WorkerRunning() ? "waiting for the GPU thread" : "GPU wait and present",
+                presentPath, std::max(meanMs - renderer - vblank - presentPath, 0.0));
             if (WorkerRunning())
-                fprintf(stderr, "[perf] GPU thread busy %.0f%% (recording, submitting, GPU waits, present); the game's render thread "
+                fprintf(stderr,
+                    "[perf] GPU thread busy %.0f%% (recording, submitting, GPU waits, present); the game's render "
+                    "thread "
                     "waited %.1f ms per frame for it; %u texture threads busy %.1f%% (%u decodes)\n",
-                    100.0 * double(workers.busyNs) / double(now - windowStart), double(workers.producerWaitNs) / 1e6 / double(frames),
-                    workers.textureThreads, 100.0 * double(workers.textureBusyNs) / double(now - windowStart) / std::max(workers.textureThreads, 1u),
+                    100.0 * double(workers.busyNs) / double(now - windowStart),
+                    double(workers.producerWaitNs) / 1e6 / double(frames), workers.textureThreads,
+                    100.0 * double(workers.textureBusyNs) / double(now - windowStart) /
+                        std::max(workers.textureThreads, 1u),
                     workers.textureJobs);
         }
         else
@@ -1015,7 +1045,8 @@ void gpu::detail::PresentNow(const Texture* image)
         if (c.swapChain->needsResize())
             ResizeSwapChain();
         // Minimised or zero-sized window: nothing to present to.
-        if (c.swapChain->isEmpty() || c.swapChainFramebuffers.empty() || !c.swapChain->acquireTexture(c.acquireSemaphore.get(), &imageIndex))
+        if (c.swapChain->isEmpty() || c.swapChainFramebuffers.empty() ||
+            !c.swapChain->acquireTexture(c.acquireSemaphore.get(), &imageIndex))
         {
             if (c.recording || c.submitted != 0)
                 Submit();
@@ -1030,8 +1061,9 @@ void gpu::detail::PresentNow(const Texture* image)
     else
     {
         int windowWidth, windowHeight;
-        if (c.window != nullptr && SDL_GetWindowSizeInPixels(c.window, &windowWidth, &windowHeight) && windowWidth > 0
-            && windowHeight > 0 && (uint32_t(windowWidth) != c.offscreen.desc.width || uint32_t(windowHeight) != c.offscreen.desc.height))
+        if (c.window != nullptr && SDL_GetWindowSizeInPixels(c.window, &windowWidth, &windowHeight) &&
+            windowWidth > 0 && windowHeight > 0 &&
+            (uint32_t(windowWidth) != c.offscreen.desc.width || uint32_t(windowHeight) != c.offscreen.desc.height))
             ResizeOffscreen(uint32_t(windowWidth), uint32_t(windowHeight));
         target = c.offscreen.texture.get();
         framebuffer = c.offscreenFramebuffer.get();
@@ -1107,10 +1139,7 @@ void gpu::detail::PresentNow(const Texture* image)
     LogPerf();
 }
 
-uint64_t gpu::FramesPresented()
-{
-    return g_framesPresented;
-}
+uint64_t gpu::FramesPresented() { return g_framesPresented; }
 
 void gpu::SetOverlay(const Texture* overlay)
 {
@@ -1135,7 +1164,8 @@ bool gpu::ReadbackOutput(std::vector<uint32_t>& rgba, uint32_t& width, uint32_t&
     return result;
 }
 
-bool gpu::ReadbackTexture(const Texture* texture, std::vector<uint32_t>& rgba, uint32_t& width, uint32_t& height, bool raw)
+bool gpu::ReadbackTexture(
+    const Texture* texture, std::vector<uint32_t>& rgba, uint32_t& width, uint32_t& height, bool raw)
 {
     ProducerLock producer;
     bool result = false;
@@ -1143,7 +1173,8 @@ bool gpu::ReadbackTexture(const Texture* texture, std::vector<uint32_t>& rgba, u
     return result;
 }
 
-bool gpu::detail::ReadbackNow(const Texture* texture, std::vector<uint32_t>& rgba, uint32_t& width, uint32_t& height, bool raw)
+bool gpu::detail::ReadbackNow(
+    const Texture* texture, std::vector<uint32_t>& rgba, uint32_t& width, uint32_t& height, bool raw)
 {
     std::lock_guard lock(g_mutex);
     Context& c = *g_context;
@@ -1155,7 +1186,8 @@ bool gpu::detail::ReadbackNow(const Texture* texture, std::vector<uint32_t>& rgb
     uint64_t size = uint64_t(width) * height * 4;
     if (c.readbackCapacity < size)
     {
-        c.readbackGpu = c.device->createBuffer(RenderBufferDesc::DefaultBuffer(size, RenderBufferFlag::STORAGE | RenderBufferFlag::UNORDERED_ACCESS));
+        c.readbackGpu = c.device->createBuffer(
+            RenderBufferDesc::DefaultBuffer(size, RenderBufferFlag::STORAGE | RenderBufferFlag::UNORDERED_ACCESS));
         c.readbackCpu = c.device->createBuffer(RenderBufferDesc::ReadbackBuffer(size));
         c.readbackCapacity = size;
         c.readbackSet->setBuffer(1, c.readbackGpu.get(), size);
@@ -1207,7 +1239,8 @@ void gpu::RequestReadback(const Texture* texture, uint32_t step, ReadbackConvert
         uint64_t size = std::max(uint64_t(slot.width) * slot.height * 4, uint64_t(4));
         if (slot.capacity < size)
         {
-            slot.gpu = c.device->createBuffer(RenderBufferDesc::DefaultBuffer(size, RenderBufferFlag::STORAGE | RenderBufferFlag::UNORDERED_ACCESS));
+            slot.gpu = c.device->createBuffer(
+                RenderBufferDesc::DefaultBuffer(size, RenderBufferFlag::STORAGE | RenderBufferFlag::UNORDERED_ACCESS));
             slot.cpu = c.device->createBuffer(RenderBufferDesc::ReadbackBuffer(size));
             slot.capacity = size;
             slot.set->setBuffer(1, slot.gpu.get(), size);
@@ -1243,10 +1276,7 @@ bool gpu::CollectReadback(std::vector<uint32_t>& data)
     return true;
 }
 
-bool gpu::detail::IsPresentThread()
-{
-    return g_hasPresentThread && std::this_thread::get_id() == g_presentThread;
-}
+bool gpu::detail::IsPresentThread() { return g_hasPresentThread && std::this_thread::get_id() == g_presentThread; }
 
 void gpu::detail::ServicePendingPresent()
 {

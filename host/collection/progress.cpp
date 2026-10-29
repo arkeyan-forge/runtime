@@ -101,8 +101,9 @@ namespace progress
 
     bool WritePlayTime(const fs::path& folder, const PlayTime& playTime)
     {
-        std::string text = "total=" + std::to_string(playTime.totalSeconds) + "\nlast_end=" + std::to_string(playTime.lastEnd) +
-            "\nsessions=" + std::to_string(playTime.sessions) + "\n";
+        std::string text = "total=" + std::to_string(playTime.totalSeconds) +
+                           "\nlast_end=" + std::to_string(playTime.lastEnd) +
+                           "\nsessions=" + std::to_string(playTime.sessions) + "\n";
         return Write(folder / PlayTimeFile, text);
     }
 

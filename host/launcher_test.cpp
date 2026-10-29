@@ -15,8 +15,15 @@ namespace
 {
     int g_failures = 0;
 
-#define EXPECT(condition) \
-    do { if (!(condition)) { fprintf(stderr, "FAIL line %d: %s\n", __LINE__, #condition); g_failures++; } } while (0)
+#define EXPECT(condition)                                                                                              \
+    do                                                                                                                 \
+    {                                                                                                                  \
+        if (!(condition))                                                                                              \
+        {                                                                                                              \
+            fprintf(stderr, "FAIL line %d: %s\n", __LINE__, #condition);                                               \
+            g_failures++;                                                                                              \
+        }                                                                                                              \
+    } while (0)
 
     const char* StatusName(GameSourceStatus status)
     {
@@ -44,8 +51,20 @@ namespace
         return check.status;
     }
 
-    void Put32LE(uint8_t* p, uint32_t v) { p[0] = uint8_t(v); p[1] = uint8_t(v >> 8); p[2] = uint8_t(v >> 16); p[3] = uint8_t(v >> 24); }
-    void Put32BE(uint8_t* p, uint32_t v) { p[0] = uint8_t(v >> 24); p[1] = uint8_t(v >> 16); p[2] = uint8_t(v >> 8); p[3] = uint8_t(v); }
+    void Put32LE(uint8_t* p, uint32_t v)
+    {
+        p[0] = uint8_t(v);
+        p[1] = uint8_t(v >> 8);
+        p[2] = uint8_t(v >> 16);
+        p[3] = uint8_t(v >> 24);
+    }
+    void Put32BE(uint8_t* p, uint32_t v)
+    {
+        p[0] = uint8_t(v >> 24);
+        p[1] = uint8_t(v >> 16);
+        p[2] = uint8_t(v >> 8);
+        p[3] = uint8_t(v);
+    }
 
     void WriteFile(const std::filesystem::path& path, const std::vector<uint8_t>& data)
     {
@@ -53,7 +72,8 @@ namespace
     }
 
     // Minimal XDVDFS image (plain layout: volume descriptor at sector 32) whose root holds one file.
-    void WriteDiscImage(const std::filesystem::path& path, const std::string& name, const std::vector<uint8_t>& file, uint32_t extraDeclaredSize = 0)
+    void WriteDiscImage(const std::filesystem::path& path, const std::string& name, const std::vector<uint8_t>& file,
+        uint32_t extraDeclaredSize = 0)
     {
         constexpr uint32_t Sector = 2048;
         std::vector<uint8_t> image(34 * Sector + file.size());
@@ -118,16 +138,18 @@ int main(int argc, char** argv)
     std::filesystem::create_directories(scratch);
     const GameInfo& game = *FindGame("ssa");
     using Clock = std::chrono::steady_clock;
-    auto milliseconds = [](Clock::time_point start)
-    {
+    auto milliseconds = [](Clock::time_point start) {
         return (long long)std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - start).count();
     };
 
     // FIPS 180-4 examples, covering one- and two-block padding.
-    auto sha256 = [](std::string_view text) { return Sha256Hex({ reinterpret_cast<const uint8_t*>(text.data()), text.size() }); };
+    auto sha256 = [](std::string_view text) {
+        return Sha256Hex({ reinterpret_cast<const uint8_t*>(text.data()), text.size() });
+    };
     EXPECT(sha256("") == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
     EXPECT(sha256("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
-    EXPECT(sha256("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq") == "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1");
+    EXPECT(sha256("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq") ==
+           "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1");
     EXPECT(sha256(std::string(1000000, 'a')) == "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0");
 
     printf("Game table: %zu game(s); \"ssa\" = %s, %zu release(s)\n", g_games.size(), game.name, game.releases.size());
@@ -149,7 +171,9 @@ int main(int argc, char** argv)
     EXPECT(isPng);
     if (isPng)
     {
-        auto be32 = [&](size_t offset) { return uint32_t(png[offset]) << 24 | png[offset + 1] << 16 | png[offset + 2] << 8 | png[offset + 3]; };
+        auto be32 = [&](size_t offset) {
+            return uint32_t(png[offset]) << 24 | png[offset + 1] << 16 | png[offset + 2] << 8 | png[offset + 3];
+        };
         printf("  XDBF title name \"%s\", icon PNG %ux%u (%zu bytes), read in %lld ms (kept in memory only)\n",
             metadata.name.c_str(), be32(16), be32(20), png.size(), milliseconds(start));
     }
@@ -167,8 +191,8 @@ int main(int argc, char** argv)
         transparent += logo[i] == 0 ? 1 : 0;
         opaque += logo[i] > 200 ? 1 : 0;
     }
-    printf("  skylanderslogo.dds 1024x512, %zu transparent and %zu opaque texels, decoded in %lld ms\n",
-        transparent, opaque, milliseconds(start));
+    printf("  skylanderslogo.dds 1024x512, %zu transparent and %zu opaque texels, decoded in %lld ms\n", transparent,
+        opaque, milliseconds(start));
     EXPECT(transparent > 1000);
     EXPECT(opaque > 1000);
     EXPECT(!LauncherAssets::DecodeFrontendTexture(startMenu, "missing.dds", 1024, 512, logo));
@@ -286,7 +310,8 @@ int main(int argc, char** argv)
     std::ifstream saved(settings);
     printf("%s", std::string(std::istreambuf_iterator<char>(saved), {}).c_str());
 
-    std::string handEdited = "# comment\r\n  [ ssa ]  \r\n\r\n iso = /a b/c.iso \r\n; other\r\nnot a pair\r\n[empty]\r\n";
+    std::string handEdited =
+        "# comment\r\n  [ ssa ]  \r\n\r\n iso = /a b/c.iso \r\n; other\r\nnot a pair\r\n[empty]\r\n";
     WriteFile(scratch / "edited.ini", { handEdited.begin(), handEdited.end() });
     LauncherConfig edited = LoadLauncherConfig((scratch / "edited.ini").string());
     EXPECT(edited.size() == 1 && edited["ssa"].size() == 1 && edited["ssa"]["iso"] == "/a b/c.iso");

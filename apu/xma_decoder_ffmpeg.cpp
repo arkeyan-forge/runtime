@@ -33,7 +33,8 @@ namespace
     constexpr uint32_t ChannelMaskStereo = 3;   // front left | front right
     constexpr uint32_t ChannelMaskMono = 4;     // front center
 
-    void CopyBits(uint8_t* destination, uint32_t destinationBit, const uint8_t* source, uint32_t sourceBit, uint32_t count)
+    void CopyBits(
+        uint8_t* destination, uint32_t destinationBit, const uint8_t* source, uint32_t sourceBit, uint32_t count)
     {
         for (uint32_t i = 0; i < count; i++)
         {
@@ -88,7 +89,8 @@ namespace
             if (result < 0)
             {
                 if (trace)
-                    fprintf(stderr, "[xma-dec] %p send failed %d bits=%u\n", static_cast<void*>(this), result, bitCount);
+                    fprintf(
+                        stderr, "[xma-dec] %p send failed %d bits=%u\n", static_cast<void*>(this), result, bitCount);
                 return false;
             }
 
@@ -97,12 +99,14 @@ namespace
             {
                 received++;
                 if (trace && m_frame->nb_samples != int(SamplesPerFrame))
-                    fprintf(stderr, "[xma-dec] %p frame of %d samples (seq %u)\n", static_cast<void*>(this), m_frame->nb_samples, m_sequence);
+                    fprintf(stderr, "[xma-dec] %p frame of %d samples (seq %u)\n", static_cast<void*>(this),
+                        m_frame->nb_samples, m_sequence);
                 Convert(samples, channels);
                 av_frame_unref(m_frame);
             }
             if (trace && received == 0)
-                fprintf(stderr, "[xma-dec] %p no frame out (seq %u bits=%u)\n", static_cast<void*>(this), m_sequence, bitCount);
+                fprintf(stderr, "[xma-dec] %p no frame out (seq %u bits=%u)\n", static_cast<void*>(this), m_sequence,
+                    bitCount);
             return true;
         }
 

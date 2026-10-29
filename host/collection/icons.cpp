@@ -22,10 +22,7 @@ namespace collection
             float x, y;
         };
 
-        float Circle(float x, float y, float cx, float cy, float r)
-        {
-            return std::hypot(x - cx, y - cy) - r;
-        }
+        float Circle(float x, float y, float cx, float cy, float r) { return std::hypot(x - cx, y - cy) - r; }
 
         float Box(float x, float y, float cx, float cy, float hw, float hh, float radius)
         {
@@ -75,7 +72,8 @@ namespace collection
         // Skylanders are shields: big for Giants, small for minis.
         Shape Shield(float scale, float dy)
         {
-            std::vector<Point> shield = { { -0.62f, -0.72f }, { 0, -0.86f }, { 0.62f, -0.72f }, { 0.62f, 0.05f }, { 0, 0.86f }, { -0.62f, 0.05f } };
+            std::vector<Point> shield = { { -0.62f, -0.72f }, { 0, -0.86f }, { 0.62f, -0.72f }, { 0.62f, 0.05f },
+                { 0, 0.86f }, { -0.62f, 0.05f } };
             for (Point& point : shield)
                 point = { point.x * scale, point.y * scale + dy };
             return [shield](float x, float y) { return Polygon(x, y, shield) - 0.04f; };
@@ -89,23 +87,29 @@ namespace collection
             {
             case Category::Core: return Shield(0.8f, 0);
             case Category::Giant: return Shield(1.0f, 0);
-            case Category::SwapTop: return [](float x, float y) { return std::max(Circle(x, y, 0, 0.1f, 0.72f), y - 0.1f); };
-            case Category::SwapBottom: return [](float x, float y) { return std::max(Circle(x, y, 0, -0.1f, 0.72f), -0.1f - y); };
-            case Category::TrapMaster: return [p = Regular(8, 0.76f, Pi / 8)](float x, float y) { return Polygon(x, y, p); };
+            case Category::SwapTop:
+                return [](float x, float y) { return std::max(Circle(x, y, 0, 0.1f, 0.72f), y - 0.1f); };
+            case Category::SwapBottom:
+                return [](float x, float y) { return std::max(Circle(x, y, 0, -0.1f, 0.72f), -0.1f - y); };
+            case Category::TrapMaster:
+                return [p = Regular(8, 0.76f, Pi / 8)](float x, float y) { return Polygon(x, y, p); };
             case Category::SuperCharger:
             {
-                std::vector<Point> bolt = { { 0.15f, -0.85f }, { -0.5f, 0.1f }, { -0.05f, 0.1f }, { -0.2f, 0.85f }, { 0.5f, -0.15f }, { 0.05f, -0.15f } };
+                std::vector<Point> bolt = { { 0.15f, -0.85f }, { -0.5f, 0.1f }, { -0.05f, 0.1f }, { -0.2f, 0.85f },
+                    { 0.5f, -0.15f }, { 0.05f, -0.15f } };
                 return [bolt](float x, float y) { return Polygon(x, y, bolt); };
             }
             case Category::Sensei: return [p = Star(5, 0.85f, 0.4f)](float x, float y) { return Polygon(x, y, p); };
             case Category::Trap:
             {
-                std::vector<Point> crystal = { { 0, -0.85f }, { 0.45f, -0.4f }, { 0.45f, 0.4f }, { 0, 0.85f }, { -0.45f, 0.4f }, { -0.45f, -0.4f } };
+                std::vector<Point> crystal = { { 0, -0.85f }, { 0.45f, -0.4f }, { 0.45f, 0.4f }, { 0, 0.85f },
+                    { -0.45f, 0.4f }, { -0.45f, -0.4f } };
                 return [crystal](float x, float y) { return Polygon(x, y, crystal); };
             }
             case Category::Villain:
             {
-                std::vector<Point> horns = { { -0.75f, -0.7f }, { -0.3f, -0.35f }, { 0.3f, -0.35f }, { 0.75f, -0.7f }, { 0.55f, 0.2f }, { 0, 0.8f }, { -0.55f, 0.2f } };
+                std::vector<Point> horns = { { -0.75f, -0.7f }, { -0.3f, -0.35f }, { 0.3f, -0.35f }, { 0.75f, -0.7f },
+                    { 0.55f, 0.2f }, { 0, 0.8f }, { -0.55f, 0.2f } };
                 return [horns](float x, float y) { return Polygon(x, y, horns); };
             }
             case Category::Vehicle:
@@ -121,8 +125,9 @@ namespace collection
             }
             case Category::Trophy:
             {
-                std::vector<Point> cup = { { -0.7f, -0.75f }, { 0.7f, -0.75f }, { 0.4f, 0.0f }, { 0.12f, 0.15f }, { 0.12f, 0.5f },
-                    { 0.45f, 0.55f }, { 0.45f, 0.8f }, { -0.45f, 0.8f }, { -0.45f, 0.55f }, { -0.12f, 0.5f }, { -0.12f, 0.15f }, { -0.4f, 0.0f } };
+                std::vector<Point> cup = { { -0.7f, -0.75f }, { 0.7f, -0.75f }, { 0.4f, 0.0f }, { 0.12f, 0.15f },
+                    { 0.12f, 0.5f }, { 0.45f, 0.55f }, { 0.45f, 0.8f }, { -0.45f, 0.8f }, { -0.45f, 0.55f },
+                    { -0.12f, 0.5f }, { -0.12f, 0.15f }, { -0.4f, 0.0f } };
                 return [cup](float x, float y) { return Polygon(x, y, cup); };
             }
             default: return [](float x, float y) { return Circle(x, y, 0, 0, 0.66f); };
@@ -138,7 +143,10 @@ namespace collection
             case VariantKind::EonsElite:
             case VariantKind::Event:
             case VariantKind::Gold: return [p = Star(5, 0.7f, 0.3f)](float x, float y) { return Polygon(x, y, p); };
-            case VariantKind::Dark: return [](float x, float y) { return std::max(Circle(x, y, 0, 0, 0.6f), -Circle(x, y, 0.3f, -0.25f, 0.5f)); };
+            case VariantKind::Dark:
+                return [](float x, float y) {
+                    return std::max(Circle(x, y, 0, 0, 0.6f), -Circle(x, y, 0.3f, -0.25f, 0.5f));
+                };
             case VariantKind::Crystal:
             case VariantKind::Metallic:
             case VariantKind::Silver:
@@ -148,11 +156,17 @@ namespace collection
                 return [gem](float x, float y) { return Polygon(x, y, gem); };
             }
             case VariantKind::Glow:
-            case VariantKind::LightCore: return [](float x, float y) { return std::max(Circle(x, y, 0, 0, 0.62f), -Circle(x, y, 0, 0, 0.32f)); };
+            case VariantKind::LightCore:
+                return [](float x, float y) { return std::max(Circle(x, y, 0, 0, 0.62f), -Circle(x, y, 0, 0, 0.32f)); };
             case VariantKind::Series:
-                return [](float x, float y) { return std::min(Circle(x, y, -0.3f, 0, 0.22f), Circle(x, y, 0.3f, 0, 0.22f)); };
+                return [](float x, float y) {
+                    return std::min(Circle(x, y, -0.3f, 0, 0.22f), Circle(x, y, 0.3f, 0, 0.22f));
+                };
             case VariantKind::Flocked:
-                return [](float x, float y) { return std::min({ Circle(x, y, -0.32f, 0.2f, 0.2f), Circle(x, y, 0.32f, 0.2f, 0.2f), Circle(x, y, 0, -0.3f, 0.2f) }); };
+                return [](float x, float y) {
+                    return std::min({ Circle(x, y, -0.32f, 0.2f, 0.2f), Circle(x, y, 0.32f, 0.2f, 0.2f),
+                        Circle(x, y, 0, -0.3f, 0.2f) });
+                };
             case VariantKind::Shape: return [p = Regular(6, 0.6f)](float x, float y) { return Polygon(x, y, p); };
             default: return [](float x, float y) { return Circle(x, y, 0, 0, 0.3f); };
             }
@@ -195,17 +209,16 @@ namespace collection
         }
 
         // Coverage of a pixel by a shape whose distance is `d` (in pixels).
-        float Coverage(float d)
-        {
-            return std::clamp(0.5f - d, 0.0f, 1.0f);
-        }
+        float Coverage(float d) { return std::clamp(0.5f - d, 0.0f, 1.0f); }
 
         // Paints `shape` (unit square mapped onto the square at x0, y0 of `extent` pixels): fill, then an outline.
-        void Paint(Image& image, float x0, float y0, float extent, const Shape& shape, Rgba fill, Rgba light, Rgba outline, float outlineWidth)
+        void Paint(Image& image, float x0, float y0, float extent, const Shape& shape, Rgba fill, Rgba light,
+            Rgba outline, float outlineWidth)
         {
             float scale = extent / 2; // pixels per unit
             int left = std::max(int(x0), 0), top = std::max(int(y0), 0);
-            int right = std::min(int(std::ceil(x0 + extent)), image.width), bottom = std::min(int(std::ceil(y0 + extent)), image.height);
+            int right = std::min(int(std::ceil(x0 + extent)), image.width),
+                bottom = std::min(int(std::ceil(y0 + extent)), image.height);
             for (int py = top; py < bottom; py++)
             {
                 for (int px = left; px < right; px++)
@@ -279,8 +292,8 @@ namespace collection
         {
             // A paw: the pad and four toes.
             float pad = std::min(Circle(x, y, 0, 0.36f, 0.36f), Box(x, y, 0, 0.44f, 0.46f, 0.26f, 0.24f));
-            return std::min({ pad, Circle(x, y, -0.62f, -0.12f, 0.18f), Circle(x, y, -0.25f, -0.5f, 0.2f), Circle(x, y, 0.25f, -0.5f, 0.2f),
-                Circle(x, y, 0.62f, -0.12f, 0.18f) });
+            return std::min({ pad, Circle(x, y, -0.62f, -0.12f, 0.18f), Circle(x, y, -0.25f, -0.5f, 0.2f),
+                Circle(x, y, 0.25f, -0.5f, 0.2f), Circle(x, y, 0.62f, -0.12f, 0.18f) });
         }
         default: return 1;
         }
@@ -294,13 +307,15 @@ namespace collection
         if (tile)
         {
             Rgba dark = Mix(base, black, 0.55f);
-            Paint(image, 0, 0, float(size), [](float x, float y) { return Box(x, y, 0, 0, 1, 1, 0.22f); }, dark, Mix(dark, base, 0.4f), dark, 0);
+            Paint(
+                image, 0, 0, float(size), [](float x, float y) { return Box(x, y, 0, 0, 1, 1, 0.22f); }, dark,
+                Mix(dark, base, 0.4f), dark, 0);
         }
         // A pale fill shows on the element-coloured disc the menus draw under it; the outline is the element darkened.
         Category category = toy != nullptr ? toy->category : Category::Core;
         float margin = size * 0.1f;
-        Paint(image, margin, margin, size - 2 * margin, CategoryShape(category), Mix(base, white, 0.55f), Mix(base, white, 0.85f),
-            Mix(base, black, 0.45f), std::max(1.5f, size / 40.0f));
+        Paint(image, margin, margin, size - 2 * margin, CategoryShape(category), Mix(base, white, 0.55f),
+            Mix(base, white, 0.85f), Mix(base, black, 0.45f), std::max(1.5f, size / 40.0f));
         return image;
     }
 
@@ -308,11 +323,13 @@ namespace collection
     {
         if (kind == VariantKind::Base || image.Empty())
             return;
-        float extent = image.width * 0.42f, x0 = image.width - extent - image.width * 0.02f, y0 = image.height - extent - image.height * 0.02f;
+        float extent = image.width * 0.42f, x0 = image.width - extent - image.width * 0.02f,
+              y0 = image.height - extent - image.height * 0.02f;
         Rgba color = FromRgb(VariantKindRgb(kind)), black = { 0, 0, 0, 1 }, white = { 1, 1, 1, 1 };
         float outline = std::max(1.5f, image.width / 48.0f);
-        Paint(image, x0, y0, extent, [](float x, float y) { return Circle(x, y, 0, 0, 0.92f); }, color, Mix(color, white, 0.35f),
-            Mix(color, black, 0.6f), outline);
+        Paint(
+            image, x0, y0, extent, [](float x, float y) { return Circle(x, y, 0, 0, 0.92f); }, color,
+            Mix(color, white, 0.35f), Mix(color, black, 0.6f), outline);
         // The mark: white on dark badges, dark on pale ones.
         float luma = 0.3f * color.r + 0.59f * color.g + 0.11f * color.b;
         Rgba ink = luma > 0.6f ? Mix(color, black, 0.7f) : white;
@@ -349,7 +366,8 @@ namespace collection
         // The game's names for its pictures: Giants lists a file per toy and deco; Spyro's Adventure names its characters
         // ("toy_<name>_hud", 128 px; "<name>_vs", 512 px) and a few other pictures (items).
         std::vector<std::string> names;
-        if (auto it = game->portraits.find(uint32_t(toy.type) << 16 | variant); variant != 0 && it != game->portraits.end())
+        if (auto it = game->portraits.find(uint32_t(toy.type) << 16 | variant);
+            variant != 0 && it != game->portraits.end())
             names.push_back(it->second);
         if (auto it = game->portraits.find(uint32_t(toy.type) << 16); it != game->portraits.end())
             names.push_back(it->second);
@@ -401,7 +419,8 @@ namespace collection
             if (game.id != gameId)
                 games.push_back(&game);
         // A file the game names for `key` (type << 16 | variant) in `pictures`, under its portraits folder.
-        auto find = [](const Game& game, const std::map<uint32_t, std::string>& pictures, uint32_t key, const char* subfolder) -> std::string {
+        auto find = [](const Game& game, const std::map<uint32_t, std::string>& pictures, uint32_t key,
+                        const char* subfolder) -> std::string {
             auto it = pictures.find(key);
             if (it == pictures.end())
                 return {};
@@ -418,7 +437,8 @@ namespace collection
         uint32_t plain = uint32_t(toy.type) << 16;
         if (variant != 0)
             for (const Game* game : games)
-                for (auto [pictures, subfolder] : { std::pair{ &game->artworks, "artworks/" }, std::pair{ &game->portraits, "" } })
+                for (auto [pictures, subfolder] :
+                    { std::pair{ &game->artworks, "artworks/" }, std::pair{ &game->portraits, "" } })
                     if (std::string path = find(*game, *pictures, plain | variant, subfolder); !path.empty())
                         return path;
         for (const Game* game : games)
@@ -439,7 +459,8 @@ namespace collection
                 folder = datadir::Text(data / "portraits") + "/artworks/";
             else
                 continue;
-            for (uint32_t key : { uint32_t(toy.type) << 16 | variant, uint32_t(toy.type) << 16 }) // for variant 0 the same twice
+            for (uint32_t key :
+                { uint32_t(toy.type) << 16 | variant, uint32_t(toy.type) << 16 }) // for variant 0 the same twice
             {
                 auto it = game.halves.find(key);
                 if (it == game.halves.end())
@@ -469,7 +490,8 @@ namespace collection
         {
             Image out{ x1 - x0, y1 - y0, std::vector<uint32_t>(size_t(x1 - x0) * size_t(y1 - y0)) };
             for (int y = y0; y < y1; y++)
-                std::copy_n(image.rgba.begin() + size_t(y) * image.width + x0, x1 - x0, out.rgba.begin() + size_t(y - y0) * out.width);
+                std::copy_n(image.rgba.begin() + size_t(y) * image.width + x0, x1 - x0,
+                    out.rgba.begin() + size_t(y - y0) * out.width);
             return out;
         }
     }
@@ -485,7 +507,8 @@ namespace collection
     Image JoinHalves(const Image& top, const Image& bottom)
     {
         int box[4];
-        if (!VisibleBox(top, 8, box[0], box[1], box[2], box[3]) || !VisibleBox(bottom, 8, box[0], box[1], box[2], box[3]))
+        if (!VisibleBox(top, 8, box[0], box[1], box[2], box[3]) ||
+            !VisibleBox(bottom, 8, box[0], box[1], box[2], box[3]))
             return {};
         int width = std::max(top.width, bottom.width), height = std::max(top.height, bottom.height);
         Image upper = Resize(top, width, height), lower = Resize(bottom, width, height);
@@ -529,12 +552,10 @@ namespace collection
         return count == 1 ? variant : 0;
     }
 
-    std::string DiscImagePath(const Toy& toy)
-    {
-        return PortraitPath({}, toy);
-    }
+    std::string DiscImagePath(const Toy& toy) { return PortraitPath({}, toy); }
 
-    Image Portrait(const std::string& gameId, const Toy* toy, VariantKind kind, int size, uint16_t variant, bool* fromDisc)
+    Image Portrait(
+        const std::string& gameId, const Toy* toy, VariantKind kind, int size, uint16_t variant, bool* fromDisc)
     {
         Image image;
         if (toy != nullptr)
@@ -569,7 +590,8 @@ namespace collection
             image.height = rgba->h;
             image.rgba.resize(size_t(rgba->w) * rgba->h);
             for (int y = 0; y < rgba->h; y++)
-                memcpy(&image.rgba[size_t(y) * rgba->w], static_cast<const uint8_t*>(rgba->pixels) + size_t(y) * rgba->pitch, size_t(rgba->w) * 4);
+                memcpy(&image.rgba[size_t(y) * rgba->w],
+                    static_cast<const uint8_t*>(rgba->pixels) + size_t(y) * rgba->pitch, size_t(rgba->w) * 4);
             SDL_DestroySurface(rgba);
         }
         SDL_DestroySurface(loaded);
@@ -597,8 +619,16 @@ namespace collection
             for (int x = 0; x < width; x++)
             {
                 float u0 = x * sx, v0 = y * sy, u1 = u0 + std::max(sx, 1.0f), v1 = v0 + std::max(sy, 1.0f);
-                if (sx < 1) { u0 = std::max(0.0f, (x + 0.5f) * sx - 0.5f); u1 = u0 + 1; }
-                if (sy < 1) { v0 = std::max(0.0f, (y + 0.5f) * sy - 0.5f); v1 = v0 + 1; }
+                if (sx < 1)
+                {
+                    u0 = std::max(0.0f, (x + 0.5f) * sx - 0.5f);
+                    u1 = u0 + 1;
+                }
+                if (sy < 1)
+                {
+                    v0 = std::max(0.0f, (y + 0.5f) * sy - 0.5f);
+                    v1 = v0 + 1;
+                }
                 float sum[4] = {}, weight = 0;
                 for (int v = int(v0); v < int(std::ceil(v1)) && v < image.height; v++)
                 {

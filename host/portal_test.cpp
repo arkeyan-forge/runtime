@@ -136,11 +136,13 @@ int main()
     CHECK(Receive(portal)[0] == 'S');
     // The portal's light (Giants fades it with C all the time): the last colour and the count are kept, a short report
     // is zero-filled, and a command no game here is known to send is ignored without an answer.
-    CHECK(portal.LightCommands() == 1 && portal.LightColor().r == 0xFF && portal.LightColor().g == 0 && portal.LightColor().b == 0);
+    CHECK(portal.LightCommands() == 1 && portal.LightColor().r == 0xFF && portal.LightColor().g == 0 &&
+          portal.LightColor().b == 0);
     Send(portal, { 'C', 0x00, 0x80 });
     Send(portal, { 'C', 0x10, 0x20, 0x30 });
     Send(portal, { 'C' });
-    CHECK(portal.LightCommands() == 4 && portal.LightColor().r == 0 && portal.LightColor().g == 0 && portal.LightColor().b == 0);
+    CHECK(portal.LightCommands() == 4 && portal.LightColor().r == 0 && portal.LightColor().g == 0 &&
+          portal.LightColor().b == 0);
     Send(portal, { 'C', 0x00, 0x80 });
     CHECK(portal.LightColor().g == 0x80);
     Send(portal, { 'J', 0x01, 0x02 });
@@ -166,7 +168,8 @@ int main()
         Send(ssa, { 'R', 0x00 });
         std::vector<uint8_t> id = Receive(ssa);
         CHECK(id.size() == PortalReportSize && id[0] == 'R' && id[1] == 0x01 && id[2] == 0x28 && id[3] == 0);
-        CHECK(FindPortalModel(&id[1], 2) != nullptr && strcmp(FindPortalModel(&id[1], 2)->name, "Spyro's Adventure portal (Xbox 360)") == 0);
+        CHECK(FindPortalModel(&id[1], 2) != nullptr &&
+              strcmp(FindPortalModel(&id[1], 2)->name, "Spyro's Adventure portal (Xbox 360)") == 0);
 
         // A four-byte id (SuperChargers) goes through whole.
         EmulatedPortal four;
@@ -176,13 +179,15 @@ int main()
         CHECK(id[1] == 0x02 && id[2] == 0x0A && id[3] == 0x03 && id[4] == 0x02);
         uint8_t parsed[4];
         size_t length = 0;
-        CHECK(PortalIdFromReset(id.data(), id.size(), parsed, length) && length == 4 && PortalIdText(parsed, length) == "02 0A 03 02");
+        CHECK(PortalIdFromReset(id.data(), id.size(), parsed, length) && length == 4 &&
+              PortalIdText(parsed, length) == "02 0A 03 02");
     }
     {
         // The table: names, and what Spyro's Adventure makes of each id (its check is version >= 0x011F).
-        const uint8_t wiiPs3[] = { 0x01, 0x29 }, xbox360[] = { 0x01, 0x28 }, pc[] = { 0x01, 0x2C }, giants[] = { 0x01, 0x3D },
-            swap[] = { 0x02, 0x03 }, trap[] = { 0x02, 0x1B }, superChargers[] = { 0x02, 0x0A, 0x03, 0x02 }, imaginators[] = { 0x02, 0x0A, 0x05, 0x08 },
-            unknown[] = { 0x02, 0x7F }, old[] = { 0x00, 0x90 }, wiiBug[] = { 0x90, 0x00 };
+        const uint8_t wiiPs3[] = { 0x01, 0x29 }, xbox360[] = { 0x01, 0x28 }, pc[] = { 0x01, 0x2C },
+                      giants[] = { 0x01, 0x3D }, swap[] = { 0x02, 0x03 }, trap[] = { 0x02, 0x1B },
+                      superChargers[] = { 0x02, 0x0A, 0x03, 0x02 }, imaginators[] = { 0x02, 0x0A, 0x05, 0x08 },
+                      unknown[] = { 0x02, 0x7F }, old[] = { 0x00, 0x90 }, wiiBug[] = { 0x90, 0x00 };
         CHECK(strcmp(FindPortalModel(wiiPs3, 2)->name, "Spyro's Adventure portal (Wii, PS3)") == 0);
         CHECK(strcmp(FindPortalModel(pc, 2)->name, "Spyro's Adventure portal (PC, Mac)") == 0);
         CHECK(strcmp(FindPortalModel(giants, 2)->name, "Giants portal") == 0);
@@ -200,7 +205,8 @@ int main()
         CHECK(PortalVerdictFor("ssa", old, 2, &reason) == PortalVerdict::Rejected && !reason.empty());
         CHECK(PortalVerdictFor("ssa", wiiBug, 1) == PortalVerdict::Unknown);
         CHECK(PortalVerdictFor("trapteam", xbox360, 2) == PortalVerdict::Unknown);
-        CHECK(DescribePortal("ssa", xbox360, 2) == "01 28 Spyro's Adventure portal (Xbox 360); Spyro's Adventure: works");
+        CHECK(
+            DescribePortal("ssa", xbox360, 2) == "01 28 Spyro's Adventure portal (Xbox 360); Spyro's Adventure: works");
         CHECK(DescribePortal(nullptr, unknown, 2) == "02 7F unknown portal");
         CHECK(DescribePortal("ssa", old, 2).find("rejects it") != std::string::npos);
         // The emulated id per game is in the table, and Spyro's Adventure accepts it.
@@ -244,25 +250,32 @@ int main()
 
         // Giants: the message's key and the state say who is asked.
         CHECK(ClassifyGiants("", "Portal Control - In Game - 0 - Idle") == Prompt{});
-        CHECK(ClassifyGiants("203_PortalError_TagTypeNotOnPortal", "Portal Control - Portal - 0 - Idle P1 Only") == (Prompt{ Kind::Player, 1 }));
-        CHECK(ClassifyGiants("203_PortalError_TagTypeNotOnPortal", "Portal Control - Portal - 0 - Idle P2 Only") == (Prompt{ Kind::Player, 2 }));
+        CHECK(ClassifyGiants("203_PortalError_TagTypeNotOnPortal", "Portal Control - Portal - 0 - Idle P1 Only") ==
+              (Prompt{ Kind::Player, 1 }));
+        CHECK(ClassifyGiants("203_PortalError_TagTypeNotOnPortal", "Portal Control - Portal - 0 - Idle P2 Only") ==
+              (Prompt{ Kind::Player, 2 }));
         CHECK(ClassifyGiants("301_PortalError_ToyMissing", "") == (Prompt{ Kind::Player, 1 }));
-        CHECK(ClassifyGiants("304_PortalError_NeedsRemoval_Minion", "Portal Control - Portal - 0 - Idle P2 Only") == (Prompt{ Kind::Player, 2 }));
-        CHECK(ClassifyGiants("102_PortalError_TooManyMinions", "Portal Control - Portal - 0 - Idle P1 Only").kind == Kind::TooMany);
+        CHECK(ClassifyGiants("304_PortalError_NeedsRemoval_Minion", "Portal Control - Portal - 0 - Idle P2 Only") ==
+              (Prompt{ Kind::Player, 2 }));
+        CHECK(ClassifyGiants("102_PortalError_TooManyMinions", "Portal Control - Portal - 0 - Idle P1 Only").kind ==
+              Kind::TooMany);
         CHECK(ClassifyGiants("103_PortalError_TooManyItems", "").kind == Kind::TooMany);
         CHECK(ClassifyGiants("306_PortalError_ConfirmPVP", "") == Prompt{}); // a question the game's own buttons answer
 
         // Swap Force: the CMagicMoment state and the player index.
-        CHECK(ClassifySwapForce(0, ~0u) == Prompt{});                      // Inactive: in play
-        CHECK(ClassifySwapForce(3, 0) == Prompt{});                        // the zoom out to the portal
-        CHECK(ClassifySwapForce(5, 0) == (Prompt{ Kind::Player, 1 }));     // Idle: the prompt is up
+        CHECK(ClassifySwapForce(0, ~0u) == Prompt{}); // Inactive: in play
+        CHECK(ClassifySwapForce(3, 0) == Prompt{}); // the zoom out to the portal
+        CHECK(ClassifySwapForce(5, 0) == (Prompt{ Kind::Player, 1 })); // Idle: the prompt is up
         CHECK(ClassifySwapForce(5, 1) == (Prompt{ Kind::Player, 2 }));
-        CHECK(ClassifySwapForce(13, 0) == (Prompt{ Kind::Player, 1, true })); // Dead: the Skylander died, the game waits for the next
-        CHECK(ClassifySwapForce(13, 1) == (Prompt{ Kind::Player, 2, true }) && !ClassifySwapForce(5, 0).defeated); // Idle is not a death
-        CHECK(!(ClassifySwapForce(13, 0) == ClassifySwapForce(5, 0)));       // so a death after an Idle prompt is a new episode
-        CHECK(ClassifySwapForce(5, ~0u) == Prompt{});                      // nobody asked
-        CHECK(ClassifySwapForce(7, 0) == Prompt{});                        // IdleOutro: a figure came
-        CHECK(ClassifySwapForce(16, ~0u).kind == Kind::TooMany);           // Error: a "too many" screen
+        CHECK(ClassifySwapForce(13, 0) ==
+              (Prompt{ Kind::Player, 1, true })); // Dead: the Skylander died, the game waits for the next
+        CHECK(ClassifySwapForce(13, 1) == (Prompt{ Kind::Player, 2, true }) &&
+              !ClassifySwapForce(5, 0).defeated); // Idle is not a death
+        CHECK(
+            !(ClassifySwapForce(13, 0) == ClassifySwapForce(5, 0))); // so a death after an Idle prompt is a new episode
+        CHECK(ClassifySwapForce(5, ~0u) == Prompt{}); // nobody asked
+        CHECK(ClassifySwapForce(7, 0) == Prompt{}); // IdleOutro: a figure came
+        CHECK(ClassifySwapForce(16, ~0u).kind == Kind::TooMany); // Error: a "too many" screen
 
         // One event per episode, after the prompt held steady for Stable polls.
         Tracker tracker;
@@ -281,13 +294,14 @@ int main()
         CHECK(poll({}, 10) == Tracker::Event::None);
         CHECK(poll(p1, Tracker::Stable - 1) == Tracker::Event::None); // not steady yet
         CHECK(poll(p1, 1) == Tracker::Event::Appeared && got == p1);
-        CHECK(poll(p1, 50) == Tracker::Event::None);                  // the menu is not opened again
+        CHECK(poll(p1, 50) == Tracker::Event::None); // the menu is not opened again
         CHECK(poll({}, Tracker::Stable) == Tracker::Event::Gone);
         CHECK(poll(p2, Tracker::Stable) == Tracker::Event::Appeared && got == p2);
         CHECK(poll(p1, 1) == Tracker::Event::None && poll({}, 1) == Tracker::Event::None); // a flicker is ignored
         CHECK(poll(p2, Tracker::Stable) == Tracker::Event::None && tracker.Current() == p2);
-        CHECK(poll(p1, Tracker::Stable) == Tracker::Event::Appeared && got == p1); // straight from one player to the other
-        CHECK(poll(many, Tracker::Stable) == Tracker::Event::Gone);                // "too many" is not a request
+        CHECK(poll(p1, Tracker::Stable) == Tracker::Event::Appeared &&
+              got == p1); // straight from one player to the other
+        CHECK(poll(many, Tracker::Stable) == Tracker::Event::Gone); // "too many" is not a request
         CHECK(poll(many, 20) == Tracker::Event::None);
         CHECK(poll({}, Tracker::Stable) == Tracker::Event::None);
         // A death (Swap Force's Dead state) arrives as its own episode with the flag, straight after the Idle prompt too.
@@ -315,7 +329,8 @@ int main()
         std::vector<uint8_t> block;
         for (int i = 0; i < 8 && (block.empty() || block[0] != 'Q'); i++)
             block = Receive(other);
-        CHECK(block.size() > 19 && block[0] == 'Q' && block[3] == 9 && block[3 + 0x0C] == 0x01 && block[3 + 0x0D] == 0x18);
+        CHECK(block.size() > 19 && block[0] == 'Q' && block[3] == 9 && block[3 + 0x0C] == 0x01 &&
+              block[3 + 0x0D] == 0x18);
     }
 
     SDL_RemovePath(path.c_str());

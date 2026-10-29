@@ -11,9 +11,13 @@ namespace art
         constexpr const char* Order[] = { "en", "fr", "de", "es", "es-419", "it", "nl", "pt", "sv", "no", "da", "fi" };
 
         // SSA's folder names (the disc's own) and the settings code of each.
-        struct Folder { const char* name; const char* code; };
-        constexpr Folder LuxFolders[] = { { "eng", "en" }, { "fre", "fr" }, { "ger", "de" }, { "spa", "es" }, { "ita", "it" },
-            { "dut", "nl" }, { "swe", "sv" }, { "nor", "no" }, { "dan", "da" }, { "fin", "fi" } };
+        struct Folder
+        {
+            const char* name;
+            const char* code;
+        };
+        constexpr Folder LuxFolders[] = { { "eng", "en" }, { "fre", "fr" }, { "ger", "de" }, { "spa", "es" },
+            { "ita", "it" }, { "dut", "nl" }, { "swe", "sv" }, { "nor", "no" }, { "dan", "da" }, { "fin", "fi" } };
 
         std::string Normal(std::string path)
         {
@@ -33,7 +37,10 @@ namespace art
             return out;
         }
 
-        bool StartsWith(const std::string& text, std::string_view prefix) { return text.compare(0, prefix.size(), prefix) == 0; }
+        bool StartsWith(const std::string& text, std::string_view prefix)
+        {
+            return text.compare(0, prefix.size(), prefix) == 0;
+        }
     }
 
     DiscLanguages LanguagesOnDisc(std::string_view game, const std::vector<std::string>& files)
@@ -69,7 +76,8 @@ namespace art
                 if (underscore == std::string::npos || path.size() - 4 - underscore - 1 != 2)
                     continue;
                 std::string code = path.substr(underscore + 1, 2);
-                if (std::find_if(std::begin(Order), std::end(Order), [&](const char* known) { return code == known; }) != std::end(Order))
+                if (std::find_if(std::begin(Order), std::end(Order),
+                        [&](const char* known) { return code == known; }) != std::end(Order))
                     text.insert(code), voice.insert(code);
             }
         }

@@ -44,7 +44,8 @@ namespace
                 if (pointer < 0x10000 || pointer > 0xFFFF0000)
                     continue;
                 uint32_t bufferHeight = g_memory.Read<uint32_t>(pointer + 8);
-                if (g_memory.Read<uint32_t>(pointer + 4) == width && bufferHeight >= height && bufferHeight < height + 64)
+                if (g_memory.Read<uint32_t>(pointer + 4) == width && bufferHeight >= height &&
+                    bufferHeight < height + 64)
                 {
                     offset = candidate;
                     break;
@@ -56,10 +57,7 @@ namespace
         return g_memory.Read<uint32_t>(bink + offset);
     }
 
-    uint8_t Clamp(int value)
-    {
-        return uint8_t(std::clamp(value, 0, 255));
-    }
+    uint8_t Clamp(int value) { return uint8_t(std::clamp(value, 0, 255)); }
 
     void ShowFrame(uint32_t bink)
     {
@@ -72,10 +70,10 @@ namespace
             return;
 
         uint32_t set = buffers + BuffersFrames + g_memory.Read<uint32_t>(buffers + BuffersFrameNum) * PlaneSetSize;
-        auto plane = [&](uint32_t index, uint32_t& pitch)
-        {
+        auto plane = [&](uint32_t index, uint32_t& pitch) {
             pitch = g_memory.Read<uint32_t>(set + index * PlaneSize + 8);
-            return static_cast<const uint8_t*>(g_memory.Translate(g_memory.Read<uint32_t>(set + index * PlaneSize + 4)));
+            return static_cast<const uint8_t*>(
+                g_memory.Translate(g_memory.Read<uint32_t>(set + index * PlaneSize + 4)));
         };
 
         uint32_t yPitch, crPitch, cbPitch;

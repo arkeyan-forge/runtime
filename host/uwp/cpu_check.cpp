@@ -24,10 +24,11 @@ namespace
         IApplicationData* data = nullptr;
         IStorageFolder* folder = nullptr;
         IStorageItem* item = nullptr;
-        if (SUCCEEDED(RoGetActivationFactory(className, __uuidof(IApplicationDataStatics), reinterpret_cast<void**>(&statics)))
-            && SUCCEEDED(statics->get_Current(&data)) && SUCCEEDED(data->get_LocalFolder(&folder))
-            && SUCCEEDED(folder->QueryInterface(__uuidof(IStorageItem), reinterpret_cast<void**>(&item)))
-            && SUCCEEDED(item->get_Path(&path)))
+        if (SUCCEEDED(RoGetActivationFactory(
+                className, __uuidof(IApplicationDataStatics), reinterpret_cast<void**>(&statics))) &&
+            SUCCEEDED(statics->get_Current(&data)) && SUCCEEDED(data->get_LocalFolder(&folder)) &&
+            SUCCEEDED(folder->QueryInterface(__uuidof(IStorageItem), reinterpret_cast<void**>(&item))) &&
+            SUCCEEDED(item->get_Path(&path)))
         {
             wchar_t file[MAX_PATH] = {};
             UINT32 length = 0;
@@ -67,7 +68,8 @@ namespace
         __builtin_cpu_init();
         if (__builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma") && __builtin_cpu_supports("bmi2"))
             return;
-        WriteLog("This package is built for the Xbox Series X|S CPU (AVX2, FMA, BMI2), which this console does not have.\r\n"
+        WriteLog(
+            "This package is built for the Xbox Series X|S CPU (AVX2, FMA, BMI2), which this console does not have.\r\n"
             "Install the standard package (SSARecomp-<version>.msix, not -series) on an Xbox One.\r\n");
         ExitProcess(1);
     }

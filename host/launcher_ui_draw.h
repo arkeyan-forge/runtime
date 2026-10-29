@@ -40,8 +40,8 @@ public:
     float LineHeight(float px, bool display = false);
     float Ascent(float px, bool display = false);
     std::string Ellipsize(std::string_view text, float maxWidth, float px, bool display = false, float tracking = 0);
-    std::vector<std::string> Wrap(std::string_view text, float maxWidth, float px, bool display = false,
-        float tracking = 0);
+    std::vector<std::string> Wrap(
+        std::string_view text, float maxWidth, float px, bool display = false, float tracking = 0);
 
     // PNG decoded with stb_image; the painter owns the texture and destroys it on Shutdown.
     SDL_Texture* LoadPng(std::span<const uint8_t> png);

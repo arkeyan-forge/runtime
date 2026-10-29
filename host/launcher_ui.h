@@ -23,8 +23,8 @@ std::span<const LauncherGameEntry> LauncherGameCatalog();
 // Shows the launcher window until the player starts a verified disc image, quits, or the screenshot
 // test script finishes. Returns the chosen image path (empty when nothing was chosen).
 // `config` is updated for settings, and `[<game>] iso=` is written when a valid image is chosen.
-std::string RunLauncherWindow(const GameInfo& game, const std::string& configPath, LauncherConfig& config,
-    const std::string& previous);
+std::string RunLauncherWindow(
+    const GameInfo& game, const std::string& configPath, LauncherConfig& config, const std::string& previous);
 
 // Small pure helpers, also used by SSALauncherTest.
 std::string LauncherLanguageLabel(const LauncherConfig& config, const GameInfo& game);
@@ -33,4 +33,3 @@ bool LauncherFullscreen(const LauncherConfig& config);
 std::string LauncherFormatSize(uint64_t bytes);
 std::string LauncherMiddleEllipsis(std::string_view text, size_t maxCharacters);
 std::string LauncherDisplayName(std::string_view xdbfName, const GameInfo& game);
-

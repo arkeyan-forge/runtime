@@ -13,8 +13,10 @@ namespace d3d
         bool vertex;
         uint32_t inputs;    // vertex shaders: the (usage, index) inputs it declares, one bit per InputLocation()
         uint32_t pulled;    // the inputs among them it fetches at a computed index instead of the vertex index
-        uint32_t samplers;  // vertex shaders: the vertex texture samplers (registers 0-3, fetch constants 16-19) its constant table lists, one bit each
-        uint32_t paramGen;  // pixel shaders: gpu::DrawDesc::paramGen, from the header (bit 31 = param_gen enabled, bits 0-7 = register)
+        uint32_t
+            samplers; // vertex shaders: the vertex texture samplers (registers 0-3, fetch constants 16-19) its constant table lists, one bit each
+        uint32_t
+            paramGen; // pixel shaders: gpu::DrawDesc::paramGen, from the header (bit 31 = param_gen enabled, bits 0-7 = register)
     };
 
     // XenosRecomp's vertex input location for a declaration usage and index (its USAGE_LOCATIONS table, plus PSIZE),

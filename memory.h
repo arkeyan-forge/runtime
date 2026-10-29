@@ -19,7 +19,7 @@ struct GuestMemory
     void* Translate(uint32_t guest) const { return base + guest; }
     uint32_t MapVirtual(const void* host) const { return uint32_t(static_cast<const uint8_t*>(host) - base); }
 
-    template<typename T>
+    template <typename T>
     T Read(uint32_t guest) const
     {
         T value;
@@ -27,7 +27,7 @@ struct GuestMemory
         return Swap(value);
     }
 
-    template<typename T>
+    template <typename T>
     void Write(uint32_t guest, T value)
     {
         value = Swap(value);
@@ -35,7 +35,7 @@ struct GuestMemory
     }
 
     // XenonUtils' ByteSwap converts a float to an integer and back: floating-point values swap their bits instead.
-    template<typename T>
+    template <typename T>
     static T Swap(T value)
     {
         if constexpr (std::is_floating_point_v<T>)

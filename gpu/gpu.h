@@ -60,13 +60,13 @@ namespace gpu
     struct Settings
     {
         uint32_t resolutionScale = 1; // render targets and what is resolved from them are this multiple of the guest's;
-                                      // 0: auto, chosen by Init from the GPU (1 on integrated GPUs, 2 on discrete ones
-                                      // and Apple's)
-        uint32_t anisotropy = 1;      // samplers with linear filtering
-        bool vsync = true;            // off: presents don't wait for the display (nor the offscreen output's 60 Hz)
-        bool gpuThread = true;        // the GPU thread (worker.cpp); off: the callers record and submit (SKY_GPU_THREAD=0)
-        bool pipelineLibrary = true;  // D3D12: the persistent pipeline cache (d3d12_pipeline_cache.cpp)
-        uint32_t fpsLimit = 30;       // the game's frame rate (fps_limit), for the [perf] log's GPU-bound hint
+        // 0: auto, chosen by Init from the GPU (1 on integrated GPUs, 2 on discrete ones
+        // and Apple's)
+        uint32_t anisotropy = 1; // samplers with linear filtering
+        bool vsync = true; // off: presents don't wait for the display (nor the offscreen output's 60 Hz)
+        bool gpuThread = true; // the GPU thread (worker.cpp); off: the callers record and submit (SKY_GPU_THREAD=0)
+        bool pipelineLibrary = true; // D3D12: the persistent pipeline cache (d3d12_pipeline_cache.cpp)
+        uint32_t fpsLimit = 30; // the game's frame rate (fps_limit), for the [perf] log's GPU-bound hint
     };
     extern Settings g_settings;
     void Shutdown();
@@ -77,7 +77,8 @@ namespace gpu
     const TextureDesc& Desc(const Texture* texture);
 
     // Copies a whole subresource through a staging buffer; the copy runs on the GPU before the next Present.
-    void UploadTexture(Texture* texture, const void* data, uint32_t rowPitch, uint32_t mipLevel = 0, uint32_t arraySlice = 0);
+    void UploadTexture(
+        Texture* texture, const void* data, uint32_t rowPitch, uint32_t mipLevel = 0, uint32_t arraySlice = 0);
     // The same, with the data made on a worker thread: `fill(destination, rowPitch)` writes the subresource's rows (of
     // blocks), `rowPitch` bytes apart; it must use only data it owns (it runs later, while the caller goes on).
     void UploadTextureAsync(Texture* texture, uint32_t mipLevel, uint32_t arraySlice,
@@ -92,7 +93,14 @@ namespace gpu
     // The perf log's split of a frame (LogPerf, every 10 s): time the renderer (d3d/) spent on the game's render thread
     // in its hooks (without the guest's own D3D code, the vblank wait and the present), of which the ring translation and
     // the texture hashing and decoding, and the time spent waiting for the vertical blank.
-    enum class FrameTime : uint32_t { Renderer, Ring, Textures, VblankWait, Count };
+    enum class FrameTime : uint32_t
+    {
+        Renderer,
+        Ring,
+        Textures,
+        VblankWait,
+        Count
+    };
     void AddFrameTime(FrameTime what, uint64_t ns);
 
     // UWP: called in the UI thread's loop, which then becomes the thread that presents. A Present from another thread
@@ -112,14 +120,16 @@ namespace gpu
 
     // Reads back a colour texture's base level as RGBA8 (finishes the frame's GPU work first); with `raw`, the bits of
     // its red channel instead (float targets such as R32_FLOAT). For debugging.
-    bool ReadbackTexture(const Texture* texture, std::vector<uint32_t>& rgba, uint32_t& width, uint32_t& height, bool raw = false);
+    bool ReadbackTexture(
+        const Texture* texture, std::vector<uint32_t>& rgba, uint32_t& width, uint32_t& height, bool raw = false);
 
     // Reads back the bits of a texture's red channel (R32_FLOAT depth resolves), one texel per `step` x `step` block,
     // without stalling either thread: RequestReadback queues the copy after the caller's earlier commands;
     // CollectReadback returns the latest one the GPU has finished (two frames after its request, once the GPU thread's
     // frame end has waited for it), false when there is none new. `convert` runs on the GPU thread when it finishes:
     // it turns the pixels (width x height, row-major) into what CollectReadback returns. One request per frame.
-    using ReadbackConvert = std::function<void(const uint32_t* pixels, uint32_t width, uint32_t height, std::vector<uint32_t>& out)>;
+    using ReadbackConvert =
+        std::function<void(const uint32_t* pixels, uint32_t width, uint32_t height, std::vector<uint32_t>& out)>;
     void RequestReadback(const Texture* texture, uint32_t step, ReadbackConvert convert);
     bool CollectReadback(std::vector<uint32_t>& data);
 

@@ -16,8 +16,7 @@ LoadedModule g_module;
 namespace
 {
 #define XE_EXPORT(MODULE, ORDINAL, NAME, TYPE) { (ORDINAL), #NAME }
-    const std::unordered_map<uint32_t, std::string_view> KernelExports =
-    {
+    const std::unordered_map<uint32_t, std::string_view> KernelExports = {
 #include <xbox/xboxkrnl_table.inc>
     };
 #undef XE_EXPORT
@@ -40,7 +39,8 @@ namespace
     // Indirect calls to code XenonRecomp didn't treat as a function start land here instead of a null pointer.
     void UnmappedFunction(PPCContext& ctx, uint8_t*)
     {
-        fprintf(stderr, "Indirect call to unrecompiled guest code (ctr=0x%08X lr=0x%08X)\n", ctx.ctr.u32, uint32_t(ctx.lr));
+        fprintf(
+            stderr, "Indirect call to unrecompiled guest code (ctr=0x%08X lr=0x%08X)\n", ctx.ctr.u32, uint32_t(ctx.lr));
         abort();
     }
 
@@ -150,14 +150,14 @@ namespace
             // Each function import is an IAT slot followed by its thunk; a slot with no thunk is a variable.
             // XenonUtils already turned thunks into `nop; nop; nop; blr` and byteswapped the slots in place.
             uint32_t pendingSlot = 0;
-            auto resolveVariable = [&](uint32_t slot)
-            {
+            auto resolveVariable = [&](uint32_t slot) {
                 uint32_t ordinal = *static_cast<uint32_t*>(g_memory.Translate(slot)) & 0xFFFF;
-                auto name = libraryName == "xboxkrnl.exe" && KernelExports.contains(ordinal) ? KernelExports.at(ordinal) : "?";
+                auto name =
+                    libraryName == "xboxkrnl.exe" && KernelExports.contains(ordinal) ? KernelExports.at(ordinal) : "?";
                 uint32_t variable = CreateKernelVariable(name, moduleHandle);
                 g_memory.Write<uint32_t>(slot, variable);
-                fprintf(stderr, "[loader] %.*s!%.*s (ordinal %u) -> 0x%08X\n", int(libraryName.size()), libraryName.data(),
-                    int(name.size()), name.data(), ordinal, variable);
+                fprintf(stderr, "[loader] %.*s!%.*s (ordinal %u) -> 0x%08X\n", int(libraryName.size()),
+                    libraryName.data(), int(name.size()), name.data(), ordinal, variable);
             };
 
             for (uint32_t j = 0; j < recordCount; j++)
@@ -231,8 +231,7 @@ uint32_t CreateHostThunk(PPCFunc* function)
     static std::mutex mutex;
     static uint32_t next = PPC_CODE_BASE + PPC_CODE_SIZE;
 
-    auto isPadding = [](uint32_t address)
-    {
+    auto isPadding = [](uint32_t address) {
         return PPC_LOOKUP_FUNC(g_memory.base, address) == UnmappedFunction && g_memory.Read<uint32_t>(address) == 0;
     };
 

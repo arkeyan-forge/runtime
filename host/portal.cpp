@@ -97,7 +97,8 @@ namespace
             g_light.b = colour[2];
             g_light.changed = SDL_GetTicksNS();
             if (g_light.commands++ == 0 || wasOn != PortalLightOn(g_light))
-                fprintf(stderr, "[portal] light: #%02X%02X%02X (%s)\n", colour[0], colour[1], colour[2], PortalLightOn(g_light) ? "on" : "off");
+                fprintf(stderr, "[portal] light: #%02X%02X%02X (%s)\n", colour[0], colour[1], colour[2],
+                    PortalLightOn(g_light) ? "on" : "off");
         }
         else if (size >= 3 + FigureBlockSize && command[0] == 'W')
         {
@@ -114,16 +115,10 @@ namespace
 
     // The collection shared with the launcher and the other games (docs/runtime/host/collection.md): SKY_COLLECTION, SKY_FIGURES,
     // else <user data>/Skylanders/Collection.
-    std::string FigureFolder()
-    {
-        return collection::Folder();
-    }
+    std::string FigureFolder() { return collection::Folder(); }
 
     // Figures of the collection are locked while on the portal, so that the launcher leaves them alone.
-    bool InCollection(const std::string& path)
-    {
-        return path.rfind(collection::Folder() + "/", 0) == 0;
-    }
+    bool InCollection(const std::string& path) { return path.rfind(collection::Folder() + "/", 0) == 0; }
 
     std::string FigurePath(const std::string& name)
     {
@@ -143,7 +138,8 @@ namespace
             {
                 std::string name = names[i];
                 std::string extension = name.size() > 4 ? name.substr(name.size() - 4) : "";
-                std::transform(extension.begin(), extension.end(), extension.begin(), [](char c) { return char(tolower(c)); });
+                std::transform(
+                    extension.begin(), extension.end(), extension.begin(), [](char c) { return char(tolower(c)); });
                 if (extension == ".sky" || extension == ".bin" || extension == ".dmp")
                     figures.push_back(folder + "/" + name);
             }
@@ -205,7 +201,8 @@ namespace
             std::string line = lines.substr(begin, end - begin);
             size_t space = line.find(' ');
             // Paths of an older build's figure folder lead to their copies in the collection.
-            if (space != std::string::npos && Place(collection::MigratedPath(line.substr(space + 1)), atoi(line.c_str())) >= 0)
+            if (space != std::string::npos &&
+                Place(collection::MigratedPath(line.substr(space + 1)), atoi(line.c_str())) >= 0)
                 restored++;
             begin = end + 1;
         }
@@ -222,7 +219,8 @@ namespace
         {
             int toyType = atoi(entry.c_str() + 4);
             size_t colon = entry.find(':', 4);
-            unsigned variant = colon == std::string::npos ? 0 : unsigned(strtoul(entry.c_str() + colon + 1, nullptr, 16));
+            unsigned variant =
+                colon == std::string::npos ? 0 : unsigned(strtoul(entry.c_str() + colon + 1, nullptr, 16));
             char suffix[16] = "";
             if (variant != 0)
                 snprintf(suffix, sizeof(suffix), "_%X", variant);
@@ -330,7 +328,8 @@ void PortalInit()
     {
         backend = CreateUsbPortal();
         if (backend == nullptr)
-            fprintf(stderr, "[portal] usb: libusb-1.0 not found, no Xbox 360 or Xbox One portal (set SKY_LIBUSB to its path)\n");
+            fprintf(stderr,
+                "[portal] usb: libusb-1.0 not found, no Xbox 360 or Xbox One portal (set SKY_LIBUSB to its path)\n");
         if (backend != nullptr && (mode == "auto" || (mode == "real" && waiting != nullptr)) && !backend->IsConnected())
             backend.reset();
     }
@@ -351,7 +350,11 @@ void PortalInit()
             size_t length = 0;
             for (const char* p = wanted; *p != '\0' && length < 4;)
             {
-                if (isspace(uint8_t(*p))) { p++; continue; }
+                if (isspace(uint8_t(*p)))
+                {
+                    p++;
+                    continue;
+                }
                 char byte[3] = { p[0], p[1], '\0' };
                 id[length++] = uint8_t(strtoul(byte, nullptr, 16));
                 p += p[1] != '\0' ? 2 : 1;
@@ -439,15 +442,9 @@ PortalSlotSeen PortalSeen(int slot)
     return slot >= 0 && slot < PortalSlotCount ? g_seen[slot] : PortalSlotSeen{};
 }
 
-int PortalPlaceFigure(const std::string& path)
-{
-    return Place(path, -1);
-}
+int PortalPlaceFigure(const std::string& path) { return Place(path, -1); }
 
-int PortalPlaceFigureAt(const std::string& path, int slot)
-{
-    return Place(path, slot);
-}
+int PortalPlaceFigureAt(const std::string& path, int slot) { return Place(path, slot); }
 
 void PortalRemoveFigure(int slot)
 {
@@ -472,25 +469,13 @@ void PortalRemoveAllFigures()
     fprintf(stderr, "[portal] removed every figure\n");
 }
 
-bool PortalIsEmulated()
-{
-    return g_emulated != nullptr;
-}
+bool PortalIsEmulated() { return g_emulated != nullptr; }
 
-std::string PortalSlotFigure(int slot)
-{
-    return g_emulated != nullptr ? g_emulated->SlotPath(slot) : std::string();
-}
+std::string PortalSlotFigure(int slot) { return g_emulated != nullptr ? g_emulated->SlotPath(slot) : std::string(); }
 
-std::string PortalFigureFolder()
-{
-    return FigureFolder();
-}
+std::string PortalFigureFolder() { return FigureFolder(); }
 
-bool PortalLogEnabled()
-{
-    return g_log;
-}
+bool PortalLogEnabled() { return g_log; }
 
 namespace
 {
@@ -500,7 +485,7 @@ namespace
         for (unsigned char c : text)
         {
             if (c == '"' || c == '\\')
-                json += {'\\', char(c)};
+                json += { '\\', char(c) };
             else if (c < 0x20)
             {
                 char escaped[8];
@@ -517,11 +502,13 @@ namespace
 int PortalProbeMain()
 {
     std::vector<PortalProbe> portals;
-    std::pair<const char*, std::string> transports[] = { { "hid", ProbeHidPortals(portals) }, { "usb", ProbeUsbPortals(portals) } };
+    std::pair<const char*, std::string> transports[] = { { "hid", ProbeHidPortals(portals) },
+        { "usb", ProbeUsbPortals(portals) } };
     for (const auto& [kind, error] : transports)
     {
         if (!error.empty())
-            printf("{\"transport\":\"%s\",\"available\":false,\"status\":%s}\n", kind, JsonString("error: " + error).c_str());
+            printf("{\"transport\":\"%s\",\"available\":false,\"status\":%s}\n", kind,
+                JsonString("error: " + error).c_str());
     }
     // For a person: one block on stderr. For the launcher: the JSON lines on stdout.
     fprintf(stderr, "portal probe: %zu portal(s) found\n", portals.size());
@@ -535,11 +522,12 @@ int PortalProbeMain()
         fprintf(stderr, "  %s %04x:%04x \"%s\": %s%s%s\n", probe.kind, probe.vendor, probe.product, probe.name.c_str(),
             probe.opened ? "opened" : "not opened", probe.details.empty() ? "" : ", ", probe.details.c_str());
         if (!probe.id.empty())
-            fprintf(stderr, "    model: %s %s; Spyro's Adventure: %s (%s)\n", probe.id.c_str(), probe.model.c_str(), probe.verdict.c_str(),
-                probe.verdictReason.c_str());
+            fprintf(stderr, "    model: %s %s; Spyro's Adventure: %s (%s)\n", probe.id.c_str(), probe.model.c_str(),
+                probe.verdict.c_str(), probe.verdictReason.c_str());
         for (const auto& [method, result] : probe.methods)
             fprintf(stderr, "    %-14s %s\n", method.c_str(), result.c_str());
-        fprintf(stderr, "    => %s%s\n", probe.status.c_str(), probe.write.empty() ? "" : (", the game writes with " + probe.write).c_str());
+        fprintf(stderr, "    => %s%s\n", probe.status.c_str(),
+            probe.write.empty() ? "" : (", the game writes with " + probe.write).c_str());
     }
     fflush(stderr);
 
@@ -550,15 +538,17 @@ int PortalProbeMain()
         {
             extra = ",\"write\":" + JsonString(probe.write) + ",\"methods\":{";
             for (size_t i = 0; i < probe.methods.size(); i++)
-                extra += (i > 0 ? "," : "") + JsonString(probe.methods[i].first) + ":" + JsonString(probe.methods[i].second);
+                extra +=
+                    (i > 0 ? "," : "") + JsonString(probe.methods[i].first) + ":" + JsonString(probe.methods[i].second);
             extra += "}";
         }
         if (!probe.id.empty())
-            extra += ",\"id\":" + JsonString(probe.id) + ",\"model\":" + JsonString(probe.model) + ",\"verdict\":" + JsonString(probe.verdict)
-                + ",\"verdict_reason\":" + JsonString(probe.verdictReason);
-        printf("{\"kind\":\"%s\",\"vid\":\"%04x\",\"pid\":\"%04x\",\"product\":%s,\"opened\":%s,\"status\":%s%s}\n", probe.kind,
-            probe.vendor, probe.product, JsonString(probe.name).c_str(), probe.opened ? "true" : "false", JsonString(probe.status).c_str(),
-            extra.c_str());
+            extra += ",\"id\":" + JsonString(probe.id) + ",\"model\":" + JsonString(probe.model) +
+                     ",\"verdict\":" + JsonString(probe.verdict) +
+                     ",\"verdict_reason\":" + JsonString(probe.verdictReason);
+        printf("{\"kind\":\"%s\",\"vid\":\"%04x\",\"pid\":\"%04x\",\"product\":%s,\"opened\":%s,\"status\":%s%s}\n",
+            probe.kind, probe.vendor, probe.product, JsonString(probe.name).c_str(), probe.opened ? "true" : "false",
+            JsonString(probe.status).c_str(), extra.c_str());
     }
     printf("{\"done\":true,\"count\":%zu}\n", portals.size());
     fflush(stdout);

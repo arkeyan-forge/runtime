@@ -23,15 +23,17 @@ namespace
     constexpr uint32_t ErrorNotLoggedOn = 0x4DD;
 
     // Logs the first call of each import, with its first argument registers.
-#define LOG_FIRST_CALL(name) \
-    do \
-    { \
-        static std::atomic_flag reported; \
-        if (!reported.test_and_set()) \
-        { \
-            fprintf(stderr, "[kernel] " name " (lr=0x%08X r3=0x%08X r4=0x%08X r5=0x%08X r6=0x%08X r7=0x%08X r8=0x%08X r9=0x%08X)\n", \
+#define LOG_FIRST_CALL(name)                                                                                           \
+    do                                                                                                                 \
+    {                                                                                                                  \
+        static std::atomic_flag reported;                                                                              \
+        if (!reported.test_and_set())                                                                                  \
+        {                                                                                                              \
+            fprintf(stderr,                                                                                            \
+                "[kernel] " name                                                                                       \
+                " (lr=0x%08X r3=0x%08X r4=0x%08X r5=0x%08X r6=0x%08X r7=0x%08X r8=0x%08X r9=0x%08X)\n",                \
                 uint32_t(ctx.lr), ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32); \
-        } \
+        }                                                                                                              \
     } while (0)
 
     // XE_CONSOLE_SIGNATURE: XE_CONSOLE_CERTIFICATE (0x1A8 bytes) then a 0x80-byte signature, as in Xenia (BSD).
@@ -99,16 +101,10 @@ PPC_FUNC(__imp__XamTaskSchedule)
 }
 
 // XamTaskCloseHandle(handle): TRUE, or FALSE for a handle that is not open.
-PPC_FUNC(__imp__XamTaskCloseHandle)
-{
-    ctx.r3.u64 = CloseHandle(ctx.r3.u32) ? 1 : 0;
-}
+PPC_FUNC(__imp__XamTaskCloseHandle) { ctx.r3.u64 = CloseHandle(ctx.r3.u32) ? 1 : 0; }
 
 // XamTaskShouldExit(): the system never asks a task to stop early.
-PPC_FUNC(__imp__XamTaskShouldExit)
-{
-    ctx.r3.u64 = 0;
-}
+PPC_FUNC(__imp__XamTaskShouldExit) { ctx.r3.u64 = 0; }
 
 // Xbox Live authentication. The title starts XAuth after XHttp, then asks for a token for a URL; offline, XAuth does
 // not start and there is never a token.
@@ -130,10 +126,7 @@ PPC_FUNC(__imp__XampXAuthShutdown)
 }
 
 // XampXAuthGetTitleBuffer(): the buffer XampXAuthStartup would have kept; none.
-PPC_FUNC(__imp__XampXAuthGetTitleBuffer)
-{
-    ctx.r3.u64 = 0;
-}
+PPC_FUNC(__imp__XampXAuthGetTitleBuffer) { ctx.r3.u64 = 0; }
 
 // XamGetToken(xauth context, url, url length, token out, overlapped?): not in Xenia; read from the title's call
 // (sub_82C8D488), which turns a positive result into an HRESULT and frees the token with XamFreeToken. The token out
@@ -148,10 +141,7 @@ PPC_FUNC(__imp__XamGetToken)
 }
 
 // XamFreeToken(token)
-PPC_FUNC(__imp__XamFreeToken)
-{
-    LOG_FIRST_CALL("XamFreeToken");
-}
+PPC_FUNC(__imp__XamFreeToken) { LOG_FIRST_CALL("XamFreeToken"); }
 
 // Gamer pictures. The local profile has none.
 

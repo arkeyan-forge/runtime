@@ -18,10 +18,7 @@ namespace
     }
 
     // The console's wide characters are UTF-16 big-endian; non-ASCII becomes '?'.
-    char NarrowChar(uint16_t c)
-    {
-        return c < 0x80 ? char(c) : '?';
-    }
+    char NarrowChar(uint16_t c) { return c < 0x80 ? char(c) : '?'; }
 }
 
 PPC_FUNC(__imp__RtlInitAnsiString)

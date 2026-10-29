@@ -148,7 +148,8 @@ namespace
     constexpr uint16_t HidPortalProduct = 0x0150;
     // The Xbox One portal's GIP interface, declared in its GIP descriptor next to the device type
     // "Activision.Xbox.Skylanders.Portal" (from a capture of the portal published by the Santroller project).
-    constexpr GUID PortalGipInterface = { 0x1f7788a2, 0xb860, 0x9b40, { 0x36, 0x26, 0xec, 0x56, 0xc7, 0xc4, 0x52, 0x56 } };
+    constexpr GUID PortalGipInterface = { 0x1f7788a2, 0xb860, 0x9b40,
+        { 0x36, 0x26, 0xec, 0x56, 0xc7, 0xc4, 0x52, 0x56 } };
     constexpr BYTE GipPortalReport = 0x21;
     constexpr size_t GipPortalReportSize = 30;
 
@@ -192,9 +193,10 @@ namespace
         length = 0;
         Ref<::Windows::Storage::Streams::IBufferByteAccess> access;
         BYTE* bytes = nullptr;
-        if (buffer == nullptr || FAILED(buffer->get_Length(&length))
-            || FAILED(buffer->QueryInterface(__uuidof(::Windows::Storage::Streams::IBufferByteAccess), access.PutVoid()))
-            || FAILED(access->Buffer(&bytes)))
+        if (buffer == nullptr || FAILED(buffer->get_Length(&length)) ||
+            FAILED(
+                buffer->QueryInterface(__uuidof(::Windows::Storage::Streams::IBufferByteAccess), access.PutVoid())) ||
+            FAILED(access->Buffer(&bytes)))
         {
             length = 0;
             return nullptr;
@@ -216,10 +218,10 @@ namespace
         Ref<Foundation::IAsyncOperation<Devices::Enumeration::DeviceInformationCollection*>> operation;
         Ref<Foundation::Collections::IVectorView<Devices::Enumeration::DeviceInformation*>> list;
         UINT32 count = 0;
-        if (FAILED(result = GetFactory(L"Windows.Devices.Enumeration.DeviceInformation", statics))
-            || FAILED(result = statics->FindAllAsyncAqsFilter(HString(filter), operation.Put()))
-            || FAILED(result = Wait(operation.Get(), 10000)) || FAILED(result = operation->GetResults(list.Put()))
-            || FAILED(result = list->get_Size(&count)))
+        if (FAILED(result = GetFactory(L"Windows.Devices.Enumeration.DeviceInformation", statics)) ||
+            FAILED(result = statics->FindAllAsyncAqsFilter(HString(filter), operation.Put())) ||
+            FAILED(result = Wait(operation.Get(), 10000)) || FAILED(result = operation->GetResults(list.Put())) ||
+            FAILED(result = list->get_Size(&count)))
             return false;
 
         for (UINT32 i = 0; i < count; i++)
@@ -250,8 +252,8 @@ namespace
 
         HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** out) override
         {
-            if (iid == __uuidof(Interface) || iid == __uuidof(IUnknown) || iid == __uuidof(IAgileObject)
-                || (std::is_base_of_v<IInspectable, Interface> && iid == __uuidof(IInspectable)))
+            if (iid == __uuidof(Interface) || iid == __uuidof(IUnknown) || iid == __uuidof(IAgileObject) ||
+                (std::is_base_of_v<IInspectable, Interface> && iid == __uuidof(IInspectable)))
             {
                 *out = static_cast<Interface*>(this);
                 AddRef();
@@ -305,7 +307,8 @@ namespace
     };
 
     // What CreateGameController returns: the sink the console delivers the device's input to.
-    class ControllerSink final : public Custom::IGameControllerInputSink, public Custom::IGipGameControllerInputSink,
+    class ControllerSink final : public Custom::IGameControllerInputSink,
+                                 public Custom::IGipGameControllerInputSink,
                                  public Custom::IHidGameControllerInputSink
     {
     public:
@@ -314,8 +317,8 @@ namespace
 
         HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** out) override
         {
-            if (iid == __uuidof(IUnknown) || iid == __uuidof(IInspectable) || iid == __uuidof(IAgileObject)
-                || iid == __uuidof(Custom::IGameControllerInputSink))
+            if (iid == __uuidof(IUnknown) || iid == __uuidof(IInspectable) || iid == __uuidof(IAgileObject) ||
+                iid == __uuidof(Custom::IGameControllerInputSink))
                 *out = static_cast<Custom::IGameControllerInputSink*>(this);
             else if (iid == __uuidof(Custom::IGipGameControllerInputSink))
                 *out = static_cast<Custom::IGipGameControllerInputSink*>(this);
@@ -402,7 +405,8 @@ namespace
             return S_OK;
         }
 
-        HRESULT STDMETHODCALLTYPE CreateGameController(Custom::IGameControllerProvider* provider, IInspectable** value) override;
+        HRESULT STDMETHODCALLTYPE CreateGameController(
+            Custom::IGameControllerProvider* provider, IInspectable** value) override;
         HRESULT STDMETHODCALLTYPE OnGameControllerAdded(Gaming::Input::IGameController*) override
         {
             fprintf(stderr, "[portal] game controller added\n");
@@ -573,7 +577,8 @@ namespace
         {
             if (m_transport != Transport::None)
             {
-                fprintf(stderr, "[portal] %s also available; keeping %s\n", TransportName(transport), TransportName(m_transport));
+                fprintf(stderr, "[portal] %s also available; keeping %s\n", TransportName(transport),
+                    TransportName(m_transport));
                 return;
             }
             m_transport = transport;
@@ -595,11 +600,13 @@ namespace
                 Activate(Transport::HidController);
         }
 
-        void LogReport(const char* direction, Transport transport, const uint8_t* report, size_t size, std::atomic<int>& logged)
+        void LogReport(
+            const char* direction, Transport transport, const uint8_t* report, size_t size, std::atomic<int>& logged)
         {
             int index = logged++;
             if (index < LoggedReports || PortalLogEnabled())
-                fprintf(stderr, "[portal] %s %s:%s\n", transport == Transport::Gip ? "GIP" : "HID", direction, Hex(report, size).c_str());
+                fprintf(stderr, "[portal] %s %s:%s\n", transport == Transport::Gip ? "GIP" : "HID", direction,
+                    Hex(report, size).c_str());
             if (index == LoggedReports && !PortalLogEnabled())
                 fprintf(stderr, "[portal] (only the first %d reports each way are logged)\n", LoggedReports);
         }
@@ -610,11 +617,14 @@ namespace
             HRESULT result = GetFactory(L"Windows.Gaming.Input.Custom.GameControllerFactoryManager", manager);
             if (FAILED(result))
             {
-                fprintf(stderr, "[portal] Windows.Gaming.Input.Custom unavailable (0x%08lX): no Xbox One portal\n", result);
+                fprintf(
+                    stderr, "[portal] Windows.Gaming.Input.Custom unavailable (0x%08lX): no Xbox One portal\n", result);
                 return;
             }
             result = manager->RegisterCustomFactoryForGipInterface(m_factory, PortalGipInterface);
-            fprintf(stderr, "[portal] GIP factory for the Xbox One portal interface {1F7788A2-B860-9B40-3626-EC56C7C45256}: %s (0x%08lX)\n",
+            fprintf(stderr,
+                "[portal] GIP factory for the Xbox One portal interface {1F7788A2-B860-9B40-3626-EC56C7C45256}: %s "
+                "(0x%08lX)\n",
                 SUCCEEDED(result) ? "registered" : "failed", result);
             result = manager->RegisterCustomFactoryForHardwareId(m_factory, ActivisionVendor, HidPortalProduct);
             fprintf(stderr, "[portal] game controller factory for HID %04X:%04X: %s (0x%08lX)\n", ActivisionVendor,
@@ -664,7 +674,8 @@ namespace
                     const DeviceEntry& device = devices[i];
                     fprintf(stderr, "[portal]   %s (%s)\n", Utf8(device.id).c_str(), Utf8(device.name).c_str());
                     if (Contains(device.id, L"VID_1430&PID_1F17") || Contains(device.id, L"VID_24C6&PID_FA00"))
-                        fprintf(stderr, "[portal]   ^ an Xbox 360 portal: the console has no driver for it, use another portal\n");
+                        fprintf(stderr,
+                            "[portal]   ^ an Xbox 360 portal: the console has no driver for it, use another portal\n");
                     else if (Contains(device.id, L"VID_1430&PID_09AB"))
                         fprintf(stderr, "[portal]   ^ the Xbox One portal (reached through GIP, not this device)\n");
                 }
@@ -673,9 +684,9 @@ namespace
 
         void ScanHid()
         {
-            std::wstring filter = std::wstring(HidInterfaces) + Enabled
-                + L" AND System.DeviceInterface.Hid.VendorId:=" + std::to_wstring(ActivisionVendor)
-                + L" AND System.DeviceInterface.Hid.ProductId:=" + std::to_wstring(HidPortalProduct);
+            std::wstring filter = std::wstring(HidInterfaces) + Enabled +
+                                  L" AND System.DeviceInterface.Hid.VendorId:=" + std::to_wstring(ActivisionVendor) +
+                                  L" AND System.DeviceInterface.Hid.ProductId:=" + std::to_wstring(HidPortalProduct);
             std::vector<DeviceEntry> devices;
             HRESULT result = S_OK;
             if (!FindDevices(filter, devices, result))
@@ -685,7 +696,8 @@ namespace
                 return;
             }
             if (devices.empty() && !m_firstScanDone)
-                fprintf(stderr, "[portal] no HID portal (%04X:%04X) visible; still looking every 2 s\n", ActivisionVendor, HidPortalProduct);
+                fprintf(stderr, "[portal] no HID portal (%04X:%04X) visible; still looking every 2 s\n",
+                    ActivisionVendor, HidPortalProduct);
             for (const DeviceEntry& device : devices)
             {
                 if (OpenHid(device))
@@ -715,7 +727,8 @@ namespace
                 if (!quiet)
                 {
                     if (SUCCEEDED(result))
-                        fprintf(stderr, "[portal] HID portal: access denied (no device returned). The manifest's "
+                        fprintf(stderr,
+                            "[portal] HID portal: access denied (no device returned). The manifest's "
                             "humaninterfacedevice capability must allow it (vidpid:1430 0150, usage:ff00 *)\n");
                     else
                         fprintf(stderr, "[portal] HID portal: cannot open (0x%08lX%s)\n", result,
@@ -732,7 +745,9 @@ namespace
             device->get_UsagePage(&usagePage);
             device->get_UsageId(&usage);
             UINT32 outputSize = OutputReportSize(device);
-            fprintf(stderr, "[portal] HID portal opened: %04X:%04X version %04X, usage page %04X usage %04X, output report %u bytes\n",
+            fprintf(stderr,
+                "[portal] HID portal opened: %04X:%04X version %04X, usage page %04X usage %04X, output report %u "
+                "bytes\n",
                 vendor, product, version, usagePage, usage, outputSize);
 
             EventRegistrationToken token{};
@@ -831,7 +846,8 @@ namespace
                 return true;
             }
 
-            fprintf(stderr, "[portal] GIP message %02X class %d failed (0x%08lX)\n", GipPortalReport, int(m_gipClass.load()), result);
+            fprintf(stderr, "[portal] GIP message %02X class %d failed (0x%08lX)\n", GipPortalReport,
+                int(m_gipClass.load()), result);
             if (m_gipClassFound)
                 return false;
             for (Custom::GipMessageClass other : { Custom::GipMessageClass_Command, Custom::GipMessageClass_LowLatency,
@@ -883,8 +899,8 @@ namespace
         return S_OK;
     }
 
-    HRESULT ControllerSink::OnMessageReceived(UINT64, Custom::GipMessageClass messageClass, BYTE messageId,
-        BYTE sequenceId, UINT32 size, BYTE* message)
+    HRESULT ControllerSink::OnMessageReceived(
+        UINT64, Custom::GipMessageClass messageClass, BYTE messageId, BYTE sequenceId, UINT32 size, BYTE* message)
     {
         if (messageId == GipPortalReport)
         {
@@ -892,8 +908,8 @@ namespace
             return S_OK;
         }
         if (m_logged++ < LoggedReports || PortalLogEnabled())
-            fprintf(stderr, "[portal] GIP message %02X class %d sequence %u:%s\n", messageId, int(messageClass), sequenceId,
-                Hex(message, size).c_str());
+            fprintf(stderr, "[portal] GIP message %02X class %d sequence %u:%s\n", messageId, int(messageClass),
+                sequenceId, Hex(message, size).c_str());
         return S_OK;
     }
 
@@ -913,8 +929,8 @@ namespace
         provider->get_HardwareProductId(&product);
         provider->get_FirmwareVersionInfo(&firmware);
         provider->get_HardwareVersionInfo(&hardware);
-        fprintf(stderr, "[portal] game controller %04X:%04X (firmware %u.%u.%u.%u, hardware %u.%u.%u.%u)\n", vendor, product,
-            firmware.Major, firmware.Minor, firmware.Build, firmware.Revision, hardware.Major, hardware.Minor,
+        fprintf(stderr, "[portal] game controller %04X:%04X (firmware %u.%u.%u.%u, hardware %u.%u.%u.%u)\n", vendor,
+            product, firmware.Major, firmware.Minor, firmware.Build, firmware.Revision, hardware.Major, hardware.Minor,
             hardware.Build, hardware.Revision);
 
         Ref<Custom::IGameControllerProvider> source(provider);
@@ -976,18 +992,9 @@ std::unique_ptr<PortalBackend> CreateHidPortal()
 }
 
 // Xbox 360 portals have no route on the console, and the Xbox One portal is in CreateHidPortal (GIP).
-std::unique_ptr<PortalBackend> CreateUsbPortal()
-{
-    return nullptr;
-}
+std::unique_ptr<PortalBackend> CreateUsbPortal() { return nullptr; }
 
 // --portal-probe is a desktop command (the console has no command line).
-std::string ProbeHidPortals(std::vector<PortalProbe>&)
-{
-    return "not on this platform";
-}
+std::string ProbeHidPortals(std::vector<PortalProbe>&) { return "not on this platform"; }
 
-std::string ProbeUsbPortals(std::vector<PortalProbe>&)
-{
-    return "not on this platform";
-}
+std::string ProbeUsbPortals(std::vector<PortalProbe>&) { return "not on this platform"; }

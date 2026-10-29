@@ -1,8 +1,8 @@
 #include "host/pad_map.h"
 #include <algorithm>
 
-const char* const g_padButtons[PadButtonCount] = { "a", "b", "x", "y", "lb", "rb", "lt", "rt", "start", "back", "ls", "rs",
-    "dpad_up", "dpad_down", "dpad_left", "dpad_right" };
+const char* const g_padButtons[PadButtonCount] = { "a", "b", "x", "y", "lb", "rb", "lt", "rt", "start", "back", "ls",
+    "rs", "dpad_up", "dpad_down", "dpad_left", "dpad_right" };
 
 uint16_t PadButtonMask(int button)
 {
@@ -34,7 +34,9 @@ GamepadState RemapPad(const GamepadState& pad, const PadMap& map)
         return pad;
     constexpr int LT = 6, RT = 7;
     constexpr uint8_t TriggerPressed = 30;
-    auto trigger = [](GamepadState& state, int button) -> uint8_t& { return button == LT ? state.leftTrigger : state.rightTrigger; };
+    auto trigger = [](GamepadState& state, int button) -> uint8_t& {
+        return button == LT ? state.leftTrigger : state.rightTrigger;
+    };
 
     GamepadState out = pad;
     for (int source = 0; source < PadButtonCount; source++) // what moved away
@@ -65,8 +67,11 @@ GamepadState RemapPad(const GamepadState& pad, const PadMap& map)
 
 uint16_t ScaleRumble(uint16_t motor, std::string_view strength)
 {
-    if (strength == "off") return 0;
-    if (strength == "low") return uint16_t(motor * 2 / 5);
-    if (strength == "strong") return uint16_t(std::min<uint32_t>(0xFFFF, uint32_t(motor) * 8 / 5));
+    if (strength == "off")
+        return 0;
+    if (strength == "low")
+        return uint16_t(motor * 2 / 5);
+    if (strength == "strong")
+        return uint16_t(std::min<uint32_t>(0xFFFF, uint32_t(motor) * 8 / 5));
     return motor;
 }

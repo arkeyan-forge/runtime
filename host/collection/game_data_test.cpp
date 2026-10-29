@@ -15,8 +15,15 @@ using namespace gamedata;
 namespace
 {
     int g_failures = 0;
-#define EXPECT(condition) \
-    do { if (!(condition)) { fprintf(stderr, "FAIL line %d: %s\n", __LINE__, #condition); g_failures++; } } while (0)
+#define EXPECT(condition)                                                                                              \
+    do                                                                                                                 \
+    {                                                                                                                  \
+        if (!(condition))                                                                                              \
+        {                                                                                                              \
+            fprintf(stderr, "FAIL line %d: %s\n", __LINE__, #condition);                                               \
+            g_failures++;                                                                                              \
+        }                                                                                                              \
+    } while (0)
 
     // A fake disc: file contents by path, and how often each was read (the resumed copy must not read what it has).
     struct FakeDisc
@@ -108,7 +115,10 @@ int main(int argc, char** argv)
         fs::path folder = scratch / "happy" / "gamedata";
         uint64_t lastDone = 0, lastTotal = 0;
         CopyOptions options;
-        options.progress = [&](uint64_t done, uint64_t total) { lastDone = done; lastTotal = total; };
+        options.progress = [&](uint64_t done, uint64_t total) {
+            lastDone = done;
+            lastTotal = total;
+        };
         CopyResult result = Copy(disc.MakeSource(), folder, options);
         EXPECT(result.outcome == CopyResult::Outcome::Done);
         EXPECT(lastDone == lastTotal && lastTotal == 5000 + (9u << 20) + 300000 + 70000);
@@ -116,7 +126,8 @@ int main(int argc, char** argv)
             EXPECT(SameBytes(folder / path, data));
         EXPECT(NoPartFiles(folder));
         Status status = Inspect(folder);
-        EXPECT(status.state == State::Complete && status.files == 5 && status.missing == 0 && status.present == status.total);
+        EXPECT(status.state == State::Complete && status.files == 5 && status.missing == 0 &&
+               status.present == status.total);
         EXPECT(status.xexSha256 == "abc123");
 
         // The game's reader: a folder is opened like an image; paths are looked up in any case; the bookkeeping is hidden.
@@ -168,11 +179,15 @@ int main(int argc, char** argv)
         std::atomic<bool> cancel{ false };
         CopyOptions options;
         options.cancel = &cancel;
-        options.progress = [&](uint64_t done, uint64_t) { if (done > 6u << 20) cancel = true; }; // inside the big file
+        options.progress = [&](uint64_t done, uint64_t) {
+            if (done > 6u << 20)
+                cancel = true;
+        }; // inside the big file
         CopyResult first = Copy(disc.MakeSource(), folder, options);
         EXPECT(first.outcome == CopyResult::Outcome::Cancelled);
         Status partial = Inspect(folder);
-        EXPECT(partial.state == State::Partial && partial.missing > 0 && partial.present > 0 && partial.present < partial.total);
+        EXPECT(partial.state == State::Partial && partial.missing > 0 && partial.present > 0 &&
+               partial.present < partial.total);
         EXPECT(NoPartFiles(folder));
         EXPECT(fs::exists(folder / "default.xex") && !fs::exists(folder / "media/levels/mission01.str"));
 
@@ -219,7 +234,8 @@ int main(int argc, char** argv)
         EXPECT(Copy(disc.MakeSource(), folder).outcome == CopyResult::Outcome::Done);
         fs::resize_file(folder / "zzz.dat", 100);
         Status shorter = Inspect(folder);
-        EXPECT(shorter.state == State::Damaged && shorter.missing == 1 && shorter.problem.find("zzz.dat") != std::string::npos);
+        EXPECT(shorter.state == State::Damaged && shorter.missing == 1 &&
+               shorter.problem.find("zzz.dat") != std::string::npos);
         // Copying again repairs it, reading only the damaged file.
         disc.reads.clear();
         EXPECT(Copy(disc.MakeSource(), folder).outcome == CopyResult::Outcome::Done);
@@ -227,7 +243,9 @@ int main(int argc, char** argv)
         EXPECT(Inspect(folder).state == State::Complete);
         fs::remove(folder / "media/sounds/music.xwb");
         EXPECT(Inspect(folder).state == State::Damaged);
-        { std::ofstream(folder / ManifestName, std::ios::trunc) << "garbage\n"; }
+        {
+            std::ofstream(folder / ManifestName, std::ios::trunc) << "garbage\n";
+        }
         EXPECT(Inspect(folder).state == State::Damaged);
         fs::remove(folder / ManifestName);
         EXPECT(Inspect(folder).state == State::None);

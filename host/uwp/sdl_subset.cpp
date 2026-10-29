@@ -53,10 +53,7 @@ namespace
 
     const auto g_start = std::chrono::steady_clock::now();
 
-    fs::path Utf8Path(const char* path)
-    {
-        return fs::path(reinterpret_cast<const char8_t*>(path));
-    }
+    fs::path Utf8Path(const char* path) { return fs::path(reinterpret_cast<const char8_t*>(path)); }
 
     bool SetProperty(SDL_PropertiesID id, const char* name, Property value)
     {
@@ -71,7 +68,9 @@ namespace
     // SDL's wildcards: '*' any run of characters, '?' one character.
     bool Match(const char* pattern, const char* name, bool ignoreCase)
     {
-        auto same = [&](char a, char b) { return ignoreCase ? std::tolower(uint8_t(a)) == std::tolower(uint8_t(b)) : a == b; };
+        auto same = [&](char a, char b) {
+            return ignoreCase ? std::tolower(uint8_t(a)) == std::tolower(uint8_t(b)) : a == b;
+        };
         if (*pattern == '\0')
             return *name == '\0';
         if (*pattern == '*')
@@ -80,10 +79,7 @@ namespace
     }
 }
 
-void UwpSetPreferencePath(std::string path)
-{
-    g_preferencePath = std::move(path);
-}
+void UwpSetPreferencePath(std::string path) { g_preferencePath = std::move(path); }
 
 void UwpSetCoreWindow(IUnknown* window, uint32_t width, uint32_t height)
 {
@@ -102,10 +98,7 @@ char* SDL_GetPrefPath(const char*, const char*)
     return strdup(g_preferencePath.c_str());
 }
 
-void SDL_free(void* memory)
-{
-    free(memory);
-}
+void SDL_free(void* memory) { free(memory); }
 
 // The entries of the directory itself (no recursion), in one allocation like SDL's.
 char** SDL_GlobDirectory(const char* path, const char* pattern, SDL_GlobFlags flags, int* count)
@@ -149,7 +142,7 @@ bool SDL_GetPathInfo(const char* path, SDL_PathInfo* info)
     {
         *info = {};
         info->type = fs::is_regular_file(status) ? SDL_PATHTYPE_FILE
-            : fs::is_directory(status)           ? SDL_PATHTYPE_DIRECTORY
+                     : fs::is_directory(status)  ? SDL_PATHTYPE_DIRECTORY
                                                  : SDL_PATHTYPE_OTHER;
         if (info->type == SDL_PATHTYPE_FILE)
             info->size = fs::file_size(Utf8Path(path), error);
@@ -209,10 +202,7 @@ SDL_IOStream* SDL_IOFromFile(const char* file, const char* mode)
     return handle != nullptr ? new SDL_IOStream{ handle } : nullptr;
 }
 
-size_t SDL_WriteIO(SDL_IOStream* stream, const void* data, size_t size)
-{
-    return fwrite(data, 1, size, stream->file);
-}
+size_t SDL_WriteIO(SDL_IOStream* stream, const void* data, size_t size) { return fwrite(data, 1, size, stream->file); }
 
 bool SDL_CloseIO(SDL_IOStream* stream)
 {
@@ -271,7 +261,8 @@ SDL_Surface* SDL_ConvertSurface(SDL_Surface* surface, SDL_PixelFormat format)
         return nullptr;
     SDL_Surface* copy = NewSurface(surface->w, surface->h, nullptr, 0);
     for (int y = 0; y < surface->h; y++)
-        memcpy(static_cast<uint8_t*>(copy->pixels) + y * copy->pitch, static_cast<const uint8_t*>(surface->pixels) + y * surface->pitch, size_t(copy->pitch));
+        memcpy(static_cast<uint8_t*>(copy->pixels) + y * copy->pitch,
+            static_cast<const uint8_t*>(surface->pixels) + y * surface->pitch, size_t(copy->pitch));
     return copy;
 }
 
@@ -301,38 +292,23 @@ bool SDL_SavePNG(SDL_Surface* surface, const char* file)
         auto* out = static_cast<std::vector<uint8_t>*>(context);
         out->insert(out->end(), static_cast<uint8_t*>(data), static_cast<uint8_t*>(data) + size);
     };
-    return stbi_write_png_to_func(append, &png, surface->w, surface->h, 4, surface->pixels, surface->pitch) != 0
-        && SDL_SaveFile(file, png.data(), png.size());
+    return stbi_write_png_to_func(append, &png, surface->w, surface->h, 4, surface->pixels, surface->pitch) != 0 &&
+           SDL_SaveFile(file, png.data(), png.size());
 }
 
-const char* SDL_GetError()
-{
-    return "";
-}
+const char* SDL_GetError() { return ""; }
 
 // --- Events --------------------------------------------------------------------------------------------------------
 
 // The UWP host has no keyboard hotkeys: watchers are never called.
-bool SDL_AddEventWatch(SDL_EventFilter, void*)
-{
-    return true;
-}
+bool SDL_AddEventWatch(SDL_EventFilter, void*) { return true; }
 
 // No keyboard: the Toy Box's nickname field only keeps the name it had, and SKY_TOYBOX_SCRIPT finds no key.
-bool SDL_StartTextInput(SDL_Window*)
-{
-    return true;
-}
+bool SDL_StartTextInput(SDL_Window*) { return true; }
 
-bool SDL_StopTextInput(SDL_Window*)
-{
-    return true;
-}
+bool SDL_StopTextInput(SDL_Window*) { return true; }
 
-SDL_Keycode SDL_GetKeyFromName(const char*)
-{
-    return SDLK_UNKNOWN;
-}
+SDL_Keycode SDL_GetKeyFromName(const char*) { return SDLK_UNKNOWN; }
 
 // No keyboard events reach the shared code on the console: every key reads as released (the Toy Box's wheel aims
 // with the arrows only on desktops).
@@ -360,25 +336,16 @@ void SDL_DestroyProperties(SDL_PropertiesID id)
     g_properties.erase(id);
 }
 
-bool SDL_SetPointerProperty(SDL_PropertiesID id, const char* name, void* value)
-{
-    return SetProperty(id, name, value);
-}
+bool SDL_SetPointerProperty(SDL_PropertiesID id, const char* name, void* value) { return SetProperty(id, name, value); }
 
 bool SDL_SetStringProperty(SDL_PropertiesID id, const char* name, const char* value)
 {
     return SetProperty(id, name, std::string(value != nullptr ? value : ""));
 }
 
-bool SDL_SetNumberProperty(SDL_PropertiesID id, const char* name, Sint64 value)
-{
-    return SetProperty(id, name, value);
-}
+bool SDL_SetNumberProperty(SDL_PropertiesID id, const char* name, Sint64 value) { return SetProperty(id, name, value); }
 
-bool SDL_SetBooleanProperty(SDL_PropertiesID id, const char* name, bool value)
-{
-    return SetProperty(id, name, value);
-}
+bool SDL_SetBooleanProperty(SDL_PropertiesID id, const char* name, bool value) { return SetProperty(id, name, value); }
 
 void* SDL_GetPointerProperty(SDL_PropertiesID id, const char* name, void* defaultValue)
 {
@@ -407,20 +374,11 @@ SDL_Window* SDL_CreateWindow(const char*, int, int, SDL_WindowFlags)
     return &g_window;
 }
 
-SDL_Window* SDL_CreateWindowWithProperties(SDL_PropertiesID)
-{
-    return nullptr;
-}
+SDL_Window* SDL_CreateWindowWithProperties(SDL_PropertiesID) { return nullptr; }
 
-SDL_PropertiesID SDL_GetWindowProperties(SDL_Window* window)
-{
-    return window != nullptr ? window->properties : 0;
-}
+SDL_PropertiesID SDL_GetWindowProperties(SDL_Window* window) { return window != nullptr ? window->properties : 0; }
 
-SDL_WindowFlags SDL_GetWindowFlags(SDL_Window*)
-{
-    return SDL_WINDOW_FULLSCREEN;
-}
+SDL_WindowFlags SDL_GetWindowFlags(SDL_Window*) { return SDL_WINDOW_FULLSCREEN; }
 
 bool SDL_GetWindowSizeInPixels(SDL_Window* window, int* width, int* height)
 {
@@ -438,52 +396,30 @@ bool SDL_GetWindowSize(SDL_Window* window, int* width, int* height)
     return SDL_GetWindowSizeInPixels(window, width, height);
 }
 
-void SDL_Metal_DestroyView(SDL_MetalView)
-{
-}
+void SDL_Metal_DestroyView(SDL_MetalView) {}
 
 // --- Button glyphs -------------------------------------------------------------------------------------------------
 
 // The UWP host calls glyphs::Init (the [input] glyphs setting, xboxone by default) but never glyphs::OnEvent: there is
 // no keyboard, and the pad is Windows.Gaming.Input's (an Xbox One / Series pad to SDL). These only satisfy the link.
-SDL_Scancode SDL_GetScancodeFromName(const char*)
-{
-    return SDL_SCANCODE_UNKNOWN;
-}
+SDL_Scancode SDL_GetScancodeFromName(const char*) { return SDL_SCANCODE_UNKNOWN; }
 
-SDL_Keycode SDL_GetKeyFromScancode(SDL_Scancode, SDL_Keymod, bool)
-{
-    return SDLK_UNKNOWN;
-}
+SDL_Keycode SDL_GetKeyFromScancode(SDL_Scancode, SDL_Keymod, bool) { return SDLK_UNKNOWN; }
 
-const char* SDL_GetKeyName(SDL_Keycode)
-{
-    return "";
-}
+const char* SDL_GetKeyName(SDL_Keycode) { return ""; }
 
-SDL_JoystickID SDL_GetGamepadID(SDL_Gamepad*)
-{
-    return 0;
-}
+SDL_JoystickID SDL_GetGamepadID(SDL_Gamepad*) { return 0; }
 
-SDL_GamepadType SDL_GetGamepadType(SDL_Gamepad*)
-{
-    return SDL_GAMEPAD_TYPE_XBOXONE;
-}
+SDL_GamepadType SDL_GetGamepadType(SDL_Gamepad*) { return SDL_GAMEPAD_TYPE_XBOXONE; }
 
 // --- Time ----------------------------------------------------------------------------------------------------------
 
 Uint64 SDL_GetTicksNS()
 {
-    return Uint64(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - g_start).count());
+    return Uint64(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - g_start).count());
 }
 
-void SDL_Delay(Uint32 milliseconds)
-{
-    std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds));
-}
+void SDL_Delay(Uint32 milliseconds) { std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds)); }
 
-void SDL_DelayPrecise(Uint64 nanoseconds)
-{
-    std::this_thread::sleep_for(std::chrono::nanoseconds(nanoseconds));
-}
+void SDL_DelayPrecise(Uint64 nanoseconds) { std::this_thread::sleep_for(std::chrono::nanoseconds(nanoseconds)); }

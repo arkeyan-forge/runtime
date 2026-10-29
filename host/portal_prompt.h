@@ -30,7 +30,12 @@ namespace portalprompt
     {
     public:
         static constexpr int Stable = 3;
-        enum class Event { None, Appeared, Gone };
+        enum class Event
+        {
+            None,
+            Appeared,
+            Gone
+        };
 
         // Feed one poll; `appeared` receives the prompt on Event::Appeared.
         Event Update(const Prompt& polled, Prompt& appeared);

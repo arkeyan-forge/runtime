@@ -24,10 +24,7 @@ namespace
     using Clock = std::chrono::steady_clock;
     using std::chrono::milliseconds;
 
-    double Ms(Clock::duration duration)
-    {
-        return std::chrono::duration<double, std::milli>(duration).count();
-    }
+    double Ms(Clock::duration duration) { return std::chrono::duration<double, std::milli>(duration).count(); }
 
     // Polls like the title (one read, then one write, every 12 ms) for `duration`; returns the slowest call in ms.
     double PollLikeTheTitle(AsyncPortal& portal, milliseconds duration, int* reports = nullptr)
@@ -54,7 +51,8 @@ namespace
         StallingPortal& fake = *device;
         AsyncPortal portal(std::move(device), false, { milliseconds(200), milliseconds(500), milliseconds(2) });
         double slowest = PollLikeTheTitle(portal, milliseconds(3500));
-        fprintf(stderr, "failing writes: slowest game-side call %.3f ms, %d opens, %d writes\n", slowest, fake.opens.load(), fake.writes.load());
+        fprintf(stderr, "failing writes: slowest game-side call %.3f ms, %d opens, %d writes\n", slowest,
+            fake.opens.load(), fake.writes.load());
         CHECK(slowest < 5);
         // Open at 0, write fails at 1 s, reopen 0.2 s later, fails at 2.2 s, reopen 0.4 s later: 3 opens in 3.5 s.
         CHECK(fake.opens == 3);
@@ -91,7 +89,8 @@ namespace
         AsyncPortal portal(std::move(device), false, { milliseconds(20), milliseconds(100), milliseconds(2) });
         int reports = 0;
         double slowest = PollLikeTheTitle(portal, milliseconds(1000), &reports);
-        fprintf(stderr, "slow writes: slowest game-side call %.3f ms, %d writes, %d report(s)\n", slowest, fake.writes.load(), reports);
+        fprintf(stderr, "slow writes: slowest game-side call %.3f ms, %d writes, %d report(s)\n", slowest,
+            fake.writes.load(), reports);
         CHECK(slowest < 5);
         CHECK(portal.IsConnected());
         CHECK(fake.opens == 1);

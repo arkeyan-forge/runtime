@@ -11,7 +11,7 @@
 
 namespace
 {
-    template<typename T>
+    template <typename T>
     void AppendFormatted(std::string& out, const std::string& spec, T value)
     {
         int size = snprintf(nullptr, 0, spec.c_str(), value);
@@ -72,7 +72,13 @@ namespace
                     spec += *p++;
             }
 
-            enum class Size { Default, Short, Long, LongLong } size = Size::Default;
+            enum class Size
+            {
+                Default,
+                Short,
+                Long,
+                LongLong
+            } size = Size::Default;
             if (*p == 'h')
             {
                 size = Size::Short;
@@ -109,7 +115,8 @@ namespace
             {
                 uint64_t value = next();
                 int64_t number = size == Size::LongLong ? int64_t(value)
-                    : size == Size::Short ? int16_t(value) : int32_t(value);
+                                 : size == Size::Short  ? int16_t(value)
+                                                        : int32_t(value);
                 AppendFormatted(out, spec + "lld", (long long)number);
                 break;
             }
@@ -119,17 +126,15 @@ namespace
             case 'X':
             {
                 uint64_t value = next();
-                uint64_t number = size == Size::LongLong ? value : size == Size::Short ? uint16_t(value) : uint32_t(value);
+                uint64_t number = size == Size::LongLong ? value
+                                  : size == Size::Short  ? uint16_t(value)
+                                                         : uint32_t(value);
                 AppendFormatted(out, spec + "ll" + conversion, (unsigned long long)number);
                 break;
             }
-            case 'p':
-                AppendFormatted(out, std::string("%08X"), uint32_t(next()));
-                break;
+            case 'p': AppendFormatted(out, std::string("%08X"), uint32_t(next())); break;
             case 'c':
-            case 'C':
-                AppendFormatted(out, spec + "c", int(uint8_t(next())));
-                break;
+            case 'C': AppendFormatted(out, spec + "c", int(uint8_t(next()))); break;
             case 's':
             case 'S':
             {
@@ -157,15 +162,9 @@ namespace
             case 'n':
                 next(); // the count is not written back, as with the Microsoft CRT's default
                 break;
-            case '%':
-                out += '%';
-                break;
-            case '\0':
-                out.append(start);
-                return out;
-            default:
-                out.append(start, p + 1);
-                break;
+            case '%': out += '%'; break;
+            case '\0': out.append(start); return out;
+            default: out.append(start, p + 1); break;
             }
         }
         return out;
@@ -177,8 +176,7 @@ PPC_FUNC(__imp__vsprintf)
 {
     // A guest va_list points at the slots.
     uint32_t args = ctx.r5.u32;
-    std::string text = FormatGuest(static_cast<const char*>(g_memory.Translate(ctx.r4.u32)), [&]
-    {
+    std::string text = FormatGuest(static_cast<const char*>(g_memory.Translate(ctx.r4.u32)), [&] {
         uint64_t value = g_memory.Read<uint64_t>(args);
         args += 8;
         return value;
@@ -197,8 +195,7 @@ PPC_FUNC(__imp___snprintf)
     uint64_t registers[] = { ctx.r6.u64, ctx.r7.u64, ctx.r8.u64, ctx.r9.u64, ctx.r10.u64 };
     uint32_t index = 0;
     uint32_t stack = ctx.r1.u32 + 0x50;
-    std::string text = FormatGuest(static_cast<const char*>(g_memory.Translate(ctx.r5.u32)), [&]
-    {
+    std::string text = FormatGuest(static_cast<const char*>(g_memory.Translate(ctx.r5.u32)), [&] {
         if (index < 5)
             return registers[index++];
         uint64_t value = g_memory.Read<uint64_t>(stack);

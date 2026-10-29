@@ -85,7 +85,8 @@ namespace
         fs::path a = old.support / "SSARecomp", s = old.support / "Skylauncher";
         old.roots = { a, s, {} };
         std::string game = (s / "games" / "abc123").string();
-        Write(a / "launcher.ini", "[launcher]\niso=/discs/game.iso\n[install.abc123]\nruntime=" + game + "/SSARecomp.app\nkit=0.3.0\n[video]\nvsync=0\n");
+        Write(a / "launcher.ini", "[launcher]\niso=/discs/game.iso\n[install.abc123]\nruntime=" + game +
+                                      "/SSARecomp.app\nkit=0.3.0\n[video]\nvsync=0\n");
         Write(a / "SSARecomp.log", "log\n");
         Write(a / "SSARecomp.prev.log", "prev\n");
         Write(a / "skylauncher-game.log", "game\n");
@@ -110,7 +111,8 @@ namespace
         setenv("SKYLANDERS_DATA", root.string().c_str(), 1);
         CHECK(Root() == root);
         CHECK(Game("ssa") == root / "SSA" && Game("giants") == root / "Giants");
-        CHECK(LauncherIni() == root / "launcher.ini" && Kits() == root / "kit" && Toolchains() == root / "toolchains" && Logs() == root / "logs");
+        CHECK(LauncherIni() == root / "launcher.ini" && Kits() == root / "kit" && Toolchains() == root / "toolchains" &&
+              Logs() == root / "logs");
         CHECK(!Has(root)); // nothing is created
         unsetenv("SKYLANDERS_DATA");
         CHECK(Root().filename() == "Skylanders");
@@ -121,7 +123,8 @@ namespace
     void TestMac()
     {
         Old old = MakeMac("mac");
-        std::string collection = Tree(old.root / "Collection"), saves = Tree(old.roots.ssarecomp / "SSARecomp" / "saves");
+        std::string collection = Tree(old.root / "Collection"),
+                    saves = Tree(old.roots.ssarecomp / "SSARecomp" / "saves");
         fs::path a = old.roots.ssarecomp;
         MigrationReport report = Migrate(old.roots, old.root);
         fs::path game = old.root / "SSA";
@@ -138,7 +141,8 @@ namespace
         // launcher.ini: moved, the install path follows, the ISO's stays
         std::string ini = Read(old.root / "launcher.ini");
         CHECK(ini.find("iso=/discs/game.iso\n") != std::string::npos && ini.find("vsync=0") != std::string::npos);
-        CHECK(ini.find("runtime=" + (game / "SSARecomp.app").string() + "\n") != std::string::npos && report.rewritten == 1);
+        CHECK(ini.find("runtime=" + (game / "SSARecomp.app").string() + "\n") != std::string::npos &&
+              report.rewritten == 1);
         CHECK(ini.find("Skylauncher") == std::string::npos);
         // old folders: gone once empty, except SSARecomp that still holds xbox-signing
         CHECK(Read(a / "xbox-signing" / "key.pfx") == "secret" && !Has(a / "SSARecomp") && !Has(a / "launcher.ini"));
@@ -154,9 +158,11 @@ namespace
 
     void TestWindows()
     {
-        fs::path support = g_scratch / "win" / "Roaming", local = g_scratch / "win" / "Local", root = support / "Skylanders";
+        fs::path support = g_scratch / "win" / "Roaming", local = g_scratch / "win" / "Local",
+                 root = support / "Skylanders";
         OldRoots roots{ support / "SSARecomp", local / "Skylauncher", local / "SSARecomp" };
-        Write(roots.ssarecomp / "launcher.ini", "[install.ff]\nruntime=" + (local / "Skylauncher" / "games" / "ff" / "SSARecomp.exe").string() + "\n");
+        Write(roots.ssarecomp / "launcher.ini",
+            "[install.ff]\nruntime=" + (local / "Skylauncher" / "games" / "ff" / "SSARecomp.exe").string() + "\n");
         Write(roots.ssarecomp / "SSARecomp" / "saves" / "s.bin", "save");
         Write(roots.skylauncher / "games" / "ff" / "SSARecomp.exe", "exe");
         Write(roots.skylauncher / "games" / "ff" / "ssabuild-work" / "x", "x");
@@ -164,10 +170,13 @@ namespace
         Write(roots.localSsarecomp / "toolchains" / "llvm-mingw.zip", "zip");
         Write(roots.localSsarecomp / "toolchains" / "llvm-mingw" / "bin" / "clang.exe", "clang");
         MigrationReport report = Migrate(roots, root);
-        CHECK(report.failed == 0 && Read(root / "SSA" / "SSARecomp.exe") == "exe" && Read(root / "SSA" / "saves" / "s.bin") == "save");
-        CHECK(Read(root / "toolchains" / "llvm-mingw" / "bin" / "clang.exe") == "clang" && Read(root / "toolchains" / "llvm-mingw.zip") == "zip");
+        CHECK(report.failed == 0 && Read(root / "SSA" / "SSARecomp.exe") == "exe" &&
+              Read(root / "SSA" / "saves" / "s.bin") == "save");
+        CHECK(Read(root / "toolchains" / "llvm-mingw" / "bin" / "clang.exe") == "clang" &&
+              Read(root / "toolchains" / "llvm-mingw.zip") == "zip");
         CHECK(Read(root / "kit" / "v0.3.0" / "SkyBuild.exe") == "kit");
-        CHECK(Read(root / "launcher.ini").find("runtime=" + (root / "SSA" / "SSARecomp.exe").string()) != std::string::npos);
+        CHECK(Read(root / "launcher.ini").find("runtime=" + (root / "SSA" / "SSARecomp.exe").string()) !=
+              std::string::npos);
         CHECK(!Has(roots.ssarecomp) && !Has(roots.skylauncher) && !Has(roots.localSsarecomp));
         // a second game folder (another disc) stays where it was
         Write(roots.skylauncher / "games" / "aa" / "SSARecomp.exe", "first by hash");
@@ -207,9 +216,11 @@ namespace
         Write(game / "portraits.migrating" / "junk", "partial");
         MigrationReport report = Migrate(old.roots, old.root);
         CHECK(report.failed == 0 && report.kept == 0 && report.dropped == 1);
-        CHECK(!Has(a / "figures") && Read(game / "figures" / "one.sky") == "figure one" && Read(game / "portraits" / "p.png") == "png");
+        CHECK(!Has(a / "figures") && Read(game / "figures" / "one.sky") == "figure one" &&
+              Read(game / "portraits" / "p.png") == "png");
         CHECK(Read(game / "SSARecomp.app" / "Contents" / "MacOS" / "SSARecomp") == "binary");
-        CHECK(Read(old.root / "launcher.ini").find("runtime=" + (game / "SSARecomp.app").string()) != std::string::npos);
+        CHECK(
+            Read(old.root / "launcher.ini").find("runtime=" + (game / "SSARecomp.app").string()) != std::string::npos);
         CHECK(!Migrate(old.roots, old.root).Changed());
     }
 
@@ -240,7 +251,8 @@ namespace
         MigrationReport report = Migrate(old.roots, old.root);
         fs::permissions(game, fs::perms::owner_all, fs::perm_options::replace);
         CHECK(report.failed > 0);
-        CHECK(Tree(old.roots.ssarecomp / "SSARecomp" / "saves") == saves && Has(old.roots.ssarecomp / "SSARecomp" / "pipelines.bin")); // left in place
+        CHECK(Tree(old.roots.ssarecomp / "SSARecomp" / "saves") == saves &&
+              Has(old.roots.ssarecomp / "SSARecomp" / "pipelines.bin")); // left in place
         CHECK(Has(old.roots.skylauncher / "games" / "abc123" / "install.log"));
         // once the folder is writable again, the next run finishes the job
         report = Migrate(old.roots, old.root);
@@ -256,7 +268,8 @@ namespace
         Write(old.roots.ssarecomp / "launcher-cache" / "415608AB" / "y.png", "again");
         MigrationReport report = Migrate(old.roots, old.root);
         CHECK(report.dropped == 1 && report.kept == 0 && !Has(old.roots.ssarecomp / "launcher-cache"));
-        CHECK(Read(game / "launcher-cache" / "415608AB" / "x.png") == "cache" && !HasSuffixed(game, "launcher-cache.old-"));
+        CHECK(Read(game / "launcher-cache" / "415608AB" / "x.png") == "cache" &&
+              !HasSuffixed(game, "launcher-cache.old-"));
     }
 
     void TestTrim()
@@ -269,7 +282,8 @@ namespace
             fs::last_write_time(file, fs::file_time_type::clock::now() - std::chrono::hours(10 - i));
         }
         uint64_t freed = TrimFolder(folder, 250);
-        CHECK(freed == 300 && !Has(folder / "sub" / "f0") && !Has(folder / "sub" / "f2") && Has(folder / "sub" / "f3") && Has(folder / "sub" / "f4"));
+        CHECK(freed == 300 && !Has(folder / "sub" / "f0") && !Has(folder / "sub" / "f2") &&
+              Has(folder / "sub" / "f3") && Has(folder / "sub" / "f4"));
         CHECK(TrimFolder(folder, 250) == 0);
     }
 }

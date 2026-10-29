@@ -45,7 +45,8 @@
 static bool IsWindowGone()
 {
 #ifdef __APPLE__
-    id application = reinterpret_cast<id (*)(Class, SEL)>(objc_msgSend)(objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+    id application = reinterpret_cast<id (*)(Class, SEL)>(objc_msgSend)(
+        objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
     return !reinterpret_cast<BOOL (*)(id, SEL)>(objc_msgSend)(application, sel_registerName("isHidden"));
 #else
     return false;
@@ -95,11 +96,14 @@ static GamepadState ReadHostGamepad(const HostInput& input, SDL_Gamepad* gamepad
         static const uint16_t buttons[] = { Button::A, Button::B, Button::X, Button::Y, Button::Start, Button::Back,
             Button::LeftShoulder, Button::RightShoulder };
         for (size_t i = 0; i < std::size(buttons); i++)
-            if (held(i)) state.buttons |= buttons[i];
+            if (held(i))
+                state.buttons |= buttons[i];
         static const uint16_t dpad[] = { Button::DpadUp, Button::DpadDown, Button::DpadLeft, Button::DpadRight };
         for (size_t i = 0; i < std::size(dpad); i++)
-            if (held(18 + i)) state.buttons |= dpad[i];
-        if (keys[SDL_SCANCODE_ESCAPE]) state.buttons |= Button::Back;
+            if (held(18 + i))
+                state.buttons |= dpad[i];
+        if (keys[SDL_SCANCODE_ESCAPE])
+            state.buttons |= Button::Back;
         state.leftTrigger = held(8) ? 255 : 0;
         state.rightTrigger = held(9) ? 255 : 0;
         state.thumbLY = int16_t((held(10) - held(11)) * 32767);
@@ -111,14 +115,21 @@ static GamepadState ReadHostGamepad(const HostInput& input, SDL_Gamepad* gamepad
     if (gamepad != nullptr)
     {
         static const std::pair<SDL_GamepadButton, uint16_t> buttons[] = {
-            { SDL_GAMEPAD_BUTTON_DPAD_UP, Button::DpadUp }, { SDL_GAMEPAD_BUTTON_DPAD_DOWN, Button::DpadDown },
-            { SDL_GAMEPAD_BUTTON_DPAD_LEFT, Button::DpadLeft }, { SDL_GAMEPAD_BUTTON_DPAD_RIGHT, Button::DpadRight },
-            { SDL_GAMEPAD_BUTTON_START, Button::Start }, { SDL_GAMEPAD_BUTTON_BACK, Button::Back },
+            { SDL_GAMEPAD_BUTTON_DPAD_UP, Button::DpadUp },
+            { SDL_GAMEPAD_BUTTON_DPAD_DOWN, Button::DpadDown },
+            { SDL_GAMEPAD_BUTTON_DPAD_LEFT, Button::DpadLeft },
+            { SDL_GAMEPAD_BUTTON_DPAD_RIGHT, Button::DpadRight },
+            { SDL_GAMEPAD_BUTTON_START, Button::Start },
+            { SDL_GAMEPAD_BUTTON_BACK, Button::Back },
             { SDL_GAMEPAD_BUTTON_TOUCHPAD, Button::Back }, // PS4 / PS5: the touchpad's click is BACK too (its glyph)
-            { SDL_GAMEPAD_BUTTON_LEFT_STICK, Button::LeftThumb }, { SDL_GAMEPAD_BUTTON_RIGHT_STICK, Button::RightThumb },
-            { SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, Button::LeftShoulder }, { SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, Button::RightShoulder },
-            { SDL_GAMEPAD_BUTTON_SOUTH, Button::A }, { SDL_GAMEPAD_BUTTON_EAST, Button::B },
-            { SDL_GAMEPAD_BUTTON_WEST, Button::X }, { SDL_GAMEPAD_BUTTON_NORTH, Button::Y },
+            { SDL_GAMEPAD_BUTTON_LEFT_STICK, Button::LeftThumb },
+            { SDL_GAMEPAD_BUTTON_RIGHT_STICK, Button::RightThumb },
+            { SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, Button::LeftShoulder },
+            { SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, Button::RightShoulder },
+            { SDL_GAMEPAD_BUTTON_SOUTH, Button::A },
+            { SDL_GAMEPAD_BUTTON_EAST, Button::B },
+            { SDL_GAMEPAD_BUTTON_WEST, Button::X },
+            { SDL_GAMEPAD_BUTTON_NORTH, Button::Y },
         };
         GamepadState pad;
         for (const auto& [sdlButton, button] : buttons)
@@ -135,10 +146,14 @@ static GamepadState ReadHostGamepad(const HostInput& input, SDL_Gamepad* gamepad
         pad.rightTrigger = uint8_t(axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) >> 7);
         pad = RemapPad(pad, input.padMap);
         state.buttons |= pad.buttons;
-        if (state.thumbLX == 0) state.thumbLX = pad.thumbLX;
-        if (state.thumbLY == 0) state.thumbLY = pad.thumbLY;
-        if (state.thumbRX == 0) state.thumbRX = pad.thumbRX;
-        if (state.thumbRY == 0) state.thumbRY = pad.thumbRY;
+        if (state.thumbLX == 0)
+            state.thumbLX = pad.thumbLX;
+        if (state.thumbLY == 0)
+            state.thumbLY = pad.thumbLY;
+        if (state.thumbRX == 0)
+            state.thumbRX = pad.thumbRX;
+        if (state.thumbRY == 0)
+            state.thumbRY = pad.thumbRY;
         state.leftTrigger = std::max(state.leftTrigger, pad.leftTrigger);
         state.rightTrigger = std::max(state.rightTrigger, pad.rightTrigger);
     }
@@ -164,8 +179,8 @@ static void SendRumble(int user, SDL_Gamepad* gamepad, const std::string& streng
     if (gamepad != nullptr)
         SDL_RumbleGamepad(gamepad, left, right, (left | right) != 0 ? 1000 : 0);
     if (changed && gamepad != nullptr)
-        fprintf(stderr, "[input] rumble player %d: the game asked %u/%u, %s: %u/%u\n", user + 1, unsigned(asked[0]), unsigned(asked[1]),
-            strength.c_str(), unsigned(left), unsigned(right));
+        fprintf(stderr, "[input] rumble player %d: the game asked %u/%u, %s: %u/%u\n", user + 1, unsigned(asked[0]),
+            unsigned(asked[1]), strength.c_str(), unsigned(left), unsigned(right));
     lastLeft[user] = left;
     lastRight[user] = right;
     lastPad[user] = gamepad;
@@ -204,7 +219,8 @@ int main(int argc, char** argv)
     RuntimeSettings settings;
     std::vector<std::string> warnings;
     std::string error;
-    bool parsed = ParseSettings(LoadLauncherConfig(LauncherConfigPath()), game.id, getenv, argc, argv, settings, warnings, error);
+    bool parsed =
+        ParseSettings(LoadLauncherConfig(LauncherConfigPath()), game.id, getenv, argc, argv, settings, warnings, error);
     if (parsed && settings.portalProbe)
         return PortalProbeMain();
     if (parsed && !settings.help && !settings.version && !settings.listGamepads)
@@ -239,7 +255,8 @@ int main(int argc, char** argv)
     std::vector<char*> arguments{ argv[0] };
     for (std::string& argument : settings.arguments)
         arguments.push_back(argument.data());
-    std::string discPath = ResolveGameSource(int(arguments.size()), arguments.data(), game, skyenv::Get("SKY_HEADLESS") == nullptr);
+    std::string discPath =
+        ResolveGameSource(int(arguments.size()), arguments.data(), game, skyenv::Get("SKY_HEADLESS") == nullptr);
     if (skyenv::Get("SKY_LAUNCHER_SHOTS") != nullptr)
         return 0; // screenshot test run: the launcher already quit
     if (discPath.empty())
@@ -256,7 +273,8 @@ int main(int argc, char** argv)
     if (!settings.voiceLanguage.empty())
     {
         if (::game::Current().SetVoiceLanguage == nullptr)
-            fprintf(stderr, "%s has no voice language setting yet, ignoring \"%s\"\n", game.name, settings.voiceLanguage.c_str());
+            fprintf(stderr, "%s has no voice language setting yet, ignoring \"%s\"\n", game.name,
+                settings.voiceLanguage.c_str());
         else if (!::game::Current().SetVoiceLanguage(settings.voiceLanguage))
             fprintf(stderr, "unknown voice language \"%s\", using English\n", settings.voiceLanguage.c_str());
     }
@@ -296,13 +314,16 @@ int main(int argc, char** argv)
     {
         SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO);
         HostAudioInit();
-        gpu::g_settings = { .resolutionScale = settings.resolutionScale, .anisotropy = settings.anisotropy, .vsync = settings.vsync,
+        gpu::g_settings = { .resolutionScale = settings.resolutionScale,
+            .anisotropy = settings.anisotropy,
+            .vsync = settings.vsync,
             .fpsLimit = settings.fpsLimit };
         // The game's name and its version (games/<id>/game.txt): "Skylanders: Spyro's Adventure v0.9.1".
         const std::string title = std::string(g_gameInfo.name) + " v" + SSA_GAME_VERSION;
         window = CreateDisplayWindow(title.c_str(), 1280, 720, settings.fullscreen);
 #ifndef __APPLE__ // macOS: the bundle's icon (SkyBuild's BundleIcon)
-        if (window != nullptr) // game_icon.png beside the executable (SkyBuild's GameIcon: the disc's logo); else the icon of default.xex; else the system's
+        if (window !=
+            nullptr) // game_icon.png beside the executable (SkyBuild's GameIcon: the disc's logo); else the icon of default.xex; else the system's
         {
             std::vector<uint8_t> png;
             if (const char* base = SDL_GetBasePath())
@@ -311,9 +332,11 @@ int main(int argc, char** argv)
             if (png.empty())
                 png = ReadTitleMetadata(g_disc.ReadAll("default.xex")).iconPng;
             int iconWidth = 0, iconHeight = 0, channels = 0;
-            if (unsigned char* rgba = stbi_load_from_memory(png.data(), int(png.size()), &iconWidth, &iconHeight, &channels, 4))
+            if (unsigned char* rgba =
+                    stbi_load_from_memory(png.data(), int(png.size()), &iconWidth, &iconHeight, &channels, 4))
             {
-                if (SDL_Surface* icon = SDL_CreateSurfaceFrom(iconWidth, iconHeight, SDL_PIXELFORMAT_RGBA32, rgba, iconWidth * 4))
+                if (SDL_Surface* icon =
+                        SDL_CreateSurfaceFrom(iconWidth, iconHeight, SDL_PIXELFORMAT_RGBA32, rgba, iconWidth * 4))
                 {
                     SDL_SetWindowIcon(window, icon);
                     SDL_DestroySurface(icon);
@@ -382,27 +405,30 @@ int main(int argc, char** argv)
                 std::_Exit(0);
             }
             // The chosen gamepad (--gamepad) replaces another one in use when it shows up.
-            if (event.type == SDL_EVENT_GAMEPAD_ADDED && input.gamepad
-                && (gamepad == nullptr || (!wanted(SDL_GetGamepadID(gamepad)) && wanted(event.gdevice.which))))
+            if (event.type == SDL_EVENT_GAMEPAD_ADDED && input.gamepad &&
+                (gamepad == nullptr || (!wanted(SDL_GetGamepadID(gamepad)) && wanted(event.gdevice.which))))
             {
                 if (gamepad != nullptr)
                     SDL_CloseGamepad(gamepad);
                 gamepad = SDL_OpenGamepad(event.gdevice.which);
-                fprintf(stderr, "[input] gamepad %s (%s)\n", SDL_GetGamepadName(gamepad), GamepadGuid(event.gdevice.which).c_str());
+                fprintf(stderr, "[input] gamepad %s (%s)\n", SDL_GetGamepadName(gamepad),
+                    GamepadGuid(event.gdevice.which).c_str());
             }
-            else if (event.type == SDL_EVENT_GAMEPAD_ADDED && input.gamepad && gamepad != nullptr && secondGamepad == nullptr
-                && SDL_GetGamepadID(gamepad) != event.gdevice.which)
+            else if (event.type == SDL_EVENT_GAMEPAD_ADDED && input.gamepad && gamepad != nullptr &&
+                     secondGamepad == nullptr && SDL_GetGamepadID(gamepad) != event.gdevice.which)
             {
                 secondGamepad = SDL_OpenGamepad(event.gdevice.which);
                 fprintf(stderr, "[input] second gamepad (Player 2) %s (%s)\n", SDL_GetGamepadName(secondGamepad),
                     GamepadGuid(event.gdevice.which).c_str());
             }
-            if (event.type == SDL_EVENT_GAMEPAD_REMOVED && secondGamepad != nullptr && SDL_GetGamepadID(secondGamepad) == event.gdevice.which)
+            if (event.type == SDL_EVENT_GAMEPAD_REMOVED && secondGamepad != nullptr &&
+                SDL_GetGamepadID(secondGamepad) == event.gdevice.which)
             {
                 SDL_CloseGamepad(secondGamepad);
                 secondGamepad = nullptr;
             }
-            if (event.type == SDL_EVENT_GAMEPAD_REMOVED && gamepad != nullptr && SDL_GetGamepadID(gamepad) == event.gdevice.which)
+            if (event.type == SDL_EVENT_GAMEPAD_REMOVED && gamepad != nullptr &&
+                SDL_GetGamepadID(gamepad) == event.gdevice.which)
             {
                 SDL_CloseGamepad(gamepad);
                 gamepad = std::exchange(secondGamepad, nullptr); // Player 2's pad becomes Player 1's

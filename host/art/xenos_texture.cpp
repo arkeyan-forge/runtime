@@ -49,7 +49,7 @@ namespace art
         uint32_t bank = (y >> 4) & 1;
         uint32_t pipe = ((x >> 3) & 3) ^ (((y >> 3) & 1) << 1);
         return ((y & 1) << 4) | (pipe << 6) | (bank << 11) | (bytes & 15) | (((bytes >> 4) & 1) << 5) |
-            (((bytes >> 5) & 7) << 8) | ((bytes >> 8) << 12);
+               (((bytes >> 5) & 7) << 8) | ((bytes >> 8) << 12);
     }
 
     void DecodeBlock(const uint8_t* block, TextureFormat format, uint32_t texels[16])
@@ -102,7 +102,8 @@ namespace art
         uint32_t blocksHigh = (texture.height + shape.blockWidth - 1) / shape.blockWidth;
         uint32_t pitchBlocks = std::max(texture.pitch, texture.width) / shape.blockWidth;
         pitchBlocks = std::max(pitchBlocks, blocksWide);
-        pitchBlocks = texture.tiled ? (pitchBlocks + 31) / 32 * 32 : (pitchBlocks * blockBytes + 255) / 256 * 256 / blockBytes;
+        pitchBlocks =
+            texture.tiled ? (pitchBlocks + 31) / 32 * 32 : (pitchBlocks * blockBytes + 255) / 256 * 256 / blockBytes;
 
         out.width = texture.width;
         out.height = texture.height;
@@ -112,7 +113,8 @@ namespace art
         {
             for (uint32_t bx = 0; bx < blocksWide; bx++)
             {
-                uint64_t address = texture.tiled ? TiledOffset(bx, by, pitchBlocks, shape.log2Bytes) : (uint64_t(by) * pitchBlocks + bx) * blockBytes;
+                uint64_t address = texture.tiled ? TiledOffset(bx, by, pitchBlocks, shape.log2Bytes)
+                                                 : (uint64_t(by) * pitchBlocks + bx) * blockBytes;
                 if (address + blockBytes > size)
                 {
                     out = {};
@@ -136,7 +138,8 @@ namespace art
                     else
                     {
                         // 0xAARRGGBB in host order: bytes B, G, R, A.
-                        texel = uint32_t(block[2]) | uint32_t(block[1]) << 8 | uint32_t(block[0]) << 16 | uint32_t(block[3]) << 24;
+                        texel = uint32_t(block[2]) | uint32_t(block[1]) << 8 | uint32_t(block[0]) << 16 |
+                                uint32_t(block[3]) << 24;
                     }
                     out.rgba[size_t(by) * texture.width + bx] = texel;
                     continue;
@@ -157,7 +160,8 @@ namespace art
     void FlipVertically(Image& image)
     {
         for (uint32_t y = 0; y < image.height / 2; y++)
-            std::swap_ranges(image.rgba.begin() + size_t(y) * image.width, image.rgba.begin() + size_t(y + 1) * image.width,
+            std::swap_ranges(image.rgba.begin() + size_t(y) * image.width,
+                image.rgba.begin() + size_t(y + 1) * image.width,
                 image.rgba.begin() + size_t(image.height - 1 - y) * image.width);
     }
 }

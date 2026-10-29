@@ -53,7 +53,8 @@ namespace
         int (*set_auto_detach_kernel_driver)(libusb_device_handle*, int);
         int (*claim_interface)(libusb_device_handle*, int);
         int (*release_interface)(libusb_device_handle*, int);
-        int (*control_transfer)(libusb_device_handle*, uint8_t, uint8_t, uint16_t, uint16_t, unsigned char*, uint16_t, unsigned int);
+        int (*control_transfer)(
+            libusb_device_handle*, uint8_t, uint8_t, uint16_t, uint16_t, unsigned char*, uint16_t, unsigned int);
         int (*interrupt_transfer)(libusb_device_handle*, unsigned char, unsigned char*, int, int*, unsigned int);
         const char* (*error_name)(int);
         libusb_context* context;
@@ -73,8 +74,7 @@ namespace
             return false;
 
         bool complete = true;
-        auto load = [&](auto& function, const char* name)
-        {
+        auto load = [&](auto& function, const char* name) {
             function = reinterpret_cast<std::remove_reference_t<decltype(function)>>(SDL_LoadFunction(library, name));
             complete = complete && function != nullptr;
         };
@@ -140,9 +140,9 @@ namespace
     {
         UsbInterface best, current;
         bool alternate = false;
-        auto consider = [&]
-        {
-            if (current.number >= 0 && current.in != 0 && current.out != 0 && (best.number < 0 || (current.gip && !best.gip)))
+        auto consider = [&] {
+            if (current.number >= 0 && current.in != 0 && current.out != 0 &&
+                (best.number < 0 || (current.gip && !best.gip)))
                 best = current;
         };
 
@@ -185,7 +185,10 @@ namespace
         }
         ~UsbPortal() override { Close(); }
 
-        const char* Name() const override { return m_framing == Framing::Gip ? "Xbox One USB (experimental)" : "Xbox 360 USB"; }
+        const char* Name() const override
+        {
+            return m_framing == Framing::Gip ? "Xbox One USB (experimental)" : "Xbox 360 USB";
+        }
 
         bool IsConnected() override
         {
@@ -242,8 +245,10 @@ namespace
                 if (m_usb.get_device_descriptor(devices[i], &descriptor) != 0)
                     continue;
 
-                bool xbox360 = std::any_of(std::begin(Xbox360Portals), std::end(Xbox360Portals), [&](const KnownPortal& portal)
-                    { return portal.vendor == descriptor.idVendor && portal.product == descriptor.idProduct; });
+                bool xbox360 =
+                    std::any_of(std::begin(Xbox360Portals), std::end(Xbox360Portals), [&](const KnownPortal& portal) {
+                        return portal.vendor == descriptor.idVendor && portal.product == descriptor.idProduct;
+                    });
                 bool selected = descriptor.idVendor == m_selected.vendor && descriptor.idProduct == m_selected.product;
                 if (xbox360 || selected || descriptor.idVendor == ActivisionVendor)
                     TryOpen(devices[i], descriptor, xbox360, selected);
@@ -391,7 +396,8 @@ namespace
 
             if (options & GipOptionAcknowledge)
             {
-                const uint8_t acknowledge[9] = { 0, command, uint8_t(options & GipOptionInternal), uint8_t(length), uint8_t(length >> 8) };
+                const uint8_t acknowledge[9] = { 0, command, uint8_t(options & GipOptionInternal), uint8_t(length),
+                    uint8_t(length >> 8) };
                 SendGip(GipAcknowledge, GipOptionInternal, sequence, acknowledge, sizeof(acknowledge));
             }
 
@@ -438,7 +444,8 @@ std::unique_ptr<PortalBackend> CreateUsbPortal()
 namespace
 {
     // Reset, in the Xbox 360 framing; any report back is an answer.
-    std::string Query(const Libusb& usb, libusb_device_handle* handle, const UsbInterface& usbInterface, PortalProbe& probe)
+    std::string Query(
+        const Libusb& usb, libusb_device_handle* handle, const UsbInterface& usbInterface, PortalProbe& probe)
     {
         uint8_t packet[PortalReportSize] = { Xbox360Header[0], Xbox360Header[1], 'R' };
         int transferred = 0;
@@ -477,13 +484,16 @@ std::string ProbeUsbPortals(std::vector<PortalProbe>& portals)
         UsbDeviceDescriptor descriptor{};
         if (usb.get_device_descriptor(devices[i], &descriptor) != 0)
             continue;
-        bool xbox360 = std::any_of(std::begin(Xbox360Portals), std::end(Xbox360Portals), [&](const KnownPortal& portal)
-            { return portal.vendor == descriptor.idVendor && portal.product == descriptor.idProduct; });
+        bool xbox360 =
+            std::any_of(std::begin(Xbox360Portals), std::end(Xbox360Portals), [&](const KnownPortal& portal) {
+                return portal.vendor == descriptor.idVendor && portal.product == descriptor.idProduct;
+            });
         // The HID portals (1430:0150) are the HID transport's.
         if (!xbox360 && (descriptor.idVendor != ActivisionVendor || descriptor.idProduct == 0x0150))
             continue;
 
-        PortalProbe probe{ "usb", descriptor.idVendor, descriptor.idProduct, xbox360 ? "Xbox 360 portal" : "Activision device" };
+        PortalProbe probe{ "usb", descriptor.idVendor, descriptor.idProduct,
+            xbox360 ? "Xbox 360 portal" : "Activision device" };
         libusb_device_handle* handle = nullptr;
         int result = usb.open(devices[i], &handle);
         if (result != 0)
@@ -500,11 +510,13 @@ std::string ProbeUsbPortals(std::vector<PortalProbe>& portals)
             probe.name = "Xbox One portal (experimental)";
         if (usbInterface.number < 0 || (!xbox360 && !usbInterface.gip))
             probe.status = "error: no portal interface";
-        else if (usb.set_auto_detach_kernel_driver(handle, 1); (result = usb.claim_interface(handle, usbInterface.number)) != 0)
+        else if (usb.set_auto_detach_kernel_driver(handle, 1);
+            (result = usb.claim_interface(handle, usbInterface.number)) != 0)
             probe.status = std::string("error: cannot claim interface (") + usb.error_name(result) + ")";
         else
         {
-            probe.status = usbInterface.gip ? "ok" : Query(usb, handle, usbInterface, probe); // GIP: opened and claimed only
+            probe.status =
+                usbInterface.gip ? "ok" : Query(usb, handle, usbInterface, probe); // GIP: opened and claimed only
             usb.release_interface(handle, usbInterface.number);
         }
         usb.close(handle);

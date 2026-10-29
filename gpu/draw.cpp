@@ -73,7 +73,13 @@ namespace
 
     namespace RootDescriptor
     {
-        enum : uint32_t { VertexConstants, PixelConstants, SharedConstants, PulledVertices };
+        enum : uint32_t
+        {
+            VertexConstants,
+            PixelConstants,
+            SharedConstants,
+            PulledVertices
+        };
     }
 
     struct PushConstants
@@ -100,17 +106,19 @@ namespace
         uint32_t pulledCount;
         float resolutionScale;   // point sizes and pixel positions (vPos) are in guest pixels: scaled by it
         float pointScale[2];     // D3D12 point sprites (shaders/point_sprite.hlsl): 1 / the viewport's size
-        uint32_t scaledTextures; // DrawDesc::scaledTextures: unnormalized fetches of these registers scale by resolutionScale
-        float padding;           // the HLSL constant buffer reads whole float4s
-        uint32_t vertexTexture2D[gpu::MaxVertexSamplers]; // a vertex shader's descriptor indices (XenosRecomp VERTEX_*_OFFSET)
+        uint32_t
+            scaledTextures; // DrawDesc::scaledTextures: unnormalized fetches of these registers scale by resolutionScale
+        float padding; // the HLSL constant buffer reads whole float4s
+        uint32_t vertexTexture2D
+            [gpu::MaxVertexSamplers]; // a vertex shader's descriptor indices (XenosRecomp VERTEX_*_OFFSET)
         uint32_t vertexSampler[gpu::MaxVertexSamplers];
     };
     static_assert(offsetof(SharedConstants, booleans) == 256 && offsetof(SharedConstants, alphaThreshold) == 272 &&
-        offsetof(SharedConstants, positionScale) == 280 && offsetof(SharedConstants, pulledVertices) == 288 &&
-        offsetof(SharedConstants, pulledCount) == 296 && offsetof(SharedConstants, resolutionScale) == 300 &&
-        offsetof(SharedConstants, pointScale) == 304 && offsetof(SharedConstants, scaledTextures) == 312 &&
-        offsetof(SharedConstants, vertexTexture2D) == 320 && offsetof(SharedConstants, vertexSampler) == 336 &&
-        sizeof(SharedConstants) == 352);
+                  offsetof(SharedConstants, positionScale) == 280 && offsetof(SharedConstants, pulledVertices) == 288 &&
+                  offsetof(SharedConstants, pulledCount) == 296 && offsetof(SharedConstants, resolutionScale) == 300 &&
+                  offsetof(SharedConstants, pointScale) == 304 && offsetof(SharedConstants, scaledTextures) == 312 &&
+                  offsetof(SharedConstants, vertexTexture2D) == 320 &&
+                  offsetof(SharedConstants, vertexSampler) == 336 && sizeof(SharedConstants) == 352);
 
     struct HeapSlots
     {
@@ -146,8 +154,8 @@ namespace
         gpu::Texture* placeholders[3] = {}; // 1x1 black 2D, 3D and cube textures for unused slots
 
         std::vector<std::unique_ptr<RenderSampler>> samplers;
-        std::vector<gpu::SamplerState> samplerStates;           // by slot
-        std::unordered_map<uint64_t, uint32_t> samplerSlots;    // by hash of the SamplerState bytes
+        std::vector<gpu::SamplerState> samplerStates; // by slot
+        std::unordered_map<uint64_t, uint32_t> samplerSlots; // by hash of the SamplerState bytes
 
         std::vector<uint8_t> shaderCode; // decompressed shader cache of the running backend
         // Shaders and pipelines are also built by the precompile threads (PrecompilePipelines), which never take g_mutex.
@@ -171,7 +179,7 @@ namespace
         return hash;
     }
 
-    template<typename T>
+    template <typename T>
     uint64_t HashValue(const T& value, uint64_t hash)
     {
         return HashBytes(&value, sizeof(value), hash);
@@ -187,13 +195,15 @@ namespace
     uint32_t TextureSlot(gpu::Texture* texture, const RenderComponentMapping& swizzle)
     {
         uint32_t heap = HeapOf(*texture);
-        uint32_t mapping = uint32_t(swizzle.r) | uint32_t(swizzle.g) << 8 | uint32_t(swizzle.b) << 16 | uint32_t(swizzle.a) << 24;
+        uint32_t mapping =
+            uint32_t(swizzle.r) | uint32_t(swizzle.g) << 8 | uint32_t(swizzle.b) << 16 | uint32_t(swizzle.a) << 24;
         if (mapping == 0)
         {
             if (texture->heapIndex == 0)
             {
                 texture->heapIndex = g_draw->textureSlots[heap].Allocate();
-                g_draw->heaps[heap]->setTexture(texture->heapIndex, texture->texture.get(), RenderTextureLayout::SHADER_READ);
+                g_draw->heaps[heap]->setTexture(
+                    texture->heapIndex, texture->texture.get(), RenderTextureLayout::SHADER_READ);
             }
             return texture->heapIndex;
         }
@@ -205,10 +215,13 @@ namespace
         RenderTextureViewDesc desc;
         desc.format = texture->desc.format;
         desc.dimension = heap == TextureCubeHeap ? RenderTextureViewDimension::TEXTURE_CUBE
-            : heap == Texture3DHeap ? RenderTextureViewDimension::TEXTURE_3D : RenderTextureViewDimension::TEXTURE_2D;
+                         : heap == Texture3DHeap ? RenderTextureViewDimension::TEXTURE_3D
+                                                 : RenderTextureViewDimension::TEXTURE_2D;
         desc.componentMapping = swizzle;
-        gpu::Texture::SwizzledView view{ mapping, texture->texture->createTextureView(desc), g_draw->textureSlots[heap].Allocate() };
-        g_draw->heaps[heap]->setTexture(view.heapIndex, texture->texture.get(), RenderTextureLayout::SHADER_READ, view.view.get());
+        gpu::Texture::SwizzledView view{ mapping, texture->texture->createTextureView(desc),
+            g_draw->textureSlots[heap].Allocate() };
+        g_draw->heaps[heap]->setTexture(
+            view.heapIndex, texture->texture.get(), RenderTextureLayout::SHADER_READ, view.view.get());
         texture->swizzledViews.push_back(std::move(view));
         return texture->swizzledViews.back().heapIndex;
     }
@@ -278,26 +291,31 @@ namespace
         }
         else
         {
-            layoutBuilder.addPushConstant(0, 4, sizeof(PushConstants), RenderShaderStageFlag::VERTEX | RenderShaderStageFlag::PIXEL);
+            layoutBuilder.addPushConstant(
+                0, 4, sizeof(PushConstants), RenderShaderStageFlag::VERTEX | RenderShaderStageFlag::PIXEL);
         }
         layoutBuilder.end();
         g_draw->layout = layoutBuilder.create(&device);
 #if defined(_WIN32)
         if (g_draw->dxil)
-            g_draw->pointSpriteGS = device.createShader(g_pointSpritePointSpriteGSDxil, sizeof(g_pointSpritePointSpriteGSDxil), "PointSpriteGS", RenderShaderFormat::DXIL);
+            g_draw->pointSpriteGS = device.createShader(g_pointSpritePointSpriteGSDxil,
+                sizeof(g_pointSpritePointSpriteGSDxil), "PointSpriteGS", RenderShaderFormat::DXIL);
 #endif
 
         // Placeholders for slots no texture is bound to, and the default sampler at sampler slot 0.
         gpu::TextureDesc desc{ .width = 1, .height = 1, .format = gpu::Format::R8G8B8A8_UNORM };
         g_draw->placeholders[Texture2DHeap] = gpu::CreateTexture(desc);
-        g_draw->placeholders[TextureCubeHeap] = gpu::CreateTexture({ .width = 1, .height = 1, .arraySize = 6, .format = desc.format, .cube = true });
-        g_draw->placeholders[Texture3DHeap] = gpu::CreateTexture({ .width = 1, .height = 1, .depth = 2, .format = desc.format });
+        g_draw->placeholders[TextureCubeHeap] =
+            gpu::CreateTexture({ .width = 1, .height = 1, .arraySize = 6, .format = desc.format, .cube = true });
+        g_draw->placeholders[Texture3DHeap] =
+            gpu::CreateTexture({ .width = 1, .height = 1, .depth = 2, .format = desc.format });
         const uint32_t black = 0;
         gpu::UploadTexture(g_draw->placeholders[Texture2DHeap], &black, 4);
         for (uint32_t face = 0; face < 6; face++)
             gpu::UploadTexture(g_draw->placeholders[TextureCubeHeap], &black, 4, 0, face);
         for (uint32_t heap = 0; heap < 3; heap++)
-            g_draw->heaps[heap]->setTexture(0, g_draw->placeholders[heap]->texture.get(), RenderTextureLayout::SHADER_READ);
+            g_draw->heaps[heap]->setTexture(
+                0, g_draw->placeholders[heap]->texture.get(), RenderTextureLayout::SHADER_READ);
         SamplerSlot(gpu::SamplerState{});
 
 #if defined(SSA_SHADER_CACHE)
@@ -339,7 +357,8 @@ namespace
             Step("pipeline precompiling started");
         }
 #else
-        fprintf(stderr, "[gpu] built without a shader cache (tools/shaders/build_cache.sh): the game's draws are skipped\n");
+        fprintf(stderr,
+            "[gpu] built without a shader cache (tools/shaders/build_cache.sh): the game's draws are skipped\n");
 #endif
     }
 
@@ -376,8 +395,9 @@ namespace
 
     RenderInputSlot InputSlot(const gpu::DrawDesc& draw, uint32_t stream)
     {
-        return RenderInputSlot(stream, draw.streams[stream].stride, draw.streams[stream].perInstance
-            ? RenderInputSlotClassification::PER_INSTANCE_DATA : RenderInputSlotClassification::PER_VERTEX_DATA);
+        return RenderInputSlot(stream, draw.streams[stream].stride,
+            draw.streams[stream].perInstance ? RenderInputSlotClassification::PER_INSTANCE_DATA
+                                             : RenderInputSlotClassification::PER_VERTEX_DATA);
     }
 
     // The translated shader for a guest shader container hash, built on first use.
@@ -390,13 +410,16 @@ namespace
             return shader.get();
 #if defined(SSA_SHADER_CACHE)
         auto end = g_shaderCacheEntries + g_shaderCacheEntryCount;
-        auto entry = std::lower_bound(g_shaderCacheEntries, end, hash, [](const ShaderCacheEntry& e, uint64_t h) { return e.hash < h; });
+        auto entry = std::lower_bound(
+            g_shaderCacheEntries, end, hash, [](const ShaderCacheEntry& e, uint64_t h) { return e.hash < h; });
         if (entry != end && entry->hash == hash && !g_draw->shaderCode.empty())
         {
             RenderShaderFormat format = g_context->renderInterface->getCapabilities().shaderFormat;
-            auto created = std::make_unique<gpu::XenosShader>(gpu::XenosShader{ {}, entry->specConstantsMask, hash, false });
+            auto created =
+                std::make_unique<gpu::XenosShader>(gpu::XenosShader{ {}, entry->specConstantsMask, hash, false });
 #if defined(SSA_METAL)
-            created->variants.push_back(g_context->device->createShader(g_draw->shaderCode.data() + entry->airOffset, entry->airSize, "shaderMain", format));
+            created->variants.push_back(g_context->device->createShader(
+                g_draw->shaderCode.data() + entry->airOffset, entry->airSize, "shaderMain", format));
 #else
             if (g_draw->dxil)
             {
@@ -416,12 +439,14 @@ namespace
                     memcpy(&size, data + 8 + i * 4, 4);
                     if (offset + size > entry->dxilSize)
                         break;
-                    created->variants.push_back(g_context->device->createShader(data + offset, size, "shaderMain", format));
+                    created->variants.push_back(
+                        g_context->device->createShader(data + offset, size, "shaderMain", format));
                     offset += size;
                 }
                 if (created->variants.size() != count || count == 0)
                 {
-                    fprintf(stderr, "[gpu] shader %016llX: no DXIL in the shader cache entry\n", (unsigned long long)hash);
+                    fprintf(
+                        stderr, "[gpu] shader %016llX: no DXIL in the shader cache entry\n", (unsigned long long)hash);
                     return nullptr;
                 }
             }
@@ -432,13 +457,16 @@ namespace
                 std::vector<uint8_t> spirv(smolv::GetDecodedBufferSize(smolv, entry->spirvSize));
                 if (spirv.empty() || !smolv::Decode(smolv, entry->spirvSize, spirv.data(), spirv.size()))
                 {
-                    fprintf(stderr, "[gpu] shader %016llX: the shader cache entry does not decode\n", (unsigned long long)hash);
+                    fprintf(stderr, "[gpu] shader %016llX: the shader cache entry does not decode\n",
+                        (unsigned long long)hash);
                     return nullptr;
                 }
-                created->variants.push_back(g_context->device->createShader(spirv.data(), spirv.size(), "shaderMain", format));
+                created->variants.push_back(
+                    g_context->device->createShader(spirv.data(), spirv.size(), "shaderMain", format));
             }
 #endif
-            if (std::all_of(created->variants.begin(), created->variants.end(), [](const auto& variant) { return variant != nullptr; }))
+            if (std::all_of(created->variants.begin(), created->variants.end(),
+                    [](const auto& variant) { return variant != nullptr; }))
                 shader = std::move(created);
         }
 #endif
@@ -543,7 +571,8 @@ namespace
         RenderGraphicsPipelineDesc desc;
         desc.pipelineLayout = g_draw->layout.get();
         desc.vertexShader = VariantOf(*vertexShader, key.specConstants);
-        desc.pixelShader = pixelShader != nullptr ? VariantOf(*pixelShader, key.specConstants) : nullptr; // none: depth only
+        desc.pixelShader =
+            pixelShader != nullptr ? VariantOf(*pixelShader, key.specConstants) : nullptr; // none: depth only
         desc.primitiveTopology = key.topology;
         desc.cullMode = key.raster.cullMode;
         desc.frontFace = key.raster.frontFace;
@@ -590,8 +619,9 @@ namespace
 
         RenderInputSlot slots[gpu::MaxVertexStreams];
         for (uint32_t i = 0; i < key.streamCount; i++)
-            slots[i] = RenderInputSlot(i, key.strides[i], (key.perInstance >> i) & 1
-                ? RenderInputSlotClassification::PER_INSTANCE_DATA : RenderInputSlotClassification::PER_VERTEX_DATA);
+            slots[i] = RenderInputSlot(i, key.strides[i],
+                (key.perInstance >> i) & 1 ? RenderInputSlotClassification::PER_INSTANCE_DATA
+                                           : RenderInputSlotClassification::PER_VERTEX_DATA);
         RenderInputElement elements[gpu::MaxVertexElements];
         for (uint32_t i = 0; i < key.inputCount; i++)
         {
@@ -603,8 +633,10 @@ namespace
             // were written with it.
             const bool uintInput = input.location >= 1 && input.location <= 3 || input.location == 9;
             const RenderFormat format = !uintInput && input.format == RenderFormat::R8G8B8A8_UINT
-                ? RenderFormat::R8G8B8A8_USCALED : input.format;
-            elements[i] = RenderInputElement("ATTRIBUTE", input.location, input.location, format, input.stream, input.offset);
+                                            ? RenderFormat::R8G8B8A8_USCALED
+                                            : input.format;
+            elements[i] =
+                RenderInputElement("ATTRIBUTE", input.location, input.location, format, input.stream, input.offset);
         }
         desc.inputSlots = slots;
         desc.inputSlotsCount = key.streamCount;
@@ -631,7 +663,7 @@ namespace
     // waits until they are all built (WaitForPipelineList), so only unlisted pipelines are built at draw time.
 
     constexpr uint32_t PipelineListMagic = 0x50415353; // "SSAP"
-    constexpr uint32_t PipelineListVersion = 1;        // change with PipelineKey or CreatePipeline
+    constexpr uint32_t PipelineListVersion = 1; // change with PipelineKey or CreatePipeline
 
     struct PipelineListHeader
     {
@@ -644,20 +676,23 @@ namespace
         uint64_t check; // XXH3 of the key: a torn or foreign record is skipped
     };
     // The baseline is made on a Mac and read by every platform: the layout must not depend on the compiler or the backend.
-    static_assert(sizeof(PipelineRecord) == 832, "PipelineKey changed: bump PipelineListVersion, regenerate the baseline");
+    static_assert(
+        sizeof(PipelineRecord) == 832, "PipelineKey changed: bump PipelineListVersion, regenerate the baseline");
 
     struct PipelineList
     {
-        std::ofstream file;                   // open for appending
-        std::unordered_set<uint64_t> listed;  // key hashes in the baseline or the file (render thread only, after loading)
-        std::vector<PipelineKey> keys;        // to precompile: pipelines.bin's in the order the game first used them, then the baseline's
-        std::atomic<size_t> next = 0;         // next key a precompile thread takes
-        std::atomic<size_t> built = 0;        // keys done (built, failed, or taken by a draw)
+        std::ofstream file; // open for appending
+        std::unordered_set<uint64_t>
+            listed; // key hashes in the baseline or the file (render thread only, after loading)
+        std::vector<PipelineKey>
+            keys; // to precompile: pipelines.bin's in the order the game first used them, then the baseline's
+        std::atomic<size_t> next = 0; // next key a precompile thread takes
+        std::atomic<size_t> built = 0; // keys done (built, failed, or taken by a draw)
         std::atomic<bool> stop = false;
         std::vector<std::thread> threads;
         std::atomic<uint32_t> running = 0;
         uint64_t start = 0;
-        std::mutex waitMutex;                 // one loading wait at a time
+        std::mutex waitMutex; // one loading wait at a time
         // Draw-time costs: pipelines built at draw time (not listed), and draws that waited for a listed one.
         uint32_t drawBuilds = 0, drawWaits = 0;
         double drawBuildMs = 0, drawWaitMs = 0;
@@ -685,7 +720,8 @@ namespace
         PipelineListHeader header{};
         if (size >= sizeof(header))
             memcpy(&header, data, sizeof(header));
-        if (header.magic != PipelineListMagic || header.version != PipelineListVersion || header.recordSize != sizeof(PipelineRecord))
+        if (header.magic != PipelineListMagic || header.version != PipelineListVersion ||
+            header.recordSize != sizeof(PipelineRecord))
             return false;
         for (size_t offset = sizeof(header); offset + sizeof(PipelineRecord) <= size; offset += sizeof(PipelineRecord))
         {
@@ -714,7 +750,8 @@ namespace
             {
                 // Missing, or written by another version: start a new list.
                 g_pipelineList.file.open(path, std::ios::binary | std::ios::trunc);
-                PipelineListHeader header = { PipelineListMagic, PipelineListVersion, uint32_t(sizeof(PipelineRecord)) };
+                PipelineListHeader header = { PipelineListMagic, PipelineListVersion,
+                    uint32_t(sizeof(PipelineRecord)) };
                 g_pipelineList.file.write(reinterpret_cast<const char*>(&header), sizeof(header));
                 g_pipelineList.file.flush();
             }
@@ -726,10 +763,15 @@ namespace
 #if defined(SSA_PIPELINE_BASELINE) && defined(SSA_SHADER_CACHE)
         {
             unsigned long long size = ZSTD_getFrameContentSize(g_pipelineBaseline, sizeof(g_pipelineBaseline));
-            std::vector<uint8_t> data(size != ZSTD_CONTENTSIZE_ERROR && size != ZSTD_CONTENTSIZE_UNKNOWN ? size_t(size) : 0);
-            if (data.empty() || ZSTD_isError(ZSTD_decompress(data.data(), data.size(), g_pipelineBaseline, sizeof(g_pipelineBaseline)))
-                || !AddListedKeys(data.data(), data.size()))
-                fprintf(stderr, "[gpu] pipeline list: the built-in baseline is not this version's (PipelineListVersion %u)\n", PipelineListVersion);
+            std::vector<uint8_t> data(
+                size != ZSTD_CONTENTSIZE_ERROR && size != ZSTD_CONTENTSIZE_UNKNOWN ? size_t(size) : 0);
+            if (data.empty() ||
+                ZSTD_isError(
+                    ZSTD_decompress(data.data(), data.size(), g_pipelineBaseline, sizeof(g_pipelineBaseline))) ||
+                !AddListedKeys(data.data(), data.size()))
+                fprintf(stderr,
+                    "[gpu] pipeline list: the built-in baseline is not this version's (PipelineListVersion %u)\n",
+                    PipelineListVersion);
             else
                 baseline = (data.size() - sizeof(PipelineListHeader)) / sizeof(PipelineRecord);
         }
@@ -927,9 +969,9 @@ namespace
         g_draw->framebuffers.clear();
         g_draw->depthSets.erase(texture);
         uint32_t heap = HeapOf(*texture);
-        auto release = [&](uint32_t slot)
-        {
-            g_draw->heaps[heap]->setTexture(slot, g_draw->placeholders[heap]->texture.get(), RenderTextureLayout::SHADER_READ);
+        auto release = [&](uint32_t slot) {
+            g_draw->heaps[heap]->setTexture(
+                slot, g_draw->placeholders[heap]->texture.get(), RenderTextureLayout::SHADER_READ);
             g_draw->textureSlots[heap].free.push_back(slot);
         };
         if (texture->heapIndex != 0)
@@ -941,10 +983,7 @@ namespace
     std::vector<gpu::Texture*> g_pendingDestroy;
 }
 
-void gpu::detail::DrawInit()
-{
-    Draws();
-}
+void gpu::detail::DrawInit() { Draws(); }
 
 void gpu::detail::DrawShutdown()
 {
@@ -961,10 +1000,7 @@ void gpu::detail::DrawShutdown()
     g_pendingDestroy.clear();
 }
 
-bool gpu::detail::DrawHasPendingDestroys()
-{
-    return !g_pendingDestroy.empty();
-}
+bool gpu::detail::DrawHasPendingDestroys() { return !g_pendingDestroy.empty(); }
 
 void gpu::detail::DrawFrameDone()
 {
@@ -974,7 +1010,8 @@ void gpu::detail::DrawFrameDone()
     // D3D12: keep pipelines built at draw time for the next run, at most every 30 s, off the render thread.
     static uint64_t lastSave = 0;
     uint64_t now = SDL_GetTicksNS();
-    if (g_draw != nullptr && g_draw->dxil && g_pipelineList.unsavedBuilds && g_pipelineList.running == 0 && now - lastSave > 30'000'000'000ull)
+    if (g_draw != nullptr && g_draw->dxil && g_pipelineList.unsavedBuilds && g_pipelineList.running == 0 &&
+        now - lastSave > 30'000'000'000ull)
     {
         g_pipelineList.unsavedBuilds = false;
         lastSave = now;
@@ -993,10 +1030,7 @@ void gpu::detail::DrawFrameDone()
 namespace gpu::detail
 {
     // DestroyTexture defers here: the frame being recorded may still use the texture.
-    void DeferDestroy(gpu::Texture* texture)
-    {
-        g_pendingDestroy.push_back(texture);
-    }
+    void DeferDestroy(gpu::Texture* texture) { g_pendingDestroy.push_back(texture); }
 }
 
 const gpu::XenosShader* gpu::FindXenosShader(uint64_t hash)
@@ -1021,8 +1055,8 @@ void gpu::WaitForPipelineList(const char* reason)
     if (g_pipelineList.built == count)
     {
         // One line per level load: the draw-time builds so far, so a tour counts them per level.
-        fprintf(stderr, "[gpu] loading (%s): the %zu listed pipelines are built; %u built at draw time so far\n", reason, count,
-            g_pipelineList.drawBuilds);
+        fprintf(stderr, "[gpu] loading (%s): the %zu listed pipelines are built; %u built at draw time so far\n",
+            reason, count, g_pipelineList.drawBuilds);
         return;
     }
 
@@ -1040,8 +1074,8 @@ void gpu::WaitForPipelineList(const char* reason)
     // The last ones may still be on the background threads.
     std::unique_lock lock(g_draw->pipelineMutex);
     g_draw->pipelineReady.wait(lock, [&] { return g_pipelineList.built == count || g_pipelineList.stop; });
-    fprintf(stderr, "[gpu] loading (%s) waited %.0f ms for %zu of the %zu listed pipelines (%u extra threads)\n", reason,
-        (SDL_GetTicksNS() - start) / 1e6, count - before, count, helpers);
+    fprintf(stderr, "[gpu] loading (%s) waited %.0f ms for %zu of the %zu listed pipelines (%u extra threads)\n",
+        reason, (SDL_GetTicksNS() - start) / 1e6, count - before, count, helpers);
 }
 
 void gpu::Draw(const DrawDesc& draw)
@@ -1075,7 +1109,8 @@ void gpu::Draw(const DrawDesc& draw)
         uint8_t changed[Groups];
         uint32_t count = 0;
         for (uint32_t group = 0; group < Groups; group++)
-            if (draw.guestConstantGroups == nullptr || !versionsSent || sentVersions[group] != draw.guestConstantGroups[group])
+            if (draw.guestConstantGroups == nullptr || !versionsSent ||
+                sentVersions[group] != draw.guestConstantGroups[group])
                 changed[count++] = uint8_t(group);
         if (count != 0)
         {
@@ -1126,8 +1161,9 @@ void gpu::detail::DrawNow(const DrawDesc& draw)
     // Send the frame so far to the GPU where a render pass ends anyway (or, in a long pass, every MaxFlushDraws
     // draws), so the GPU works while the rest of the frame is recorded.
     RenderFramebuffer* framebuffer = Framebuffer(draw.colorTargets, draw.colorTargetCount, draw.depthTarget);
-    if (g_context->recording && ((framebuffer != g_context->boundFramebuffer && g_context->drawsSinceFlush >= FlushDraws) ||
-        g_context->drawsSinceFlush >= MaxFlushDraws))
+    if (g_context->recording &&
+        ((framebuffer != g_context->boundFramebuffer && g_context->drawsSinceFlush >= FlushDraws) ||
+            g_context->drawsSinceFlush >= MaxFlushDraws))
         Flush();
     RenderCommandList& list = Record();
     g_context->drawsSinceFlush++;
@@ -1180,14 +1216,17 @@ void gpu::detail::DrawNow(const DrawDesc& draw)
     RenderBufferReference vertexConstants, pixelConstants, pulledVertices;
     if (draw.guestConstants != nullptr)
     {
-        vertexConstants = pixelConstants = UploadConstants(draw.guestConstants, draw.guestConstantsId, &push.vertexShaderConstants);
+        vertexConstants = pixelConstants =
+            UploadConstants(draw.guestConstants, draw.guestConstantsId, &push.vertexShaderConstants);
         pixelConstants.offset += FloatConstantCount * 16;
         push.pixelShaderConstants = push.vertexShaderConstants + FloatConstantCount * 16;
     }
     else
     {
-        vertexConstants = Upload(draw.vertexConstants, FloatConstantCount * 16, ConstantAlignment, &push.vertexShaderConstants);
-        pixelConstants = Upload(draw.pixelConstants, FloatConstantCount * 16, ConstantAlignment, &push.pixelShaderConstants);
+        vertexConstants =
+            Upload(draw.vertexConstants, FloatConstantCount * 16, ConstantAlignment, &push.vertexShaderConstants);
+        pixelConstants =
+            Upload(draw.pixelConstants, FloatConstantCount * 16, ConstantAlignment, &push.pixelShaderConstants);
     }
     if (draw.pulledCount != 0)
     {
@@ -1202,7 +1241,8 @@ void gpu::detail::DrawNow(const DrawDesc& draw)
     {
         const VertexStream& stream = draw.streams[i];
         RenderBufferReference buffer = stream.converted.buffer != nullptr
-            ? stream.converted.buffer->at(stream.converted.offset) : Upload(stream.data, stream.size, 16);
+                                           ? stream.converted.buffer->at(stream.converted.offset)
+                                           : Upload(stream.data, stream.size, 16);
         views[i] = RenderVertexBufferView(buffer, stream.size);
         slots[i] = InputSlot(draw, i);
     }
@@ -1264,9 +1304,10 @@ void gpu::detail::DrawNow(const DrawDesc& draw)
     if (draw.indices != nullptr || draw.indicesConverted.buffer != nullptr)
     {
         RenderBufferReference buffer = draw.indicesConverted.buffer != nullptr
-            ? draw.indicesConverted.buffer->at(draw.indicesConverted.offset) : Upload(draw.indices, draw.indexBytes, 16);
-        RenderIndexBufferView view(buffer, draw.indexBytes,
-            draw.indices32 ? RenderFormat::R32_UINT : RenderFormat::R16_UINT);
+                                           ? draw.indicesConverted.buffer->at(draw.indicesConverted.offset)
+                                           : Upload(draw.indices, draw.indexBytes, 16);
+        RenderIndexBufferView view(
+            buffer, draw.indexBytes, draw.indices32 ? RenderFormat::R32_UINT : RenderFormat::R16_UINT);
         list.setIndexBuffer(&view);
         list.drawIndexedInstanced(draw.count, 1, draw.first, draw.baseVertex, 0);
     }
@@ -1297,7 +1338,8 @@ void gpu::detail::ClearColorNow(Texture* target, const float rgba[4], const plum
     list.clearColor(0, RenderColor(rgba[0], rgba[1], rgba[2], rgba[3]), rect, rect != nullptr ? 1 : 0);
 }
 
-void gpu::ClearDepthStencil(Texture* target, bool depth, bool stencil, float z, uint8_t stencilValue, const plume::RenderRect* rect)
+void gpu::ClearDepthStencil(
+    Texture* target, bool depth, bool stencil, float z, uint8_t stencilValue, const plume::RenderRect* rect)
 {
     ProducerLock producer;
     bool hasRect = rect != nullptr;
@@ -1305,7 +1347,8 @@ void gpu::ClearDepthStencil(Texture* target, bool depth, bool stencil, float z, 
     Enqueue([=] { ClearDepthStencilNow(target, depth, stencil, z, stencilValue, hasRect ? &area : nullptr); });
 }
 
-void gpu::detail::ClearDepthStencilNow(Texture* target, bool depth, bool stencil, float z, uint8_t stencilValue, const plume::RenderRect* rect)
+void gpu::detail::ClearDepthStencilNow(
+    Texture* target, bool depth, bool stencil, float z, uint8_t stencilValue, const plume::RenderRect* rect)
 {
     std::lock_guard lock(g_mutex);
     if (DeviceLost())
@@ -1317,13 +1360,15 @@ void gpu::detail::ClearDepthStencilNow(Texture* target, bool depth, bool stencil
     list.clearDepthStencil(depth, stencil, z, stencilValue, rect, rect != nullptr ? 1 : 0);
 }
 
-void gpu::CopyTexture(Texture* destination, uint32_t x, uint32_t y, Texture* source, const plume::RenderRect& region, uint32_t slice)
+void gpu::CopyTexture(
+    Texture* destination, uint32_t x, uint32_t y, Texture* source, const plume::RenderRect& region, uint32_t slice)
 {
     ProducerLock producer;
     Enqueue([=] { CopyTextureNow(destination, x, y, source, region, slice); });
 }
 
-void gpu::detail::CopyTextureNow(Texture* destination, uint32_t x, uint32_t y, Texture* source, const plume::RenderRect& region, uint32_t slice)
+void gpu::detail::CopyTextureNow(
+    Texture* destination, uint32_t x, uint32_t y, Texture* source, const plume::RenderRect& region, uint32_t slice)
 {
     std::lock_guard lock(g_mutex);
     if (DeviceLost())
@@ -1334,7 +1379,8 @@ void gpu::detail::CopyTextureNow(Texture* destination, uint32_t x, uint32_t y, T
     // write-after-write hazard Vulkan wants a barrier for; the layout is unchanged, so Transition adds none.
     if (destination->layout == RenderTextureLayout::COPY_DEST &&
         g_context->renderInterface->getCapabilities().shaderFormat == RenderShaderFormat::SPIRV)
-        list.barriers(RenderBarrierStage::COPY, RenderTextureBarrier(destination->texture.get(), RenderTextureLayout::COPY_DEST));
+        list.barriers(
+            RenderBarrierStage::COPY, RenderTextureBarrier(destination->texture.get(), RenderTextureLayout::COPY_DEST));
     Transition(list, *destination, RenderTextureLayout::COPY_DEST, RenderBarrierStage::COPY);
     RenderBox box(region.left, region.top, region.right, region.bottom);
     list.copyTextureRegion(RenderTextureCopyLocation::Subresource(destination->texture.get(), 0, slice),
@@ -1347,7 +1393,8 @@ void gpu::ResolveDepth(Texture* destination, uint32_t x, uint32_t y, Texture* so
     Enqueue([=] { ResolveDepthNow(destination, x, y, source, region); });
 }
 
-void gpu::detail::ResolveDepthNow(Texture* destination, uint32_t x, uint32_t y, Texture* source, const plume::RenderRect& region)
+void gpu::detail::ResolveDepthNow(
+    Texture* destination, uint32_t x, uint32_t y, Texture* source, const plume::RenderRect& region)
 {
     std::lock_guard lock(g_mutex);
     if (DeviceLost())
@@ -1371,7 +1418,8 @@ void gpu::detail::ResolveDepthNow(Texture* destination, uint32_t x, uint32_t y, 
     const int32_t offset[2] = { region.left - int32_t(x), region.top - int32_t(y) };
     SetFramebuffer(list, Framebuffer(&destination, 1, nullptr));
     list.setViewports(RenderViewport(0.0f, 0.0f, float(destination->desc.width), float(destination->desc.height)));
-    list.setScissors(RenderRect(int32_t(x), int32_t(y), int32_t(x) + region.right - region.left, int32_t(y) + region.bottom - region.top));
+    list.setScissors(RenderRect(
+        int32_t(x), int32_t(y), int32_t(x) + region.right - region.left, int32_t(y) + region.bottom - region.top));
     c.bound = {};
     list.setGraphicsPipelineLayout(c.resolveDepthLayout.get());
     list.setPipeline(c.resolveDepthPipeline.get());

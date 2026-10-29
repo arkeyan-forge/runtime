@@ -76,8 +76,9 @@ namespace
 
         auto block = std::make_unique<Block>();
         block->size = std::max(BlockSize, size);
-        block->buffer = g_context->device->createBuffer(RenderBufferDesc::UploadBuffer(block->size,
-            RenderBufferFlag::VERTEX | RenderBufferFlag::INDEX | RenderBufferFlag::CONSTANT | RenderBufferFlag::DEVICE_ADDRESSABLE));
+        block->buffer = g_context->device->createBuffer(RenderBufferDesc::UploadBuffer(
+            block->size, RenderBufferFlag::VERTEX | RenderBufferFlag::INDEX | RenderBufferFlag::CONSTANT |
+                             RenderBufferFlag::DEVICE_ADDRESSABLE));
         if (block->buffer == nullptr)
             return {};
         block->memory = static_cast<uint8_t*>(block->buffer->map());
@@ -223,14 +224,16 @@ namespace
         Allocation allocation = Allocate(key.bytes);
         if (allocation.block == nullptr)
             return false;
-        Convert(static_cast<const uint8_t*>(data), allocation.block->memory + allocation.offset, key.bytes, key.wordSize, entry);
+        Convert(static_cast<const uint8_t*>(data), allocation.block->memory + allocation.offset, key.bytes,
+            key.wordSize, entry);
         if (entry.resident.block != nullptr)
             g_pendingFrees.push_back({ entry.resident, entry.usedFrame });
         entry.resident = allocation;
         return true;
     }
 
-    BufferRange Acquire(const void* data, uint32_t guestAddress, uint32_t bytes, uint32_t wordSize, uint32_t* minIndex, uint32_t* maxIndex)
+    BufferRange Acquire(const void* data, uint32_t guestAddress, uint32_t bytes, uint32_t wordSize, uint32_t* minIndex,
+        uint32_t* maxIndex)
     {
         if (data == nullptr || bytes == 0 || g_context == nullptr)
             return {};
@@ -307,7 +310,8 @@ BufferRange gpu::CacheVertices(const void* data, uint32_t guestAddress, uint32_t
     return Acquire(data, guestAddress, bytes, 2, nullptr, nullptr);
 }
 
-BufferRange gpu::CacheIndices(const void* data, uint32_t guestAddress, uint32_t bytes, uint32_t& minIndex, uint32_t& maxIndex)
+BufferRange gpu::CacheIndices(
+    const void* data, uint32_t guestAddress, uint32_t bytes, uint32_t& minIndex, uint32_t& maxIndex)
 {
     ProducerLock producer;
     if (gpu::detail::DeviceLost())
@@ -366,11 +370,13 @@ void gpu::BufferCacheFrameDone(uint64_t completed)
     static bool stats = skyenv::Get("SKY_BUFFER_STATS") != nullptr;
     if (stats && g_frame % 60 == 0)
     {
-        fprintf(stderr, "[buffers] frame %llu, per frame: acquire %.0f staged %.1f (%.2f MB) promoted %.1f hashed %.0f (%.2f MB) "
-            "rewritten %.1f evicted %.1f; entries %zu, resident %.1f MB in %zu blocks\n", (unsigned long long)g_frame,
-            g_stats.acquire / 60.0, g_stats.staged / 60.0, g_stats.stagedBytes / 60.0 / 1048576.0, g_stats.promoted / 60.0,
-            g_stats.hashed / 60.0, g_stats.hashedBytes / 60.0 / 1048576.0, g_stats.rewritten / 60.0, g_stats.evicted / 60.0,
-            g_entries.size(), g_residentBytes / 1048576.0, g_blocks.size());
+        fprintf(stderr,
+            "[buffers] frame %llu, per frame: acquire %.0f staged %.1f (%.2f MB) promoted %.1f hashed %.0f (%.2f MB) "
+            "rewritten %.1f evicted %.1f; entries %zu, resident %.1f MB in %zu blocks\n",
+            (unsigned long long)g_frame, g_stats.acquire / 60.0, g_stats.staged / 60.0,
+            g_stats.stagedBytes / 60.0 / 1048576.0, g_stats.promoted / 60.0, g_stats.hashed / 60.0,
+            g_stats.hashedBytes / 60.0 / 1048576.0, g_stats.rewritten / 60.0, g_stats.evicted / 60.0, g_entries.size(),
+            g_residentBytes / 1048576.0, g_blocks.size());
         g_stats = {};
     }
 }

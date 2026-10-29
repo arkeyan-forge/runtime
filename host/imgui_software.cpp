@@ -18,7 +18,10 @@ namespace imgui_software
         };
 
         Color Unpack(uint32_t c) { return { int(c & 0xFF), int(c >> 8 & 0xFF), int(c >> 16 & 0xFF), int(c >> 24) }; }
-        uint32_t Pack(Color c) { return uint32_t(c.r) | uint32_t(c.g) << 8 | uint32_t(c.b) << 16 | uint32_t(c.a) << 24; }
+        uint32_t Pack(Color c)
+        {
+            return uint32_t(c.r) | uint32_t(c.g) << 8 | uint32_t(c.b) << 16 | uint32_t(c.a) << 24;
+        }
 
         // x * y / 255, rounded.
         int Mul(int x, int y)
@@ -41,8 +44,8 @@ namespace imgui_software
                 return;
             Color d = Unpack(pixel);
             int keep = 255 - s.a;
-            pixel = Pack({ Mul(s.r, s.a) + Mul(d.r, keep), Mul(s.g, s.a) + Mul(d.g, keep), Mul(s.b, s.a) + Mul(d.b, keep),
-                s.a + Mul(d.a, keep) });
+            pixel = Pack({ Mul(s.r, s.a) + Mul(d.r, keep), Mul(s.g, s.a) + Mul(d.g, keep),
+                Mul(s.b, s.a) + Mul(d.b, keep), s.a + Mul(d.a, keep) });
         }
 
         Rect Intersect(Rect a, Rect b)
@@ -63,8 +66,9 @@ namespace imgui_software
             int x0 = int(x), y0 = int(y);
             int x1 = std::min(x0 + 1, area.x1 - 1), y1 = std::min(y0 + 1, area.y1 - 1);
             int fx = int((x - x0) * 256), fy = int((y - y0) * 256);
-            Color c[4] = { Texel(texture, x0, y0), Texel(texture, x1, y0), Texel(texture, x0, y1), Texel(texture, x1, y1) };
-            auto mix = [&](int Color::*channel) {
+            Color c[4] = { Texel(texture, x0, y0), Texel(texture, x1, y0), Texel(texture, x0, y1),
+                Texel(texture, x1, y1) };
+            auto mix = [&](int Color::* channel) {
                 int top = (c[0].*channel) * (256 - fx) + (c[1].*channel) * fx;
                 int bottom = (c[2].*channel) * (256 - fx) + (c[3].*channel) * fx;
                 return (top * (256 - fy) + bottom * fy + 32768) >> 16;
@@ -124,8 +128,8 @@ namespace imgui_software
 
         // Pixels whose centre is inside, or on a top or left edge (shared edges are drawn once). As SDL does, the corners
         // are moved to whole pixels and their texture coordinates to whole texels first (truncated).
-        void Triangle(Texture& target, const Rect& clip, const Texture* texture, const ImDrawVert* a, const ImDrawVert* b,
-            const ImDrawVert* c)
+        void Triangle(Texture& target, const Rect& clip, const Texture* texture, const ImDrawVert* a,
+            const ImDrawVert* b, const ImDrawVert* c)
         {
             ImVec2 p[3], t[3];
             Color colors[3];
@@ -134,7 +138,8 @@ namespace imgui_software
             {
                 p[i] = ImVec2(float(int(corners[i]->pos.x)), float(int(corners[i]->pos.y)));
                 if (texture != nullptr)
-                    t[i] = ImVec2(float(int(corners[i]->uv.x * texture->width)), float(int(corners[i]->uv.y * texture->height)));
+                    t[i] = ImVec2(
+                        float(int(corners[i]->uv.x * texture->width)), float(int(corners[i]->uv.y * texture->height)));
                 colors[i] = Unpack(corners[i]->col);
             }
             float area = Edge(p[0], p[1], p[2].x, p[2].y);
@@ -166,20 +171,24 @@ namespace imgui_software
                 {
                     float px = x + 0.5f;
                     float w[3] = { Edge(p[1], p[2], px, py), Edge(p[2], p[0], px, py), Edge(p[0], p[1], px, py) };
-                    if ((w[0] < 0 || (w[0] == 0 && !topLeft[0])) || (w[1] < 0 || (w[1] == 0 && !topLeft[1]))
-                        || (w[2] < 0 || (w[2] == 0 && !topLeft[2])))
+                    if ((w[0] < 0 || (w[0] == 0 && !topLeft[0])) || (w[1] < 0 || (w[1] == 0 && !topLeft[1])) ||
+                        (w[2] < 0 || (w[2] == 0 && !topLeft[2])))
                         continue;
                     // Relative to the last corner: exact when the corners agree (ImGui's white texel, plain colours).
                     float k0 = w[0] / area, k1 = w[1] / area;
-                    auto lerp = [&](int Color::*channel) {
+                    auto lerp = [&](int Color::* channel) {
                         int last = colors[2].*channel;
-                        return std::clamp(int(last + (colors[0].*channel - last) * k0 + (colors[1].*channel - last) * k1 + 0.5f), 0, 255);
+                        return std::clamp(
+                            int(last + (colors[0].*channel - last) * k0 + (colors[1].*channel - last) * k1 + 0.5f), 0,
+                            255);
                     };
                     Color color = { lerp(&Color::r), lerp(&Color::g), lerp(&Color::b), lerp(&Color::a) };
                     if (texture != nullptr)
                     {
-                        int tx = std::clamp(int(t[2].x + (t[0].x - t[2].x) * k0 + (t[1].x - t[2].x) * k1), 0, texture->width - 1);
-                        int ty = std::clamp(int(t[2].y + (t[0].y - t[2].y) * k0 + (t[1].y - t[2].y) * k1), 0, texture->height - 1);
+                        int tx = std::clamp(
+                            int(t[2].x + (t[0].x - t[2].x) * k0 + (t[1].x - t[2].x) * k1), 0, texture->width - 1);
+                        int ty = std::clamp(
+                            int(t[2].y + (t[0].y - t[2].y) * k0 + (t[1].y - t[2].y) * k1), 0, texture->height - 1);
                         color = Modulate(Texel(*texture, tx, ty), color);
                     }
                     Put(row[x], color, texture == nullptr || texture->blend);
@@ -190,8 +199,8 @@ namespace imgui_software
         // Two triangles sharing two vertices, of one colour, that are right triangles with axis-aligned sides on the
         // diagonal from the second's top left to its bottom right corner: drawn as that rectangle, at whole pixels
         // (truncated position and size). The test is SDL's.
-        bool Quad(Texture& target, const Rect& clip, const Texture* texture, const ImDrawVert* vertices, const ImDrawIdx* first,
-            const ImDrawIdx* second)
+        bool Quad(Texture& target, const Rect& clip, const Texture* texture, const ImDrawVert* vertices,
+            const ImDrawIdx* first, const ImDrawIdx* second)
         {
             int shared = 0;
             for (int i = 0; i < 3; i++)
@@ -205,18 +214,22 @@ namespace imgui_software
                     return before(v[0], v[2]) ? 0 : 2;
                 return before(v[1], v[2]) ? 1 : 2;
             };
-            int a = pick([](const ImDrawVert* p, const ImDrawVert* q) { return p->pos.x <= q->pos.x && p->pos.y <= q->pos.y; });
-            int b = pick([](const ImDrawVert* p, const ImDrawVert* q) { return p->pos.x >= q->pos.x && p->pos.y >= q->pos.y; });
+            int a = pick(
+                [](const ImDrawVert* p, const ImDrawVert* q) { return p->pos.x <= q->pos.x && p->pos.y <= q->pos.y; });
+            int b = pick(
+                [](const ImDrawVert* p, const ImDrawVert* q) { return p->pos.x >= q->pos.x && p->pos.y >= q->pos.y; });
             int c = a != 0 && b != 0 ? 0 : a != 1 && b != 1 ? 1 : 2;
             const ImDrawVert* topLeft = v[a];
             const ImDrawVert* bottomRight = v[b];
             // The first triangle's first corner off that diagonal.
-            int o = first[0] != second[a] && first[0] != second[b] ? 0 : first[1] != second[a] && first[1] != second[b] ? 1 : 2;
+            int o = first[0] != second[a] && first[0] != second[b]   ? 0
+                    : first[1] != second[a] && first[1] != second[b] ? 1
+                                                                     : 2;
             const ImDrawVert* other = &vertices[first[o]];
             for (const ImDrawVert* third : { v[c], other })
             {
-                if (!((topLeft->pos.x == third->pos.x && bottomRight->pos.y == third->pos.y)
-                        || (topLeft->pos.y == third->pos.y && bottomRight->pos.x == third->pos.x)))
+                if (!((topLeft->pos.x == third->pos.x && bottomRight->pos.y == third->pos.y) ||
+                        (topLeft->pos.y == third->pos.y && bottomRight->pos.x == third->pos.x)))
                     return false;
             }
             if (v[0]->col != v[1]->col || v[0]->col != v[2]->col || v[0]->col != other->col)
@@ -257,7 +270,8 @@ namespace imgui_software
         {
             if (data->Status == ImTextureStatus_WantCreate)
             {
-                auto* texture = new Texture{ data->Width, data->Height, std::vector<uint32_t>(size_t(data->Width) * size_t(data->Height)) };
+                auto* texture = new Texture{ data->Width, data->Height,
+                    std::vector<uint32_t>(size_t(data->Width) * size_t(data->Height)) };
                 memcpy(texture->pixels.data(), data->GetPixels(), texture->pixels.size() * 4);
                 data->SetTexID(ImTextureID(intptr_t(texture)));
                 data->SetStatus(ImTextureStatus_OK);
@@ -268,7 +282,8 @@ namespace imgui_software
                 for (const ImTextureRect& r : data->Updates)
                 {
                     for (int y = r.y; y < r.y + r.h; y++)
-                        memcpy(&texture->pixels[size_t(y) * size_t(texture->width) + r.x], data->GetPixelsAt(r.x, y), size_t(r.w) * 4);
+                        memcpy(&texture->pixels[size_t(y) * size_t(texture->width) + r.x], data->GetPixelsAt(r.x, y),
+                            size_t(r.w) * 4);
                 }
                 data->SetStatus(ImTextureStatus_OK);
             }
@@ -328,11 +343,13 @@ namespace imgui_software
                         pending = nullptr;
                         continue;
                     }
-                    Triangle(target, clip, texture, &vertices[pending[0]], &vertices[pending[1]], &vertices[pending[2]]);
+                    Triangle(
+                        target, clip, texture, &vertices[pending[0]], &vertices[pending[1]], &vertices[pending[2]]);
                     pending = triangle;
                 }
                 if (pending != nullptr)
-                    Triangle(target, clip, texture, &vertices[pending[0]], &vertices[pending[1]], &vertices[pending[2]]);
+                    Triangle(
+                        target, clip, texture, &vertices[pending[0]], &vertices[pending[1]], &vertices[pending[2]]);
             }
         }
     }

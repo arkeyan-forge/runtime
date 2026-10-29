@@ -27,7 +27,9 @@ extern "C" void SsaBadIndirectCall(PPCContext& ctx, uint8_t* base, uint32_t targ
     if (first)
     {
         // r3 is usually the callee's `this` and r31 the caller's: their first word is the vtable of a C++ object.
-        auto firstWord = [](uint32_t address) { return address >= 0x10000 && address < 0xFFFF0000 ? g_memory.Read<uint32_t>(address) : 0; };
+        auto firstWord = [](uint32_t address) {
+            return address >= 0x10000 && address < 0xFFFF0000 ? g_memory.Read<uint32_t>(address) : 0;
+        };
         uint32_t caller = ctx.r31.u32;
         uint32_t threadId = g_memory.Read<uint32_t>(CurrentKThread(ctx.r13.u32) + 0x14C);
         char name[64] = "";
@@ -37,7 +39,8 @@ extern "C" void SsaBadIndirectCall(PPCContext& ctx, uint8_t* base, uint32_t targ
         fprintf(stderr,
             "[guard] bad indirect call to 0x%08X skipped: lr 0x%08X r3 0x%08X (*r3 0x%08X) r31 0x%08X (*r31 0x%08X) "
             "thread %u \"%s\" (%llu so far)\n",
-            target, lr, object, firstWord(object), caller, firstWord(caller), threadId, name, (unsigned long long)total);
+            target, lr, object, firstWord(object), caller, firstWord(caller), threadId, name,
+            (unsigned long long)total);
     }
     ctx.r3.u64 = 0;
 }

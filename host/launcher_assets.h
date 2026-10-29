@@ -50,6 +50,6 @@ namespace LauncherAssets
 
     // Decode a named APKF texture from a start-menu STRM into RGBA pixels. Exposed so tests can
     // exercise the disc format and Xbox 360 tiling without opening a window or writing a cache.
-    bool DecodeFrontendTexture(std::span<const uint8_t> strmFile, std::string_view fileName,
-        uint32_t width, uint32_t height, std::vector<uint8_t>& rgba);
+    bool DecodeFrontendTexture(std::span<const uint8_t> strmFile, std::string_view fileName, uint32_t width,
+        uint32_t height, std::vector<uint8_t>& rgba);
 } // namespace LauncherAssets

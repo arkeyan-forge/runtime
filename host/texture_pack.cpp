@@ -87,10 +87,14 @@ namespace texpack
             for (char c : stem)
             {
                 uint32_t digit;
-                if (c >= '0' && c <= '9') digit = uint32_t(c - '0');
-                else if (c >= 'a' && c <= 'f') digit = uint32_t(c - 'a' + 10);
-                else if (c >= 'A' && c <= 'F') digit = uint32_t(c - 'A' + 10);
-                else return false;
+                if (c >= '0' && c <= '9')
+                    digit = uint32_t(c - '0');
+                else if (c >= 'a' && c <= 'f')
+                    digit = uint32_t(c - 'a' + 10);
+                else if (c >= 'A' && c <= 'F')
+                    digit = uint32_t(c - 'A' + 10);
+                else
+                    return false;
                 hash = hash << 4 | digit;
             }
             return true;
@@ -102,14 +106,17 @@ namespace texpack
             if (!std::filesystem::is_directory(folder, error))
                 return;
             size_t invalid = 0, ignored = 0;
-            for (std::filesystem::recursive_directory_iterator it(folder, std::filesystem::directory_options::skip_permission_denied, error), end;
-                 !error && it != end; it.increment(error))
+            for (std::filesystem::recursive_directory_iterator
+                     it(folder, std::filesystem::directory_options::skip_permission_denied, error),
+                end;
+                !error && it != end; it.increment(error))
             {
                 if (!it->is_regular_file(error))
                     continue;
                 std::filesystem::path path = it->path();
                 std::string extension = path.extension().string();
-                std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) { return char(tolower(c)); });
+                std::transform(extension.begin(), extension.end(), extension.begin(),
+                    [](unsigned char c) { return char(tolower(c)); });
                 if (extension != ".dds")
                     continue;
                 std::string name = datadir::Text(path.filename());
@@ -125,7 +132,8 @@ namespace texpack
                 in.read(reinterpret_cast<char*>(header), sizeof(header));
                 std::string why;
                 Replacement replacement;
-                if (!dds::Parse(std::span<const uint8_t>(header, size_t(in.gcount())), std::filesystem::file_size(path, error), replacement.info, why))
+                if (!dds::Parse(std::span<const uint8_t>(header, size_t(in.gcount())),
+                        std::filesystem::file_size(path, error), replacement.info, why))
                 {
                     fprintf(stderr, "[texpack] ignored %s: %s (the game's texture stays)\n", name.c_str(), why.c_str());
                     invalid++;
@@ -134,8 +142,8 @@ namespace texpack
                 replacement.path = path;
                 g_state.index[hash] = std::move(replacement);
             }
-            fprintf(stderr, "[texpack] %zu replacement textures in %s (%zu invalid, %zu ignored)\n", g_state.index.size(),
-                datadir::Text(folder).c_str(), invalid, ignored);
+            fprintf(stderr, "[texpack] %zu replacement textures in %s (%zu invalid, %zu ignored)\n",
+                g_state.index.size(), datadir::Text(folder).c_str(), invalid, ignored);
         }
     }
 
@@ -173,15 +181,9 @@ namespace texpack
         Configure(game / "textures-dump", dumping, game / "textures", replacing);
     }
 
-    bool Dumping()
-    {
-        return g_state.dumping;
-    }
+    bool Dumping() { return g_state.dumping; }
 
-    bool Active()
-    {
-        return g_state.dumping || !g_state.index.empty();
-    }
+    bool Active() { return g_state.dumping || !g_state.index.empty(); }
 
     const Replacement* Find(uint64_t hash)
     {
@@ -215,7 +217,8 @@ namespace texpack
         {
             std::lock_guard lock(g_state.mutex);
             if (g_state.failed.insert(replacement.path).second)
-                fprintf(stderr, "[texpack] cannot read %s: the texture is left black\n", datadir::Text(replacement.path).c_str());
+                fprintf(stderr, "[texpack] cannot read %s: the texture is left black\n",
+                    datadir::Text(replacement.path).c_str());
             std::fill(out.begin(), out.end(), 0);
             return false;
         }

@@ -14,19 +14,22 @@ namespace collection
 {
     namespace
     {
-        const char* const ElementIds[] = { "air", "earth", "fire", "water", "magic", "tech", "life", "undead", "light", "dark", "none" };
-        const char* const CategoryIds[] = { "core", "giant", "swap_top", "swap_bottom", "trap_master", "supercharger", "sensei",
-            "mini", "trap", "villain", "vehicle", "creation_crystal", "magic_item", "adventure", "trophy" };
-        const char* const CategoryNames[] = { "Skylanders", "Giants", "Swap Force tops", "Swap Force bottoms", "Trap Masters",
-            "SuperChargers", "Senseis", "Minis and sidekicks", "Traps", "Villains", "Vehicles", "Creation Crystals",
-            "Magic Items", "Adventure Packs", "Trophies" };
-        const char* const KindIds[] = { "base", "legendary", "dark", "crystal", "glow", "metallic", "gold", "silver", "chrome",
-            "flocked", "series", "lightcore", "eons_elite", "alt_deco", "event", "shape", "other" };
-        const char* const KindNames[] = { "Standard", "Legendary", "Dark", "Crystal Clear", "Glow in the Dark", "Metallic",
-            "Gold", "Silver", "Chrome", "Flocked", "Series", "LightCore", "Eon's Elite", "Alternate deco", "Event and exclusive",
-            "Trap shape", "Other" };
-        static_assert(std::size(ElementIds) == size_t(Element::Count) && std::size(CategoryIds) == size_t(Category::Count));
-        static_assert(std::size(CategoryNames) == size_t(Category::Count) && std::size(KindIds) == size_t(VariantKind::Count));
+        const char* const ElementIds[] = { "air", "earth", "fire", "water", "magic", "tech", "life", "undead", "light",
+            "dark", "none" };
+        const char* const CategoryIds[] = { "core", "giant", "swap_top", "swap_bottom", "trap_master", "supercharger",
+            "sensei", "mini", "trap", "villain", "vehicle", "creation_crystal", "magic_item", "adventure", "trophy" };
+        const char* const CategoryNames[] = { "Skylanders", "Giants", "Swap Force tops", "Swap Force bottoms",
+            "Trap Masters", "SuperChargers", "Senseis", "Minis and sidekicks", "Traps", "Villains", "Vehicles",
+            "Creation Crystals", "Magic Items", "Adventure Packs", "Trophies" };
+        const char* const KindIds[] = { "base", "legendary", "dark", "crystal", "glow", "metallic", "gold", "silver",
+            "chrome", "flocked", "series", "lightcore", "eons_elite", "alt_deco", "event", "shape", "other" };
+        const char* const KindNames[] = { "Standard", "Legendary", "Dark", "Crystal Clear", "Glow in the Dark",
+            "Metallic", "Gold", "Silver", "Chrome", "Flocked", "Series", "LightCore", "Eon's Elite", "Alternate deco",
+            "Event and exclusive", "Trap shape", "Other" };
+        static_assert(
+            std::size(ElementIds) == size_t(Element::Count) && std::size(CategoryIds) == size_t(Category::Count));
+        static_assert(
+            std::size(CategoryNames) == size_t(Category::Count) && std::size(KindIds) == size_t(VariantKind::Count));
         static_assert(std::size(KindNames) == size_t(VariantKind::Count));
 
         template <size_t N>
@@ -88,7 +91,8 @@ namespace collection
         static const Catalogue catalogue = [] {
             Catalogue loaded;
             std::string error;
-            if (!loaded.Load(std::string(reinterpret_cast<const char*>(g_embeddedCatalogue), g_embeddedCatalogueSize), error))
+            if (!loaded.Load(
+                    std::string(reinterpret_cast<const char*>(g_embeddedCatalogue), g_embeddedCatalogueSize), error))
                 fprintf(stderr, "[collection] built-in catalogue: %s\n", error.c_str());
             std::string path = Folder() + "/catalogue.json";
             size_t size = 0;
@@ -171,7 +175,8 @@ namespace collection
                 }
                 game.kindPictures[category] = value.AsString();
             }
-            for (auto [field, pictures] : { std::pair{ "portraits", &game.portraits }, std::pair{ "artworks", &game.artworks }, std::pair{ "halves", &game.halves } })
+            for (auto [field, pictures] : { std::pair{ "portraits", &game.portraits },
+                     std::pair{ "artworks", &game.artworks }, std::pair{ "halves", &game.halves } })
                 for (const auto& [key, value] : item[field].Members())
                 {
                     // "<type>" or "<type>:<variant id>"
@@ -186,7 +191,8 @@ namespace collection
 
         for (Toy& toy : toys)
         {
-            auto same = std::find_if(m_toys.begin(), m_toys.end(), [&](const Toy& other) { return other.type == toy.type; });
+            auto same =
+                std::find_if(m_toys.begin(), m_toys.end(), [&](const Toy& other) { return other.type == toy.type; });
             if (same != m_toys.end())
                 *same = std::move(toy);
             else
@@ -194,7 +200,8 @@ namespace collection
         }
         for (Game& game : games)
         {
-            auto same = std::find_if(m_games.begin(), m_games.end(), [&](const Game& other) { return other.id == game.id; });
+            auto same =
+                std::find_if(m_games.begin(), m_games.end(), [&](const Game& other) { return other.id == game.id; });
             if (same != m_games.end())
                 *same = std::move(game);
             else
@@ -231,7 +238,8 @@ namespace collection
         if (std::find(game->accepts.begin(), game->accepts.end(), type) != game->accepts.end())
             return true;
         const Toy* toy = Find(type);
-        return toy != nullptr && std::find(game->acceptsGames.begin(), game->acceptsGames.end(), toy->game) != game->acceptsGames.end();
+        return toy != nullptr &&
+               std::find(game->acceptsGames.begin(), game->acceptsGames.end(), toy->game) != game->acceptsGames.end();
     }
 
     std::vector<const Toy*> Catalogue::Accepted(const std::string& id) const
@@ -263,7 +271,8 @@ namespace collection
 
     size_t VersionCount(const Toy& toy)
     {
-        return size_t(std::count_if(toy.variants.begin(), toy.variants.end(), [](const Variant& v) { return v.kind != VariantKind::Base; }));
+        return size_t(std::count_if(
+            toy.variants.begin(), toy.variants.end(), [](const Variant& v) { return v.kind != VariantKind::Base; }));
     }
 
     Catalogue::Reading Catalogue::Read(const std::string& id, const Toy* toy, uint16_t variant) const
@@ -409,27 +418,33 @@ namespace collection
     }
 
     const char* ElementId(Element element) { return element < Element::Count ? ElementIds[size_t(element)] : ""; }
-    const char* CategoryId(Category category) { return category < Category::Count ? CategoryIds[size_t(category)] : ""; }
+    const char* CategoryId(Category category)
+    {
+        return category < Category::Count ? CategoryIds[size_t(category)] : "";
+    }
     const char* VariantKindId(VariantKind kind) { return kind < VariantKind::Count ? KindIds[size_t(kind)] : ""; }
     Element ParseElement(const std::string& id) { return Element(Index(ElementIds, id)); }
     Category ParseCategory(const std::string& id) { return Category(Index(CategoryIds, id)); }
     VariantKind ParseVariantKind(const std::string& id) { return VariantKind(Index(KindIds, id)); }
-    const char* CategoryName(Category category) { return category < Category::Count ? CategoryNames[size_t(category)] : ""; }
+    const char* CategoryName(Category category)
+    {
+        return category < Category::Count ? CategoryNames[size_t(category)] : "";
+    }
     const char* VariantKindName(VariantKind kind) { return kind < VariantKind::Count ? KindNames[size_t(kind)] : ""; }
 
     uint32_t ElementRgb(Element element)
     {
         // The Toy Box's element colours; light and dark added.
-        static const uint32_t Colors[] = { 0x3E9FD8, 0x9A6233, 0xE0531F, 0x1F74D1, 0x8E44C9, 0xD08A00, 0x3E9B3F, 0x5E5A86,
-            0xE8D27A, 0x3A2E58, 0x6E7180 };
+        static const uint32_t Colors[] = { 0x3E9FD8, 0x9A6233, 0xE0531F, 0x1F74D1, 0x8E44C9, 0xD08A00, 0x3E9B3F,
+            0x5E5A86, 0xE8D27A, 0x3A2E58, 0x6E7180 };
         static_assert(std::size(Colors) == size_t(Element::Count));
         return element < Element::Count ? Colors[size_t(element)] : 0x6E7180;
     }
 
     uint32_t VariantKindRgb(VariantKind kind)
     {
-        static const uint32_t Colors[] = { 0x6E7180, 0xF2B632, 0x2B1F3D, 0xBFE8F2, 0x9BF06A, 0xA9B4C8, 0xE0B020, 0xC8CCD4,
-            0xD8DEE6, 0x7FB069, 0x4F7BD9, 0xFFF2A8, 0x6B3FA0, 0xE2668C, 0xF07F2B, 0x46B3A0, 0x808080 };
+        static const uint32_t Colors[] = { 0x6E7180, 0xF2B632, 0x2B1F3D, 0xBFE8F2, 0x9BF06A, 0xA9B4C8, 0xE0B020,
+            0xC8CCD4, 0xD8DEE6, 0x7FB069, 0x4F7BD9, 0xFFF2A8, 0x6B3FA0, 0xE2668C, 0xF07F2B, 0x46B3A0, 0x808080 };
         static_assert(std::size(Colors) == size_t(VariantKind::Count));
         return kind < VariantKind::Count ? Colors[size_t(kind)] : 0x808080;
     }

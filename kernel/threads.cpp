@@ -75,10 +75,7 @@ PPC_FUNC(__imp__ExCreateThread)
     ctx.r3.u64 = StatusSuccess;
 }
 
-PPC_FUNC(__imp__ExTerminateThread)
-{
-    ExitGuestThread(ctx.r3.u32);
-}
+PPC_FUNC(__imp__ExTerminateThread) { ExitGuestThread(ctx.r3.u32); }
 
 PPC_FUNC(__imp__NtResumeThread)
 {
@@ -112,20 +109,11 @@ PPC_FUNC(__imp__KeSetAffinityThread)
     ctx.r3.u64 = StatusSuccess;
 }
 
-PPC_FUNC(__imp__KeSetBasePriorityThread)
-{
-    ctx.r3.u64 = 0;
-}
+PPC_FUNC(__imp__KeSetBasePriorityThread) { ctx.r3.u64 = 0; }
 
-PPC_FUNC(__imp__KeQueryBasePriorityThread)
-{
-    ctx.r3.u64 = 0;
-}
+PPC_FUNC(__imp__KeQueryBasePriorityThread) { ctx.r3.u64 = 0; }
 
-PPC_FUNC(__imp__KeSetDisableBoostThread)
-{
-    ctx.r3.u64 = 0;
-}
+PPC_FUNC(__imp__KeSetDisableBoostThread) { ctx.r3.u64 = 0; }
 
 // KeDelayExecutionThread(mode, alertable, interval): an alertable sleep ends early to run queued APCs.
 PPC_FUNC(__imp__KeDelayExecutionThread)
@@ -146,7 +134,8 @@ PPC_FUNC(__imp__KeDelayExecutionThread)
     if (interval == 0)
         Yield();
     else
-        std::this_thread::sleep_for(std::chrono::nanoseconds((interval < 0 ? -interval : interval - int64_t(GuestSystemTime())) * 100));
+        std::this_thread::sleep_for(
+            std::chrono::nanoseconds((interval < 0 ? -interval : interval - int64_t(GuestSystemTime())) * 100));
     ctx.r3.u64 = StatusSuccess;
 }
 
@@ -183,10 +172,7 @@ PPC_FUNC(__imp__KeTlsFree)
     ctx.r3.u64 = 1;
 }
 
-PPC_FUNC(__imp__KeTlsGetValue)
-{
-    ctx.r3.u64 = g_memory.Read<uint32_t>(TlsSlotAddress(ctx, ctx.r3.u32));
-}
+PPC_FUNC(__imp__KeTlsGetValue) { ctx.r3.u64 = g_memory.Read<uint32_t>(TlsSlotAddress(ctx, ctx.r3.u32)); }
 
 PPC_FUNC(__imp__KeTlsSetValue)
 {

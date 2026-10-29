@@ -12,14 +12,33 @@
 
 namespace figures
 {
-    enum class Element : uint8_t { Air, Earth, Fire, Water, Magic, Tech, Life, Undead, None };
-    enum class ToyKind : uint8_t { Character, Legendary, Sidekick, MagicItem, Adventure };
+    enum class Element : uint8_t
+    {
+        Air,
+        Earth,
+        Fire,
+        Water,
+        Magic,
+        Tech,
+        Life,
+        Undead,
+        None
+    };
+    enum class ToyKind : uint8_t
+    {
+        Character,
+        Legendary,
+        Sidekick,
+        MagicItem,
+        Adventure
+    };
 
     struct ToyInfo
     {
         uint16_t toyType;
         const char* name;
-        const char* portrait; // the title's name for the character ("GillGrunt": UI image toy_gillgrunt_hud); null if none
+        const char*
+            portrait; // the title's name for the character ("GillGrunt": UI image toy_gillgrunt_hud); null if none
         Element element;
         ToyKind kind;
         const char* image;    // another UI image of the title showing the toy ("potion"); null if none
@@ -31,7 +50,10 @@ namespace figures
     const ToyInfo* FindToy(uint16_t toyType, const std::string& game = "ssa");
 
     // Characters keep progress (experience, gold, upgrades...); items and adventure packs don't.
-    inline bool HasProgress(const ToyInfo& toy) { return toy.kind == ToyKind::Character || toy.kind == ToyKind::Legendary || toy.kind == ToyKind::Sidekick; }
+    inline bool HasProgress(const ToyInfo& toy)
+    {
+        return toy.kind == ToyKind::Character || toy.kind == ToyKind::Legendary || toy.kind == ToyKind::Sidekick;
+    }
 
     const char* ElementName(Element element);
     // Opaque RGBA (R in the low byte), for placeholders and frames.

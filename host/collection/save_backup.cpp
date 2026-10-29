@@ -35,10 +35,7 @@ namespace savebackup
         constexpr std::size_t KeepCount = 10;   // the last 10 backups...
         constexpr int KeepDays = 7;             // ...plus the newest one of each of the last 7 days
 
-        fs::path Resolve(const fs::path& saveDir)
-        {
-            return saveDir.empty() ? Root() : saveDir;
-        }
+        fs::path Resolve(const fs::path& saveDir) { return saveDir.empty() ? Root() : saveDir; }
 
         std::string LocalStamp(std::time_t now)
         {
@@ -120,10 +117,7 @@ namespace savebackup
         return root.empty() ? root : root / "game.lock";
     }
 
-    std::string Now()
-    {
-        return LocalStamp(std::time(nullptr));
-    }
+    std::string Now() { return LocalStamp(std::time(nullptr)); }
 
     bool IsStamp(std::string_view stamp)
     {
@@ -139,8 +133,8 @@ namespace savebackup
             return false;
         if (stamp.size() == StampLength + 1)
             return false;
-        return std::all_of(stamp.begin() + std::ptrdiff_t(StampLength + 1), stamp.end(),
-            [](char c) { return c >= '1' && c <= '9'; });
+        return std::all_of(
+            stamp.begin() + std::ptrdiff_t(StampLength + 1), stamp.end(), [](char c) { return c >= '1' && c <= '9'; });
     }
 
     // --- Atomic files ------------------------------------------------------------------------------------------------
@@ -237,7 +231,8 @@ namespace savebackup
     bool SameContent(const fs::path& a, const fs::path& b)
     {
         std::error_code error;
-        if (!fs::exists(a, error) || !fs::exists(b, error) || fs::file_size(a, error) != fs::file_size(b, error) || error)
+        if (!fs::exists(a, error) || !fs::exists(b, error) || fs::file_size(a, error) != fs::file_size(b, error) ||
+            error)
             return false;
         return ReadFile(a) == ReadFile(b);
     }
@@ -461,7 +456,8 @@ namespace savebackup
             entry.stamp = name;
             SplitStamp(name, entry.date, entry.time);
             std::error_code walkError;
-            for (fs::recursive_directory_iterator file(it->path(), walkError), fileEnd; !walkError && file != fileEnd; file.increment(walkError))
+            for (fs::recursive_directory_iterator file(it->path(), walkError), fileEnd; !walkError && file != fileEnd;
+                file.increment(walkError))
             {
                 std::error_code sizeError;
                 if (!file->is_regular_file(sizeError))
@@ -580,13 +576,14 @@ namespace savebackup
         }
         fs::create_directories(lock.parent_path(), error);
         char text[32];
-        std::snprintf(text, sizeof(text), "%ld\n", long(
+        std::snprintf(text, sizeof(text), "%ld\n",
+            long(
 #if defined(_WIN32)
-            GetCurrentProcessId()
+                GetCurrentProcessId()
 #else
-            getpid()
+                getpid()
 #endif
-            ));
+                    ));
         WriteFileAtomic(lock, text, std::strlen(text));
     }
 

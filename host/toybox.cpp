@@ -92,7 +92,8 @@ namespace
         g_portraitsLoaded = true;
         // This game's portraits from the player's disc, cached in its data folder (docs/runtime/host/game_art.md).
         art::Extraction found = art::Extract(SSA_GAME_ID, art::ReadFrom(g_disc), {}, art::Portraits);
-        fprintf(stderr, "[toybox] %d portraits in %s\n", found.portraits, art::PortraitFolder(SSA_GAME_ID).string().c_str());
+        fprintf(stderr, "[toybox] %d portraits in %s\n", found.portraits,
+            art::PortraitFolder(SSA_GAME_ID).string().c_str());
     }
 
     void OpenToybox(Screen screen = Screen::Home, int seat = 0)
@@ -195,7 +196,8 @@ namespace
             model.Close();
             return;
         }
-        if (key.key == SDLK_F3 && model.screen == Screen::Menu) // F3 opened it: F3 closes it (elsewhere F3 is the Toy Box's View)
+        if (key.key == SDLK_F3 &&
+            model.screen == Screen::Menu) // F3 opened it: F3 closes it (elsewhere F3 is the Toy Box's View)
         {
             model.Close();
             return;
@@ -206,8 +208,12 @@ namespace
         {
         case SDLK_UP: command = Command::Up; break;
         case SDLK_DOWN: command = Command::Down; break;
-        case SDLK_LEFT: command = shift && model.screen == Screen::Stats ? Command::PreviousSection : Command::Left; break;
-        case SDLK_RIGHT: command = shift && model.screen == Screen::Stats ? Command::NextSection : Command::Right; break;
+        case SDLK_LEFT:
+            command = shift && model.screen == Screen::Stats ? Command::PreviousSection : Command::Left;
+            break;
+        case SDLK_RIGHT:
+            command = shift && model.screen == Screen::Stats ? Command::NextSection : Command::Right;
+            break;
         case SDLK_RETURN:
         case SDLK_KP_ENTER:
             command = model.screen == Screen::Name && model.dialogs.empty() ? Command::Start : Command::Accept;
@@ -252,20 +258,23 @@ namespace
             fprintf(stderr, "[toybox] no screenshot: the output cannot be read back (not offscreen)\n");
             return;
         }
-        std::string path = std::string(prefix != nullptr ? prefix : "toybox") + "_" + (name.empty() ? std::to_string(++count) : name) + ".png";
-        if (SDL_Surface* image = SDL_CreateSurfaceFrom(int(width), int(height), SDL_PIXELFORMAT_RGBA32, rgba.data(), int(width * 4)))
+        std::string path = std::string(prefix != nullptr ? prefix : "toybox") + "_" +
+                           (name.empty() ? std::to_string(++count) : name) + ".png";
+        if (SDL_Surface* image =
+                SDL_CreateSurfaceFrom(int(width), int(height), SDL_PIXELFORMAT_RGBA32, rgba.data(), int(width * 4)))
         {
-            fprintf(stderr, "[toybox] screenshot %s: %s\n", path.c_str(), SDL_SavePNG(image, path.c_str()) ? "saved" : SDL_GetError());
+            fprintf(stderr, "[toybox] screenshot %s: %s\n", path.c_str(),
+                SDL_SavePNG(image, path.c_str()) ? "saved" : SDL_GetError());
             SDL_DestroySurface(image);
         }
     }
 
     uint16_t PadButton(const std::string& name)
     {
-        static const std::pair<const char*, uint16_t> Names[] = { { "a", Button::A }, { "b", Button::B }, { "x", Button::X },
-            { "y", Button::Y }, { "back", Button::Back }, { "start", Button::Start }, { "lb", Button::LeftShoulder },
-            { "rb", Button::RightShoulder }, { "up", Button::DpadUp }, { "down", Button::DpadDown }, { "left", Button::DpadLeft },
-            { "right", Button::DpadRight } };
+        static const std::pair<const char*, uint16_t> Names[] = { { "a", Button::A }, { "b", Button::B },
+            { "x", Button::X }, { "y", Button::Y }, { "back", Button::Back }, { "start", Button::Start },
+            { "lb", Button::LeftShoulder }, { "rb", Button::RightShoulder }, { "up", Button::DpadUp },
+            { "down", Button::DpadDown }, { "left", Button::DpadLeft }, { "right", Button::DpadRight } };
         for (const auto& [text, button] : Names)
         {
             if (name == text)
@@ -300,7 +309,8 @@ namespace
                 g_script.push_back({ uint64_t(atof(item.c_str() + colon + 1) * 1e9), item.substr(0, colon) });
             begin = end + 1;
         }
-        std::stable_sort(g_script.begin(), g_script.end(), [](const ScriptStep& a, const ScriptStep& b) { return a.at < b.at; });
+        std::stable_sort(
+            g_script.begin(), g_script.end(), [](const ScriptStep& a, const ScriptStep& b) { return a.at < b.at; });
     }
 
     void SendKey(const std::string& name, bool down, SDL_Keymod mod = SDL_KMOD_NONE)
@@ -408,7 +418,9 @@ namespace
         toybox::Draw(model, g_pixels);
         model.Clean();
         if (g_texture == nullptr)
-            g_texture = gpu::CreateTexture({ .width = toybox::CanvasWidth, .height = toybox::CanvasHeight, .format = gpu::Format::R8G8B8A8_UNORM });
+            g_texture = gpu::CreateTexture({ .width = toybox::CanvasWidth,
+                .height = toybox::CanvasHeight,
+                .format = gpu::Format::R8G8B8A8_UNORM });
         gpu::UploadTexture(g_texture, g_pixels.data(), uint32_t(toybox::CanvasWidth * 4));
         gpu::SetOverlay(g_texture);
         g_overlayShown = true;
@@ -434,7 +446,8 @@ void ToyboxInit(SDL_Window* window)
     M().Init(!PortalIsEmulated() || (realView != nullptr && *realView != '\0'));
     g_enabled = true;
     LoadScript();
-    fprintf(stderr, "[toybox] hold Tab or View: quick swap wheel; F6, tap Tab or View + Y: the Toy Box; F3 or View + Start: the game menu\n");
+    fprintf(stderr, "[toybox] hold Tab or View: quick swap wheel; F6, tap Tab or View + Y: the Toy Box; F3 or View + "
+                    "Start: the game menu\n");
 }
 
 bool ToyboxHandleEvent(const SDL_Event& event)
@@ -485,11 +498,11 @@ bool ToyboxHandleEvent(const SDL_Event& event)
     case SDL_EVENT_MOUSE_WHEEL:
         if (model.open && model.screen == Screen::Stats)
             model.Run(event.wheel.y > 0 ? Command::Right : Command::Left);
-        else if (model.open && (model.screen == Screen::Home || model.screen == Screen::Add || model.screen == Screen::WheelList))
+        else if (model.open &&
+                 (model.screen == Screen::Home || model.screen == Screen::Add || model.screen == Screen::WheelList))
             model.ScrollList(event.wheel.y > 0 ? -1 : 1);
         return model.open;
-    default:
-        return false;
+    default: return false;
     }
 }
 
@@ -564,8 +577,9 @@ void ToyboxFilterGamepad(GamepadState& state)
         // Buttons that closed a menu stay away from the game until released (sticks and triggers past a dead zone:
         // a stick at rest is rarely exactly centred).
         constexpr int StickDeadZone = 8000, TriggerDeadZone = 30;
-        bool held = buttons != 0 || std::abs(state.thumbRX) > StickDeadZone || std::abs(state.thumbRY) > StickDeadZone
-            || state.leftTrigger > TriggerDeadZone || state.rightTrigger > TriggerDeadZone;
+        bool held = buttons != 0 || std::abs(state.thumbRX) > StickDeadZone ||
+                    std::abs(state.thumbRY) > StickDeadZone || state.leftTrigger > TriggerDeadZone ||
+                    state.rightTrigger > TriggerDeadZone;
         g_swallow = g_swallow && held;
         if (g_swallow)
             state = {};
@@ -607,7 +621,8 @@ void ToyboxFilterGamepad(GamepadState& state)
         g_wheelByPad = false;
 
     // --- The Toy Box ---------------------------------------------------------------------------------------------------
-    if ((buttons & Button::Back) && ((pressed & Button::Y) || (model.screen == Screen::Menu && (pressed & Button::Start))))
+    if ((buttons & Button::Back) &&
+        ((pressed & Button::Y) || (model.screen == Screen::Menu && (pressed & Button::Start))))
     {
         model.Close();
         g_swallow = true;
@@ -616,10 +631,14 @@ void ToyboxFilterGamepad(GamepadState& state)
     }
     constexpr int Threshold = 20000;
     uint16_t moves = buttons;
-    if (state.thumbLY > Threshold) moves |= Button::DpadUp;
-    if (state.thumbLY < -Threshold) moves |= Button::DpadDown;
-    if (state.thumbLX < -Threshold) moves |= Button::DpadLeft;
-    if (state.thumbLX > Threshold) moves |= Button::DpadRight;
+    if (state.thumbLY > Threshold)
+        moves |= Button::DpadUp;
+    if (state.thumbLY < -Threshold)
+        moves |= Button::DpadDown;
+    if (state.thumbLX < -Threshold)
+        moves |= Button::DpadLeft;
+    if (state.thumbLX > Threshold)
+        moves |= Button::DpadRight;
     uint16_t directions = moves & (Button::DpadUp | Button::DpadDown | Button::DpadLeft | Button::DpadRight);
     uint16_t fire = 0;
     if (directions != g_heldDirection)
@@ -633,17 +652,28 @@ void ToyboxFilterGamepad(GamepadState& state)
         fire = directions;
         g_nextRepeat = now + RepeatPeriod;
     }
-    if (fire & Button::DpadUp) model.Run(Command::Up);
-    if (fire & Button::DpadDown) model.Run(Command::Down);
-    if (fire & Button::DpadLeft) model.Run(Command::Left);
-    if (fire & Button::DpadRight) model.Run(Command::Right);
-    if (pressed & Button::LeftShoulder) model.Run(Command::PreviousSection);
-    if (pressed & Button::RightShoulder) model.Run(Command::NextSection);
-    if (pressed & Button::A) model.Run(Command::Accept);
-    if (model.open && (pressed & Button::X)) model.Run(Command::Options);
-    if (model.open && (pressed & Button::Y) && !(buttons & Button::Back)) model.Run(Command::View);
-    if (model.open && (pressed & Button::Start)) model.Run(Command::Start);
-    if (model.open && (pressed & Button::B)) model.Run(Command::Back);
+    if (fire & Button::DpadUp)
+        model.Run(Command::Up);
+    if (fire & Button::DpadDown)
+        model.Run(Command::Down);
+    if (fire & Button::DpadLeft)
+        model.Run(Command::Left);
+    if (fire & Button::DpadRight)
+        model.Run(Command::Right);
+    if (pressed & Button::LeftShoulder)
+        model.Run(Command::PreviousSection);
+    if (pressed & Button::RightShoulder)
+        model.Run(Command::NextSection);
+    if (pressed & Button::A)
+        model.Run(Command::Accept);
+    if (model.open && (pressed & Button::X))
+        model.Run(Command::Options);
+    if (model.open && (pressed & Button::Y) && !(buttons & Button::Back))
+        model.Run(Command::View);
+    if (model.open && (pressed & Button::Start))
+        model.Run(Command::Start);
+    if (model.open && (pressed & Button::B))
+        model.Run(Command::Back);
     if (!g_enterHeld && !g_mouseHeld)
         model.Hold((buttons & Button::A) != 0, now);
     if (!model.open)
@@ -651,10 +681,7 @@ void ToyboxFilterGamepad(GamepadState& state)
     state = {};
 }
 
-void ToyboxSetAutoOpen(bool enabled)
-{
-    g_autoOpen = enabled;
-}
+void ToyboxSetAutoOpen(bool enabled) { g_autoOpen = enabled; }
 
 // Opens the Toy Box on the seat the game asks for, and closes it once the prompt is gone. A figure the game gave up on
 // (it asks for the seat again while that figure, which it had taken, is still on it, or says the Skylander died) is out of
@@ -663,7 +690,8 @@ static void FollowPrompt(toybox::Model& model)
 {
     if (model.realPortal)
         return;
-    portalprompt::Prompt prompt = game::Current().ReadPortalPrompt != nullptr ? game::Current().ReadPortalPrompt() : portalprompt::Prompt{};
+    portalprompt::Prompt prompt =
+        game::Current().ReadPortalPrompt != nullptr ? game::Current().ReadPortalPrompt() : portalprompt::Prompt{};
     if (g_testPromptUntil > SDL_GetTicksNS())
         prompt = g_testPrompt;
     portalprompt::Prompt appeared;
@@ -678,7 +706,8 @@ static void FollowPrompt(toybox::Model& model)
                 continue;
             if (model.MarkOutOfHealth(int(i), appeared.defeated))
                 fprintf(stderr, "[toybox] player %d's figure is out of health (%s)\n", appeared.player,
-                    appeared.defeated ? "the game says its Skylander died" : "the game asks for the seat again while it is on it");
+                    appeared.defeated ? "the game says its Skylander died"
+                                      : "the game asks for the seat again while it is on it");
             if (!g_autoOpen)
                 break;
             fprintf(stderr, "[toybox] prompt for player %d\n", appeared.player);
@@ -700,8 +729,7 @@ static void FollowPrompt(toybox::Model& model)
             model.Close();
         g_openedByPrompt = false;
         break;
-    case portalprompt::Tracker::Event::None:
-        break;
+    case portalprompt::Tracker::Event::None: break;
     }
     if (!model.open)
         g_openedByPrompt = false;
@@ -709,10 +737,7 @@ static void FollowPrompt(toybox::Model& model)
 
 static std::atomic<bool> g_levelStarted{ false };
 
-void ToyboxLevelStarted()
-{
-    g_levelStarted = true;
-}
+void ToyboxLevelStarted() { g_levelStarted = true; }
 
 void ToyboxNotice(const char* english, const char* french)
 {

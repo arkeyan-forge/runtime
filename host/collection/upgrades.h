@@ -34,7 +34,7 @@ namespace collection
         int bit = 0;
         UpgradePath path = UpgradePath::Basic;
         int price = 0;           // gold
-        std::string name;        // as the game writes it; its button marks are kept ("{" in Giants, "&ICON(...)" in SSA)
+        std::string name; // as the game writes it; its button marks are kept ("{" in Giants, "&ICON(...)" in SSA)
         std::string description;
     };
 
@@ -42,7 +42,7 @@ namespace collection
     {
         std::vector<Upgrade> upgrades; // the game's order: basic, first path, second path, Soul Gem, Wow Pow
         std::string pathNames[2], pathDescriptions[2];
-        bool fromDisc = false;         // false: the plain fallback
+        bool fromDisc = false; // false: the plain fallback
     };
 
     // The upgrades of `toy` in `game` ("ssa", "giants"), in `language` ("en", "fr"; English when the text is missing).
@@ -68,7 +68,8 @@ namespace collection
     // A name or description for display: the game's button marks become "the button" / "le bouton", line breaks and
     // doubled spaces go; the description is cut to its first sentence.
     std::string UpgradeLabel(const std::string& text, const std::string& language);
-    std::string UpgradeName(const std::string& name, const std::string& language); // UpgradeLabel without a final full stop
+    std::string UpgradeName(
+        const std::string& name, const std::string& language); // UpgradeLabel without a final full stop
     std::string UpgradeLine(const std::string& description, const std::string& language);
 
     // <data>/<Game>/upgrades.json (SKYLANDERS_DATA moves the data root for tests).

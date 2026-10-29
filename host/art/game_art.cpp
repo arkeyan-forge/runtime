@@ -34,14 +34,12 @@ namespace art
 
         std::string Lower(std::string text)
         {
-            std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+            std::transform(
+                text.begin(), text.end(), text.begin(), [](unsigned char c) { return char(std::tolower(c)); });
             return text;
         }
 
-        std::string Text(const std::filesystem::path& path)
-        {
-            return datadir::Text(path);
-        }
+        std::string Text(const std::filesystem::path& path) { return datadir::Text(path); }
 
         bool Exists(const std::filesystem::path& path)
         {
@@ -90,7 +88,9 @@ namespace art
             uint64_t size = disc.size(path);
             if (size == 0)
                 return std::nullopt;
-            return alchemy::IgaArchive::Open([&disc, path](uint64_t offset, size_t count, uint8_t* out) { return disc.read(path, offset, count, out); }, size);
+            return alchemy::IgaArchive::Open([&disc, path](uint64_t offset, size_t count,
+                                                 uint8_t* out) { return disc.read(path, offset, count, out); },
+                size);
         }
 
         // The IGZ file of archive entry `part` (a name fragment), parsed.
@@ -142,7 +142,8 @@ namespace art
                     int dx = x + int(sx - band.left), dy = y + int(sy - band.top);
                     if (dx < 0 || dy < 0 || dx >= int(to.width) || dy >= int(to.height))
                         continue;
-                    uint32_t source = from.rgba[size_t(sy) * from.width + sx], &target = to.rgba[size_t(dy) * to.width + dx];
+                    uint32_t source = from.rgba[size_t(sy) * from.width + sx],
+                             &target = to.rgba[size_t(dy) * to.width + dx];
                     uint32_t top = under ? target : source, bottom = under ? source : target;
                     float ta = float(top >> 24) / 255, ba = float(bottom >> 24) / 255, alpha = ta + ba * (1 - ta);
                     if (alpha <= 0)
@@ -150,7 +151,9 @@ namespace art
                     uint32_t out = uint32_t(alpha * 255 + 0.5f) << 24;
                     for (int shift = 0; shift < 24; shift += 8)
                     {
-                        float c = (float((top >> shift) & 0xFF) * ta + float((bottom >> shift) & 0xFF) * ba * (1 - ta)) / alpha;
+                        float c =
+                            (float((top >> shift) & 0xFF) * ta + float((bottom >> shift) & 0xFF) * ba * (1 - ta)) /
+                            alpha;
                         out |= uint32_t(std::clamp(c + 0.5f, 0.0f, 255.0f)) << shift;
                     }
                     target = out;
@@ -173,7 +176,8 @@ namespace art
                 if (runs.empty() || x - last > gap)
                     runs.push_back({ top, bottom, x, x });
                 runs.back().right = x + 1, last = x;
-                runs.back().top = std::min(runs.back().top, top), runs.back().bottom = std::max(runs.back().bottom, bottom);
+                runs.back().top = std::min(runs.back().top, top),
+                runs.back().bottom = std::max(runs.back().bottom, bottom);
             }
             return runs;
         }
@@ -187,7 +191,8 @@ namespace art
             std::vector<int> count(size_t(h) * (w + 1), 0); // per row: opaque texels before column x
             for (int y = 0; y < h; y++)
                 for (int x = 0; x < w; x++)
-                    count[size_t(y) * (w + 1) + x + 1] = count[size_t(y) * (w + 1) + x] + ((pieces.rgba[size_t(y) * w + x] >> 24) > 16 ? 1 : 0);
+                    count[size_t(y) * (w + 1) + x + 1] =
+                        count[size_t(y) * (w + 1) + x] + ((pieces.rgba[size_t(y) * w + x] >> 24) > 16 ? 1 : 0);
             std::vector<float> mask(size_t(w) * h, 0.0f);
             for (int y = 0; y < h; y++)
             {
@@ -220,7 +225,8 @@ namespace art
                         float sum = 0;
                         for (int d = -3; d <= 3; d++)
                         {
-                            int xx = horizontal ? std::clamp(x + d, 0, w - 1) : x, yy = horizontal ? y : std::clamp(y + d, 0, h - 1);
+                            int xx = horizontal ? std::clamp(x + d, 0, w - 1) : x,
+                                yy = horizontal ? y : std::clamp(y + d, 0, h - 1);
                             sum += mask[size_t(yy) * w + xx];
                         }
                         tmp[size_t(y) * w + x] = sum / 7;
@@ -280,11 +286,14 @@ namespace art
             for (size_t i = 1; i + 1 < row.size(); i++)
                 medals.left = std::min(medals.left, row[i].left), medals.right = std::max(medals.right, row[i].right),
                 medals.top = std::min(medals.top, row[i].top), medals.bottom = std::max(medals.bottom, row[i].bottom);
-            const uint32_t archH = arch.bottom - arch.top, archW = arch.right - arch.left, wordH = word.bottom - word.top;
-            const uint32_t medalsH = medals.bottom - medals.top, margin = 10; // the plate reaches 10 texels past the pieces
+            const uint32_t archH = arch.bottom - arch.top, archW = arch.right - arch.left,
+                           wordH = word.bottom - word.top;
+            const uint32_t medalsH = medals.bottom - medals.top,
+                           margin = 10; // the plate reaches 10 texels past the pieces
             // "GIANTS" starts 0.48 of the arch's height down, the medallions 0.08 of the word's height under it (both
             // measured on the press logo, scaled to the sheet; title_giants_3d.png says 0.507, drawn in perspective).
-            const int wordTop = int(float(archH) * 0.48f + 0.5f), medalsTop = wordTop + int(wordH) + int(float(wordH) * 0.08f + 0.5f);
+            const int wordTop = int(float(archH) * 0.48f + 0.5f),
+                      medalsTop = wordTop + int(wordH) + int(float(wordH) * 0.08f + 0.5f);
             const int origin = int(arch.left); // sheet column of the logo's left edge (without the margin)
             Image pieces;
             pieces.width = std::max(archW, tm.right - arch.left) + 2 * margin;
@@ -292,10 +301,12 @@ namespace art
             pieces.rgba.assign(size_t(pieces.width) * pieces.height, 0);
             const int m = int(margin);
             Blit(sheet, arch, pieces, m, m, false);
-            Blit(sheet, word, pieces, m + int(word.left) - origin, m + wordTop, true); // as aligned on the sheet: centred
+            Blit(sheet, word, pieces, m + int(word.left) - origin, m + wordTop,
+                true); // as aligned on the sheet: centred
             Blit(sheet, medals, pieces, m + int(medals.left) - origin, m + medalsTop, false);
             Image plate = BackingPlate(pieces, margin, flat != nullptr ? PlateBlue(*flat) : PlateBlue(Image()));
-            Blit(sheet, tm, pieces, m + int(tm.left) - origin, m + medalsTop + int(tm.top) - int(medals.top), false); // not on the plate
+            Blit(sheet, tm, pieces, m + int(tm.left) - origin, m + medalsTop + int(tm.top) - int(medals.top),
+                false); // not on the plate
             logo = plate;
             Band all{ 0, pieces.height, 0, pieces.width };
             Blit(pieces, all, logo, 0, 0, false);
@@ -312,10 +323,11 @@ namespace art
         // One picture's place on the disc.
         struct Source
         {
-            std::string stream;          // [Lux] the strm file of UI images...
-            std::string archive, entry;  // [Alchemy] ...or the IGA archive and its IGZ entry (a fragment of its name)
-            std::string picture;         // the picture: its name [Lux], the end of its source path [Alchemy]; empty: the entry's first
-            std::string compose, plate;  // a composition step ("sprite_sheet_logo") and the second picture it uses
+            std::string stream; // [Lux] the strm file of UI images...
+            std::string archive, entry; // [Alchemy] ...or the IGA archive and its IGZ entry (a fragment of its name)
+            std::string
+                picture; // the picture: its name [Lux], the end of its source path [Alchemy]; empty: the entry's first
+            std::string compose, plate; // a composition step ("sprite_sheet_logo") and the second picture it uses
         };
 
         // [Alchemy] A folder of material instances in an archive, each naming its texture, an entry of the same archive
@@ -357,8 +369,8 @@ namespace art
 
         Source ReadSource(const collection::Json& json)
         {
-            return { json["stream"].AsString(), json["archive"].AsString(), json["entry"].AsString(), json["picture"].AsString(),
-                json["compose"].AsString(), json["plate"].AsString() };
+            return { json["stream"].AsString(), json["archive"].AsString(), json["entry"].AsString(),
+                json["picture"].AsString(), json["compose"].AsString(), json["plate"].AsString() };
         }
 
         const std::vector<Manifest>& Manifests()
@@ -367,7 +379,9 @@ namespace art
                 std::vector<Manifest> out;
                 collection::Json all;
                 std::string error;
-                if (!collection::Json::Parse(std::string(reinterpret_cast<const char*>(g_embeddedArtManifests), g_embeddedArtManifestsSize), all, error))
+                if (!collection::Json::Parse(
+                        std::string(reinterpret_cast<const char*>(g_embeddedArtManifests), g_embeddedArtManifestsSize),
+                        all, error))
                 {
                     fprintf(stderr, "[art] the built-in manifests do not load: %s\n", error.c_str());
                     return out;
@@ -405,13 +419,15 @@ namespace art
         }
 
         // [Lux] The pictures `names` of a strm stream, decoded in one pass.
-        std::map<std::string, Image> LuxPictures(const Disc& disc, const std::string& stream, std::set<std::string> names)
+        std::map<std::string, Image> LuxPictures(
+            const Disc& disc, const std::string& stream, std::set<std::string> names)
         {
             std::map<std::string, Image> out;
             std::vector<uint8_t> bytes;
             if (names.empty() || !lux::UnpackStream(ReadAll(disc, stream), bytes))
                 return out;
-            lux::DecodeImages(bytes, [&](const std::string& name) { return names.erase(name) > 0; },
+            lux::DecodeImages(
+                bytes, [&](const std::string& name) { return names.erase(name) > 0; },
                 [&](const std::string& name, const Image& image) { out[name] = image; });
             return out;
         }
@@ -424,7 +440,8 @@ namespace art
             if (!scene)
                 return false;
             for (const alchemy::IgzFile::Picture& candidate : scene->Pictures())
-                if ((picture.empty() || Lower(candidate.name).ends_with(Lower(picture))) && alchemy::DecodePicture(*scene, candidate, out))
+                if ((picture.empty() || Lower(candidate.name).ends_with(Lower(picture))) &&
+                    alchemy::DecodePicture(*scene, candidate, out))
                     return true;
             return false;
         }
@@ -512,8 +529,11 @@ namespace art
                 fprintf(stderr, "[art] cannot read the UI images (%s) of the disc\n", m.portraits.stream.c_str());
                 return present;
             }
-            lux::DecodeImages(stream, [&](const std::string& name) { return wanted.erase(name) > 0; },
-                [&](const std::string& name, const Image& image) { present += SavePng(image, folder / (name + ".png")); });
+            lux::DecodeImages(
+                stream, [&](const std::string& name) { return wanted.erase(name) > 0; },
+                [&](const std::string& name, const Image& image) {
+                    present += SavePng(image, folder / (name + ".png"));
+                });
             return present;
         }
 
@@ -529,7 +549,8 @@ namespace art
         // [Alchemy] Every material instance under each source's folder: its texture's first picture, named after the
         // material ("collection_zook_normal.png"). Swap Force (IGZ v7): the material names its texture in its
         // dependencies (TDEP), and the texture is an entry of the same archive ("textures\<name>.igz").
-        int AlchemyMaterials(const std::vector<Materials>& sources, const Disc& disc, const std::filesystem::path& folder)
+        int AlchemyMaterials(
+            const std::vector<Materials>& sources, const Disc& disc, const std::filesystem::path& folder)
         {
             int present = CountPngs(folder);
             for (const Materials& source : sources)
@@ -552,15 +573,18 @@ namespace art
                     if (Exists(path))
                         continue;
                     std::optional<alchemy::IgzFile> material = alchemy::IgzFile::Parse(archive->Read(i));
-                    for (const std::string& dependency : material ? material->Dependencies() : std::vector<std::string>{})
+                    for (const std::string& dependency :
+                        material ? material->Dependencies() : std::vector<std::string>{})
                     {
                         std::string texture = Lower(dependency);
                         if (!texture.starts_with("textures:/"))
                             continue;
                         std::optional<alchemy::IgzFile> scene = OpenScene(*archive, "textures\\" + texture.substr(10));
-                        std::vector<alchemy::IgzFile::Picture> pictures = scene ? scene->Pictures() : std::vector<alchemy::IgzFile::Picture>{};
+                        std::vector<alchemy::IgzFile::Picture> pictures =
+                            scene ? scene->Pictures() : std::vector<alchemy::IgzFile::Picture>{};
                         Image image;
-                        if (!pictures.empty() && alchemy::DecodePicture(*scene, pictures[0], image) && SavePng(image, path))
+                        if (!pictures.empty() && alchemy::DecodePicture(*scene, pictures[0], image) &&
+                            SavePng(image, path))
                             present++;
                         break;
                     }
@@ -592,7 +616,8 @@ namespace art
             {
                 std::string name = Lower(picture.name);
                 size_t at = name.find(under);
-                if (under.empty() || at == std::string::npos || picture.width != picture.height || !name.ends_with(".png"))
+                if (under.empty() || at == std::string::npos || picture.width != picture.height ||
+                    !name.ends_with(".png"))
                     continue;
                 name = name.substr(at + under.size(), name.size() - at - under.size() - 4);
                 std::filesystem::path path = folder / (name + ".png");
@@ -609,7 +634,8 @@ namespace art
         {
             const collection::Game* game = collection::Catalogue::Get().FindGame(m.game);
             int present = CountPngs(folder);
-            if (game != nullptr && Complete(game->artworks, folder) && (game->halves.empty() || Complete(game->halves, folder)))
+            if (game != nullptr && Complete(game->artworks, folder) &&
+                (game->halves.empty() || Complete(game->halves, folder)))
                 return present;
             if (!m.artworkMaterials.empty())
                 return AlchemyMaterials(m.artworkMaterials, disc, folder);
@@ -628,11 +654,13 @@ namespace art
                 size_t at = name.find(under), end = at == std::string::npos ? at : name.find(".png", at + under.size());
                 if (end == std::string::npos)
                     continue;
-                std::filesystem::path path = folder / (name.substr(at + under.size(), end - at - under.size()) + ".png");
+                std::filesystem::path path =
+                    folder / (name.substr(at + under.size(), end - at - under.size()) + ".png");
                 if (Exists(path))
                     continue;
                 std::optional<alchemy::IgzFile> scene = alchemy::IgzFile::Parse(archive->Read(i));
-                std::vector<alchemy::IgzFile::Picture> pictures = scene ? scene->Pictures() : std::vector<alchemy::IgzFile::Picture>{};
+                std::vector<alchemy::IgzFile::Picture> pictures =
+                    scene ? scene->Pictures() : std::vector<alchemy::IgzFile::Picture>{};
                 Image image;
                 if (!pictures.empty() && alchemy::DecodePicture(*scene, pictures[0], image) && SavePng(image, path))
                     present++;
@@ -700,10 +728,7 @@ namespace art
         return Text(folder / RoleFile(role));
     }
 
-    bool Known(std::string_view game)
-    {
-        return FindManifest(game) != nullptr;
-    }
+    bool Known(std::string_view game) { return FindManifest(game) != nullptr; }
 
     bool ReadLogo(std::string_view game, const Disc& disc, Image& logo)
     {
@@ -730,14 +755,16 @@ namespace art
             for (const auto& entry : ListDirectory(cache, error))
             {
                 std::string name = entry.path().filename().string();
-                if (entry.is_directory(error) && name.size() == 8 && std::all_of(name.begin(), name.end(), [](unsigned char c) { return std::isxdigit(c); }))
+                if (entry.is_directory(error) && name.size() == 8 &&
+                    std::all_of(name.begin(), name.end(), [](unsigned char c) { return std::isxdigit(c); }))
                     std::filesystem::remove_all(entry.path(), error);
             }
             std::filesystem::path manifest = cache / "manifest.ini";
             bool current = ReadVersion(manifest) == CacheVersion;
             if (!titleIconPng.empty())
                 SaveBytes(titleIconPng, cache / RoleFile(Role::TitleIcon));
-            if (where != nullptr && (!current || !Exists(cache / RoleFile(Role::Logo)) || !Exists(cache / RoleFile(Role::Background))))
+            if (where != nullptr &&
+                (!current || !Exists(cache / RoleFile(Role::Logo)) || !Exists(cache / RoleFile(Role::Background))))
             {
                 Art pictures;
                 ReadPictures(*where, disc, pictures.logo, pictures.background);
@@ -746,9 +773,11 @@ namespace art
                 if (!pictures.background.rgba.empty())
                     SavePng(pictures.background, cache / RoleFile(Role::Background));
                 std::ofstream out(manifest, std::ios::trunc);
-                out << "# Pictures read from the player's own disc (docs/runtime/host/game_art.md). Local only; deleting\n"
+                out << "# Pictures read from the player's own disc (docs/runtime/host/game_art.md). Local only; "
+                       "deleting\n"
                        "# this folder is always safe: the launcher or the game reads them again.\n"
-                    << "version=" << CacheVersion << "\ngame=" << game << "\nlogo=" << (pictures.logo.rgba.empty() ? "missing" : "ok")
+                    << "version=" << CacheVersion << "\ngame=" << game
+                    << "\nlogo=" << (pictures.logo.rgba.empty() ? "missing" : "ok")
                     << "\nbackground=" << (pictures.background.rgba.empty() ? "missing" : "ok") << "\n";
             }
             result.logo = Exists(cache / RoleFile(Role::Logo));
@@ -760,7 +789,8 @@ namespace art
             std::filesystem::create_directories(portraits, error);
             result.portraits = ReadPortraits(*where, disc, portraits);
         }
-        if ((parts & Artworks) && where != nullptr && (!where->artworks.archive.empty() || !where->artworkMaterials.empty()) && !portraits.empty())
+        if ((parts & Artworks) && where != nullptr &&
+            (!where->artworks.archive.empty() || !where->artworkMaterials.empty()) && !portraits.empty())
         {
             std::filesystem::path artworks = ArtworkFolder(game);
             std::filesystem::create_directories(artworks, error);

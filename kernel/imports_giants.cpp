@@ -21,15 +21,17 @@ namespace
     constexpr uint32_t ErrorNotFound = 0x490;
 
     // Logs the first call of each import, with its first argument registers.
-#define LOG_FIRST_CALL(name) \
-    do \
-    { \
-        static std::atomic_flag reported; \
-        if (!reported.test_and_set()) \
-        { \
-            fprintf(stderr, "[kernel] " name " (lr=0x%08X r3=0x%08X r4=0x%08X r5=0x%08X r6=0x%08X r7=0x%08X r8=0x%08X r9=0x%08X)\n", \
+#define LOG_FIRST_CALL(name)                                                                                           \
+    do                                                                                                                 \
+    {                                                                                                                  \
+        static std::atomic_flag reported;                                                                              \
+        if (!reported.test_and_set())                                                                                  \
+        {                                                                                                              \
+            fprintf(stderr,                                                                                            \
+                "[kernel] " name                                                                                       \
+                " (lr=0x%08X r3=0x%08X r4=0x%08X r5=0x%08X r6=0x%08X r7=0x%08X r8=0x%08X r9=0x%08X)\n",                \
                 uint32_t(ctx.lr), ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32); \
-        } \
+        }                                                                                                              \
     } while (0)
 
     // DEVICE_OBJECT stand-in: zeroed, with room for the device extension.
@@ -66,7 +68,8 @@ namespace
         {
             uint32_t w[80];
             for (int i = 0; i < 16; i++)
-                w[i] = uint32_t(block[i * 4]) << 24 | uint32_t(block[i * 4 + 1]) << 16 | uint32_t(block[i * 4 + 2]) << 8 | block[i * 4 + 3];
+                w[i] = uint32_t(block[i * 4]) << 24 | uint32_t(block[i * 4 + 1]) << 16 |
+                       uint32_t(block[i * 4 + 2]) << 8 | block[i * 4 + 3];
             for (int i = 16; i < 80; i++)
                 w[i] = Rotate(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1);
 
@@ -74,14 +77,38 @@ namespace
             for (int i = 0; i < 80; i++)
             {
                 uint32_t f, k;
-                if (i < 20) { f = (b & c) | (~b & d); k = 0x5A827999; }
-                else if (i < 40) { f = b ^ c ^ d; k = 0x6ED9EBA1; }
-                else if (i < 60) { f = (b & c) | (b & d) | (c & d); k = 0x8F1BBCDC; }
-                else { f = b ^ c ^ d; k = 0xCA62C1D6; }
+                if (i < 20)
+                {
+                    f = (b & c) | (~b & d);
+                    k = 0x5A827999;
+                }
+                else if (i < 40)
+                {
+                    f = b ^ c ^ d;
+                    k = 0x6ED9EBA1;
+                }
+                else if (i < 60)
+                {
+                    f = (b & c) | (b & d) | (c & d);
+                    k = 0x8F1BBCDC;
+                }
+                else
+                {
+                    f = b ^ c ^ d;
+                    k = 0xCA62C1D6;
+                }
                 uint32_t t = Rotate(a, 5) + f + e + k + w[i];
-                e = d; d = c; c = Rotate(b, 30); b = a; a = t;
+                e = d;
+                d = c;
+                c = Rotate(b, 30);
+                b = a;
+                a = t;
             }
-            h[0] += a; h[1] += b; h[2] += c; h[3] += d; h[4] += e;
+            h[0] += a;
+            h[1] += b;
+            h[2] += c;
+            h[3] += d;
+            h[4] += e;
         }
 
         void Update(const uint8_t* data, uint32_t length)
@@ -119,24 +146,15 @@ namespace
         }
     };
 
-    uint32_t AllocateDevice(uint32_t extensionSize)
-    {
-        return g_memory.SystemAlloc(DeviceObjectSize + extensionSize);
-    }
+    uint32_t AllocateDevice(uint32_t extensionSize) { return g_memory.SystemAlloc(DeviceObjectSize + extensionSize); }
 }
 
 // Pool memory
 
 // ExAllocatePoolTypeWithTag(size, tag, pool type) and ExAllocatePoolWithTag(size, tag): zeroed guest memory.
-PPC_FUNC(__imp__ExAllocatePoolTypeWithTag)
-{
-    ctx.r3.u64 = g_virtualHeap4K.Alloc(std::max<uint32_t>(ctx.r3.u32, 1));
-}
+PPC_FUNC(__imp__ExAllocatePoolTypeWithTag) { ctx.r3.u64 = g_virtualHeap4K.Alloc(std::max<uint32_t>(ctx.r3.u32, 1)); }
 
-PPC_FUNC(__imp__ExAllocatePoolWithTag)
-{
-    ctx.r3.u64 = g_virtualHeap4K.Alloc(std::max<uint32_t>(ctx.r3.u32, 1));
-}
+PPC_FUNC(__imp__ExAllocatePoolWithTag) { ctx.r3.u64 = g_virtualHeap4K.Alloc(std::max<uint32_t>(ctx.r3.u32, 1)); }
 
 PPC_FUNC(__imp__ExFreePool)
 {
@@ -147,15 +165,9 @@ PPC_FUNC(__imp__ExFreePool)
 // Objects
 
 // Every object the title holds is its own.
-PPC_FUNC(__imp__ObReferenceObject)
-{
-    ctx.r3.u64 = StatusSuccess;
-}
+PPC_FUNC(__imp__ObReferenceObject) { ctx.r3.u64 = StatusSuccess; }
 
-PPC_FUNC(__imp__ObIsTitleObject)
-{
-    ctx.r3.u64 = 1;
-}
+PPC_FUNC(__imp__ObIsTitleObject) { ctx.r3.u64 = 1; }
 
 // I/O manager. There is no hardware: devices are inert objects.
 
@@ -182,10 +194,7 @@ PPC_FUNC(__imp__IoInvalidDeviceRequest)
     ctx.r3.u64 = StatusInvalidDeviceRequest;
 }
 
-PPC_FUNC(__imp__IoCompleteRequest)
-{
-    LOG_FIRST_CALL("IoCompleteRequest");
-}
+PPC_FUNC(__imp__IoCompleteRequest) { LOG_FIRST_CALL("IoCompleteRequest"); }
 
 // IoSetShareAccess(desired access, desired share access, file object, SHARE_ACCESS*): one open, nothing shared.
 PPC_FUNC(__imp__IoSetShareAccess)
@@ -268,8 +277,8 @@ PPC_FUNC(__imp__KeInsertQueueApc)
     uint32_t apc = ctx.r3.u32;
     uint32_t normalRoutine = g_memory.Read<uint32_t>(apc + ApcNormalRoutine);
     auto thread = std::dynamic_pointer_cast<GuestThread>(LookupDispatcher(g_memory.Read<uint32_t>(apc + ApcThread)));
-    if (g_memory.Read<uint8_t>(apc + ApcEnqueued) != 0 || normalRoutine == 0 || thread == nullptr
-        || g_memory.Read<uint8_t>(apc + ApcMode) != UserMode)
+    if (g_memory.Read<uint8_t>(apc + ApcEnqueued) != 0 || normalRoutine == 0 || thread == nullptr ||
+        g_memory.Read<uint8_t>(apc + ApcMode) != UserMode)
     {
         LOG_FIRST_CALL("KeInsertQueueApc: not a queueable user APC");
         ctx.r3.u64 = 0;

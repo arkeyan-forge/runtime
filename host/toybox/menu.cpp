@@ -10,16 +10,25 @@ namespace toybox
 {
     namespace
     {
-        enum Row { Volume, FpsCounter, Fullscreen, FrameRate, Scale, Anisotropy, Vsync, SkipIntro, Report, CloseMenu };
+        enum Row
+        {
+            Volume,
+            FpsCounter,
+            Fullscreen,
+            FrameRate,
+            Scale,
+            Anisotropy,
+            Vsync,
+            SkipIntro,
+            Report,
+            CloseMenu
+        };
         static_assert(CloseMenu + 1 == Model::MenuRowCount);
 
         constexpr uint32_t Scales[] = { 0, 1, 2, 3, 4 };
         constexpr uint32_t Levels[] = { 1, 2, 4, 8, 16 };
 
-        std::string OnOff(bool on)
-        {
-            return on ? L("On", "Oui") : L("Off", "Non");
-        }
+        std::string OnOff(bool on) { return on ? L("On", "Oui") : L("Off", "Non"); }
     }
 
     std::vector<MenuRow> Model::MenuRows() const
@@ -36,7 +45,8 @@ namespace toybox
         rows[Anisotropy] = { Kind::Choice, L("Texture filtering", "Filtrage des textures"),
             v.anisotropy == 1 ? std::string(L("Off", "Non")) : std::to_string(v.anisotropy) + "x", 0, true };
         rows[Vsync] = { Kind::Toggle, L("VSync", "VSync"), OnOff(v.vsync), 0, true };
-        rows[SkipIntro] = { Kind::Toggle, L("Skip the start-up logos", "Passer les logos de départ"), OnOff(v.skipIntroMovies), 0, true };
+        rows[SkipIntro] = { Kind::Toggle, L("Skip the start-up logos", "Passer les logos de départ"),
+            OnOff(v.skipIntroMovies), 0, true };
         rows[Report] = { Kind::Action, L("Report a problem", "Signaler un problème"), "", 0, false };
         rows[CloseMenu] = { Kind::Action, L("Close", "Fermer"), "", 0, false };
         return rows;
@@ -102,7 +112,8 @@ namespace toybox
                 if (slash != std::string::npos && slash > 0)
                 {
                     size_t before = result.path.find_last_of("/\\", slash - 1);
-                    folder = result.path.substr(before == std::string::npos ? 0 : before + 1, slash - (before == std::string::npos ? 0 : before + 1));
+                    folder = result.path.substr(before == std::string::npos ? 0 : before + 1,
+                        slash - (before == std::string::npos ? 0 : before + 1));
                 }
                 if (result.ok)
                     Toast(std::string(L("Report saved in ", "Rapport enregistré dans ")) + folder + ": " + name, 6);
@@ -116,7 +127,9 @@ namespace toybox
             return;
         }
         if (!saved)
-            Toast(L("Could not save the setting (it applies to this run)", "Réglage non enregistré (valable pour cette partie)"), 4);
+            Toast(L("Could not save the setting (it applies to this run)",
+                      "Réglage non enregistré (valable pour cette partie)"),
+                4);
     }
 
     void Model::RunMenu(Command command)

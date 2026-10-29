@@ -89,7 +89,8 @@ PPC_FUNC(__imp__XamInputSetState)
         {
             last[user][0] = left;
             last[user][1] = right;
-            fprintf(stderr, "[input] user %d: the title asks for vibration %u/%u\n", user, unsigned(left), unsigned(right));
+            fprintf(
+                stderr, "[input] user %d: the title asks for vibration %u/%u\n", user, unsigned(left), unsigned(right));
         }
         SetHostVibration(user, left, right);
     }

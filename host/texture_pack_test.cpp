@@ -31,12 +31,14 @@ namespace
         return data;
     }
 
-    std::vector<uint8_t> WriteChain(dds::Format format, uint32_t width, uint32_t height, uint32_t levels, std::vector<std::vector<uint8_t>>& storage)
+    std::vector<uint8_t> WriteChain(dds::Format format, uint32_t width, uint32_t height, uint32_t levels,
+        std::vector<std::vector<uint8_t>>& storage)
     {
         storage.clear();
         std::vector<std::span<const uint8_t>> spans;
         for (uint32_t level = 0; level < levels; level++)
-            storage.push_back(Pattern(dds::SizeOfLevel(format, width, height, level).Bytes(), uint8_t(level * 31 + uint8_t(format))));
+            storage.push_back(
+                Pattern(dds::SizeOfLevel(format, width, height, level).Bytes(), uint8_t(level * 31 + uint8_t(format))));
         for (const auto& level : storage)
             spans.push_back(level);
         return dds::Write(format, width, height, spans);
@@ -60,20 +62,18 @@ namespace
         }
         CHECK(dds::LevelOffset(info, levels) == file.size());
         // One byte short: truncated.
-        CHECK(!dds::Parse(std::span<const uint8_t>(file).first(std::min(file.size(), dds::MaxHeaderBytes)), file.size() - 1, info, error));
+        CHECK(!dds::Parse(std::span<const uint8_t>(file).first(std::min(file.size(), dds::MaxHeaderBytes)),
+            file.size() - 1, info, error));
     }
 
-    void Put32(std::vector<uint8_t>& bytes, size_t offset, uint32_t value)
-    {
-        memcpy(bytes.data() + offset, &value, 4);
-    }
+    void Put32(std::vector<uint8_t>& bytes, size_t offset, uint32_t value) { memcpy(bytes.data() + offset, &value, 4); }
 
     void TestDds()
     {
         RoundTrip(dds::Format::BC1, 64, 64, 1);
         RoundTrip(dds::Format::BC1, 256, 128, 9);
         RoundTrip(dds::Format::BC2, 32, 32, 6);
-        RoundTrip(dds::Format::BC3, 100, 60, 7);  // sizes that are not multiples of 4
+        RoundTrip(dds::Format::BC3, 100, 60, 7); // sizes that are not multiples of 4
         RoundTrip(dds::Format::BC4, 16, 16, 5);
         RoundTrip(dds::Format::BC5, 64, 32, 7);
         RoundTrip(dds::Format::RGBA8, 37, 19, 6);
@@ -108,8 +108,7 @@ namespace
         CHECK(!dds::Parse(file, file.size(), info, error));
 
         // A DX10 header (BC7 is refused, BC3 and BGRA8 are read).
-        auto dx10 = [&](uint32_t dxgi, uint32_t bytes)
-        {
+        auto dx10 = [&](uint32_t dxgi, uint32_t bytes) {
             std::vector<uint8_t> out = WriteChain(dds::Format::BC1, 16, 16, 1, storage);
             out.resize(4 + 124 + 20 + bytes, 0x55);
             Put32(out, 80, 0x4);
@@ -168,9 +167,9 @@ namespace
         // A replacement in a subfolder, a wrong name, a bad file, a file that is not a DDS.
         std::vector<std::vector<uint8_t>> storage;
         std::vector<uint8_t> good = WriteChain(dds::Format::BC3, 128, 64, 8, storage);
-        auto save = [](const std::filesystem::path& path, const std::vector<uint8_t>& bytes)
-        {
-            std::ofstream(path, std::ios::binary).write(reinterpret_cast<const char*>(bytes.data()), std::streamsize(bytes.size()));
+        auto save = [](const std::filesystem::path& path, const std::vector<uint8_t>& bytes) {
+            std::ofstream(path, std::ios::binary)
+                .write(reinterpret_cast<const char*>(bytes.data()), std::streamsize(bytes.size()));
         };
         save(packs / "sub" / "00000000000000aa.dds", good);
         save(packs / "not-a-hash.dds", good);
@@ -204,7 +203,8 @@ namespace
         dds::Info info;
         std::string error;
         CHECK(dds::Parse(file, file.size(), info, error) && info.format == dds::Format::BC1 && info.levels == 1);
-        CHECK(file.size() == info.dataOffset + top.size() && std::equal(top.begin(), top.end(), file.begin() + std::ptrdiff_t(info.dataOffset)));
+        CHECK(file.size() == info.dataOffset + top.size() &&
+              std::equal(top.begin(), top.end(), file.begin() + std::ptrdiff_t(info.dataOffset)));
         size_t files = 0;
         for (const auto& entry : std::filesystem::directory_iterator(dump))
             files += entry.is_regular_file();
@@ -216,7 +216,8 @@ int main()
 {
     TestDds();
     TestHash();
-    std::filesystem::path root = std::filesystem::temp_directory_path() / ("ssa-texpack-test-" + std::to_string(uintmax_t(time(nullptr))));
+    std::filesystem::path root =
+        std::filesystem::temp_directory_path() / ("ssa-texpack-test-" + std::to_string(uintmax_t(time(nullptr))));
     TestPackFolder(root);
     std::error_code error;
     std::filesystem::remove_all(root, error);

@@ -21,12 +21,7 @@ PPC_FUNC(__imp__XamNotifyCreateListener)
 }
 
 // XNotifyGetNext(listener, match id, id out, param out): FALSE when nothing is pending.
-PPC_FUNC(__imp__XNotifyGetNext)
-{
-    ctx.r3.u64 = 0;
-}
+PPC_FUNC(__imp__XNotifyGetNext) { ctx.r3.u64 = 0; }
 
 // XNotifyPositionUI(position): where system notifications pop up. None are drawn, so the position is not kept.
-PPC_FUNC(__imp__XNotifyPositionUI)
-{
-}
+PPC_FUNC(__imp__XNotifyPositionUI) {}

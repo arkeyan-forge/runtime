@@ -116,7 +116,8 @@ PPC_FUNC(__imp__NtAllocateVirtualMemory)
     GuestHeap& heap = VirtualHeapFor(requested, allocationType);
     uint32_t pageSize = heap.PageSize();
     uint32_t alignedBase = requested & ~(pageSize - 1);
-    uint32_t size = (g_memory.Read<uint32_t>(regionSizePointer) + (requested - alignedBase) + pageSize - 1) & ~(pageSize - 1);
+    uint32_t size =
+        (g_memory.Read<uint32_t>(regionSizePointer) + (requested - alignedBase) + pageSize - 1) & ~(pageSize - 1);
 
     uint32_t address;
     if (alignedBase == 0)
@@ -188,7 +189,8 @@ PPC_FUNC(__imp__MmAllocatePhysicalMemoryEx)
         return;
     }
     if ((address & PhysicalMask) + size - 1 > maxAddress)
-        fprintf(stderr, "[kernel] MmAllocatePhysicalMemoryEx: 0x%08X exceeds max address 0x%08X\n", address & PhysicalMask, maxAddress);
+        fprintf(stderr, "[kernel] MmAllocatePhysicalMemoryEx: 0x%08X exceeds max address 0x%08X\n",
+            address & PhysicalMask, maxAddress);
 
     ctx.r3.u64 = address;
 }
@@ -206,10 +208,7 @@ PPC_FUNC(__imp__MmFreePhysicalMemory)
 
 // (type, physical address, size, protect): engine 1 of the title's XMA code maps its hardware contexts this way.
 // The context array is ordinary guest memory here, so hand back the address the allocation is used through.
-PPC_FUNC(__imp__MmMapIoSpace)
-{
-    ctx.r3.u64 = PhysicalToGuest(ctx.r4.u32);
-}
+PPC_FUNC(__imp__MmMapIoSpace) { ctx.r3.u64 = PhysicalToGuest(ctx.r4.u32); }
 
 PPC_FUNC(__imp__MmGetPhysicalAddress)
 {
@@ -259,8 +258,9 @@ PPC_FUNC(__imp__NtQueryVirtualMemory)
         allocation = FindAllocation(address, &size);
     }
     bool used = allocation != 0;
-    uint32_t words[7] = { page, used ? allocation : 0, used ? PageReadWrite : 0, used ? allocation + size - page : 0x1000,
-                          used ? MemCommit : MemFree, used ? PageReadWrite : 0, used ? type : 0 };
+    uint32_t words[7] = { page, used ? allocation : 0, used ? PageReadWrite : 0,
+        used ? allocation + size - page : 0x1000, used ? MemCommit : MemFree, used ? PageReadWrite : 0,
+        used ? type : 0 };
     for (int i = 0; i < 7; i++)
         g_memory.Write<uint32_t>(info + 4 * i, words[i]);
     ctx.r3.u64 = StatusSuccess;
@@ -297,7 +297,9 @@ PPC_FUNC(__imp__MmQueryStatistics)
     uint32_t usedPages = uint32_t(std::min<uint64_t>(usedBytes / 0x1000, TotalPages - KernelPages));
 
     memset(g_memory.Translate(stats), 0, StatisticsSize);
-    auto title = [&](uint32_t field, uint32_t value) { g_memory.Write<uint32_t>(stats + TitleSection + field * 4, value); };
+    auto title = [&](uint32_t field, uint32_t value) {
+        g_memory.Write<uint32_t>(stats + TitleSection + field * 4, value);
+    };
     g_memory.Write<uint32_t>(stats + 0, StatisticsSize);
     g_memory.Write<uint32_t>(stats + 4, TotalPages);
     g_memory.Write<uint32_t>(stats + 8, KernelPages);

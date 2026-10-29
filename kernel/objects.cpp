@@ -46,12 +46,9 @@ namespace
 
         switch (type)
         {
-        case NotificationEventType:
-            return std::make_shared<Event>(true, signalState != 0);
-        case SynchronizationEventType:
-            return std::make_shared<Event>(false, signalState != 0);
-        case MutantType:
-            return std::make_shared<Mutant>();
+        case NotificationEventType: return std::make_shared<Event>(true, signalState != 0);
+        case SynchronizationEventType: return std::make_shared<Event>(false, signalState != 0);
+        case MutantType: return std::make_shared<Mutant>();
         case SemaphoreType:
             return std::make_shared<Semaphore>(signalState, g_memory.Read<int32_t>(header + SemaphoreLimit));
         default:
@@ -111,8 +108,8 @@ void RegisterDispatcher(uint32_t header, std::shared_ptr<KernelObject> object)
     Bind(header, std::move(object));
 }
 
-uint32_t WaitForObjects(const std::vector<std::shared_ptr<KernelObject>>& objects, bool waitAll, uint32_t timeoutPointer,
-    uint32_t thread, ApcQueue* apcs)
+uint32_t WaitForObjects(const std::vector<std::shared_ptr<KernelObject>>& objects, bool waitAll,
+    uint32_t timeoutPointer, uint32_t thread, ApcQueue* apcs)
 {
     using Clock = std::chrono::steady_clock;
 
@@ -146,20 +143,17 @@ uint32_t WaitForObjects(const std::vector<std::shared_ptr<KernelObject>>& object
         }
     }
 
-    auto ready = [&](size_t i)
-    {
+    auto ready = [&](size_t i) {
         return objects[i]->IsSignaled(thread) || (events[i] != nullptr && events[i]->PulsedSince(epochs[i]));
     };
-    auto take = [&](size_t i)
-    {
+    auto take = [&](size_t i) {
         if (events[i] != nullptr && !events[i]->signaled)
             events[i]->ConsumePulse();
         else
             objects[i]->Acquire(thread);
         objects[i]->SyncHeader();
     };
-    auto finish = [&](uint32_t result)
-    {
+    auto finish = [&](uint32_t result) {
         for (Event* event : events)
         {
             if (event != nullptr)

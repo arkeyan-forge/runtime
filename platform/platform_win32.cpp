@@ -61,8 +61,8 @@ namespace
     LONG WINAPI OnFirstAccess(EXCEPTION_POINTERS* pointers)
     {
         const EXCEPTION_RECORD& record = *pointers->ExceptionRecord;
-        if (record.ExceptionCode == EXCEPTION_ACCESS_VIOLATION && record.NumberParameters >= 2
-            && CommitOnDemand(reinterpret_cast<const void*>(record.ExceptionInformation[1])))
+        if (record.ExceptionCode == EXCEPTION_ACCESS_VIOLATION && record.NumberParameters >= 2 &&
+            CommitOnDemand(reinterpret_cast<const void*>(record.ExceptionInformation[1])))
             return EXCEPTION_CONTINUE_EXECUTION;
         return EXCEPTION_CONTINUE_SEARCH;
     }
@@ -84,12 +84,14 @@ namespace
         HMODULE module = nullptr;
         wchar_t path[MAX_PATH];
         if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                static_cast<LPCWSTR>(address), &module) || GetModuleFileNameW(module, path, MAX_PATH) == 0)
+                static_cast<LPCWSTR>(address), &module) ||
+            GetModuleFileNameW(module, path, MAX_PATH) == 0)
         {
             fprintf(stderr, "  %p\n", address);
             return;
         }
-        auto offset = static_cast<unsigned long long>(static_cast<const uint8_t*>(address) - reinterpret_cast<const uint8_t*>(module));
+        auto offset = static_cast<unsigned long long>(
+            static_cast<const uint8_t*>(address) - reinterpret_cast<const uint8_t*>(module));
         const wchar_t* name = wcsrchr(path, L'\\') != nullptr ? wcsrchr(path, L'\\') + 1 : path;
         if (module == reinterpret_cast<HMODULE>(&__ImageBase))
             fprintf(stderr, "  0x%llX (executable +0x%llX)\n", 0x140000000ull + offset, offset);
@@ -103,8 +105,8 @@ namespace
     {
         const EXCEPTION_RECORD& record = *pointers->ExceptionRecord;
         const void* address = record.ExceptionAddress;
-        if ((record.ExceptionCode == EXCEPTION_ACCESS_VIOLATION || record.ExceptionCode == EXCEPTION_IN_PAGE_ERROR)
-            && record.NumberParameters >= 2)
+        if ((record.ExceptionCode == EXCEPTION_ACCESS_VIOLATION || record.ExceptionCode == EXCEPTION_IN_PAGE_ERROR) &&
+            record.NumberParameters >= 2)
         {
             address = reinterpret_cast<const void*>(record.ExceptionInformation[1]);
         }
@@ -113,7 +115,8 @@ namespace
         snprintf(description, sizeof(description), "exception 0x%08lX", record.ExceptionCode);
         g_onFault(description, address);
 
-        fprintf(stderr, "Executable loaded at %p (frames below at the linker's base 0x140000000)\n", static_cast<void*>(&__ImageBase));
+        fprintf(stderr, "Executable loaded at %p (frames below at the linker's base 0x140000000)\n",
+            static_cast<void*>(&__ImageBase));
         fprintf(stderr, "Faulting instruction:\n");
         PrintFrame(record.ExceptionAddress);
         fprintf(stderr, "Backtrace:\n");
@@ -183,7 +186,8 @@ uint8_t* PlatformReserveMemory(size_t size)
         return nullptr;
     g_lazyBase = static_cast<uint8_t*>(memory);
     g_lazySize = size;
-    fprintf(stderr, "[platform] cannot commit %zu MB up front: guest memory is committed on first access\n", size >> 20);
+    fprintf(
+        stderr, "[platform] cannot commit %zu MB up front: guest memory is committed on first access\n", size >> 20);
     return g_lazyBase;
 }
 
@@ -210,10 +214,7 @@ void PlatformStartThread(size_t stackSize, std::function<void()> body)
         CloseHandle(thread);
 }
 
-void PlatformSetThreadName(const char* name)
-{
-    SetThreadDescription(GetCurrentThread(), Widen(name).c_str());
-}
+void PlatformSetThreadName(const char* name) { SetThreadDescription(GetCurrentThread(), Widen(name).c_str()); }
 
 void PlatformSetThreadTimingCritical(uint32_t)
 {
@@ -250,7 +251,4 @@ int64_t PlatformReadFile(PlatformFile file, void* buffer, uint32_t size, uint64_
     return read;
 }
 
-void PlatformCloseFile(PlatformFile file)
-{
-    CloseHandle(reinterpret_cast<HANDLE>(file));
-}
+void PlatformCloseFile(PlatformFile file) { CloseHandle(reinterpret_cast<HANDLE>(file)); }

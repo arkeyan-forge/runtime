@@ -56,7 +56,12 @@ bool LauncherPainter::Init(SDL_Renderer* renderer)
     const SDL_Color middle = BackgroundMiddle;
     const SDL_Color bottom = BackgroundBottom;
 
-    struct Blob { float x, y, radius; SDL_Color color; float strength; };
+    struct Blob
+    {
+        float x, y, radius;
+        SDL_Color color;
+        float strength;
+    };
     const Blob blobs[] = {
         { 0.10f, 0.12f, 0.52f, { 32, 152, 232, 255 }, 0.34f },
         { 0.90f, 0.18f, 0.50f, { 214, 52, 150, 255 }, 0.30f },
@@ -120,7 +125,8 @@ bool LauncherPainter::Init(SDL_Renderer* renderer)
                 float falloff = std::max(0.0f, 1.0f - std::sqrt(float(ox * ox + oy * oy)) / (radius + 0.5f));
                 size_t offset = (size_t(py) * width + px) * 4;
                 for (int channel = 0; channel < 3; channel++)
-                    pixels[offset + channel] = uint8_t(std::min(255, pixels[offset + channel] + int(brightness * falloff)));
+                    pixels[offset + channel] =
+                        uint8_t(std::min(255, pixels[offset + channel] + int(brightness * falloff)));
             }
         }
     }
@@ -175,15 +181,16 @@ bool LauncherPainter::LoadFonts()
 
     for (const std::string& directory : directories)
     {
-        if (ReadWholeFile(directory + "/Outfit-Variable.ttf", m_fontData[0])
-            && ReadWholeFile(directory + "/Bungee-Regular.ttf", m_fontData[1]))
+        if (ReadWholeFile(directory + "/Outfit-Variable.ttf", m_fontData[0]) &&
+            ReadWholeFile(directory + "/Bungee-Regular.ttf", m_fontData[1]))
         {
             m_fontDirectory = directory;
             return true;
         }
     }
 
-    fprintf(stderr, "launcher: fonts not found (looked for Outfit-Variable.ttf and Bungee-Regular.ttf in the app's fonts folder)\n");
+    fprintf(stderr, "launcher: fonts not found (looked for Outfit-Variable.ttf and Bungee-Regular.ttf in the app's "
+                    "fonts folder)\n");
     return false;
 }
 
@@ -341,8 +348,7 @@ void LauncherPainter::RoundRectGradient(const SDL_FRect& rect, float radius, SDL
         float x0 = rect.x + rect.w * i / strips;
         float x1 = rect.x + rect.w * (i + 1) / strips;
         float inset = 0;
-        auto cornerInset = [&](float x)
-        {
+        auto cornerInset = [&](float x) {
             if (r <= 0)
                 return 0.0f;
             float dx = x < rect.x + r ? rect.x + r - x : (x > rect.x + rect.w - r ? x - (rect.x + rect.w - r) : 0.0f);
@@ -357,7 +363,8 @@ void LauncherPainter::RoundRectGradient(const SDL_FRect& rect, float radius, SDL
     }
 }
 
-void LauncherPainter::RoundRectOutline(const SDL_FRect& rect, float radius, float thickness, SDL_Color color, SDL_Color inner)
+void LauncherPainter::RoundRectOutline(
+    const SDL_FRect& rect, float radius, float thickness, SDL_Color color, SDL_Color inner)
 {
     (void)inner;
     if (thickness <= 0 || rect.w <= 0 || rect.h <= 0)
@@ -410,14 +417,16 @@ void LauncherPainter::Glow(const SDL_FRect& rect, float radius, SDL_Color color,
     for (int i = 5; i >= 0; i--)
     {
         float expand = 2.0f + i * 4.5f;
-        SDL_Color layer{ color.r, color.g, color.b, uint8_t(std::clamp(strength * (0.05f + 0.03f * (5 - i)), 0.0f, 1.0f) * 255.0f) };
+        SDL_Color layer{ color.r, color.g, color.b,
+            uint8_t(std::clamp(strength * (0.05f + 0.03f * (5 - i)), 0.0f, 1.0f) * 255.0f) };
         SDL_FRect expanded{ rect.x - expand, rect.y - expand, rect.w + expand * 2, rect.h + expand * 2 };
         RoundRect(expanded, radius + expand, layer);
     }
     SDL_SetRenderDrawBlendMode(m_renderer, SDL_BLENDMODE_BLEND);
 }
 
-void LauncherPainter::DashedLine(float x1, float y1, float x2, float y2, float thickness, SDL_Color color, float dash, float gap)
+void LauncherPainter::DashedLine(
+    float x1, float y1, float x2, float y2, float thickness, SDL_Color color, float dash, float gap)
 {
     float dx = x2 - x1;
     float dy = y2 - y1;
@@ -446,13 +455,16 @@ void LauncherPainter::DashedLine(float x1, float y1, float x2, float y2, float t
     }
 }
 
-void LauncherPainter::DashedRoundRect(const SDL_FRect& rect, float radius, float thickness, SDL_Color color, float dash, float gap)
+void LauncherPainter::DashedRoundRect(
+    const SDL_FRect& rect, float radius, float thickness, SDL_Color color, float dash, float gap)
 {
     float r = std::clamp(radius, 0.0f, std::min(rect.w, rect.h) * 0.5f);
     DashedLine(rect.x + r, rect.y, rect.x + rect.w - r, rect.y, thickness, color, dash, gap);
-    DashedLine(rect.x + r, rect.y + rect.h - thickness, rect.x + rect.w - r, rect.y + rect.h - thickness, thickness, color, dash, gap);
+    DashedLine(rect.x + r, rect.y + rect.h - thickness, rect.x + rect.w - r, rect.y + rect.h - thickness, thickness,
+        color, dash, gap);
     DashedLine(rect.x, rect.y + r, rect.x, rect.y + rect.h - r, thickness, color, dash, gap);
-    DashedLine(rect.x + rect.w - thickness, rect.y + r, rect.x + rect.w - thickness, rect.y + rect.h - r, thickness, color, dash, gap);
+    DashedLine(rect.x + rect.w - thickness, rect.y + r, rect.x + rect.w - thickness, rect.y + rect.h - r, thickness,
+        color, dash, gap);
 
     // Arc dashes at the four corners.
     for (int corner = 0; corner < 4; corner++)
@@ -491,7 +503,8 @@ SDL_Texture* LauncherPainter::LoadPng(std::span<const uint8_t> png)
         stbi_image_free(pixels);
         return nullptr;
     }
-    SDL_Texture* texture = SDL_CreateTexture(m_renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC, width, height);
+    SDL_Texture* texture =
+        SDL_CreateTexture(m_renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC, width, height);
     if (texture != nullptr)
     {
         SDL_UpdateTexture(texture, nullptr, pixels, width * 4);
@@ -529,14 +542,14 @@ uint32_t LauncherPainter::NextCodepoint(std::string_view& text)
     }
     else if ((first >> 4) == 0xE && text.size() >= 3)
     {
-        codepoint = ((first & 0x0F) << 12) | ((static_cast<unsigned char>(text[1]) & 0x3F) << 6)
-            | (static_cast<unsigned char>(text[2]) & 0x3F);
+        codepoint = ((first & 0x0F) << 12) | ((static_cast<unsigned char>(text[1]) & 0x3F) << 6) |
+                    (static_cast<unsigned char>(text[2]) & 0x3F);
         length = 3;
     }
     else if ((first >> 3) == 0x1E && text.size() >= 4)
     {
-        codepoint = ((first & 0x07) << 18) | ((static_cast<unsigned char>(text[1]) & 0x3F) << 12)
-            | ((static_cast<unsigned char>(text[2]) & 0x3F) << 6) | (static_cast<unsigned char>(text[3]) & 0x3F);
+        codepoint = ((first & 0x07) << 18) | ((static_cast<unsigned char>(text[1]) & 0x3F) << 12) |
+                    ((static_cast<unsigned char>(text[2]) & 0x3F) << 6) | (static_cast<unsigned char>(text[3]) & 0x3F);
         length = 4;
     }
     text.remove_prefix(length);
@@ -619,7 +632,8 @@ bool LauncherPainter::BakeFont(Font& font, float px, bool display)
             rgba[i * 4 + 2] = 255;
             rgba[i * 4 + 3] = bitmap[i];
         }
-        font.texture = SDL_CreateTexture(m_renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC, atlasWidth, atlasHeight);
+        font.texture =
+            SDL_CreateTexture(m_renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC, atlasWidth, atlasHeight);
         if (font.texture == nullptr)
             return false;
         SDL_UpdateTexture(font.texture, nullptr, rgba.data(), atlasWidth * 4);
@@ -633,9 +647,8 @@ bool LauncherPainter::BakeFont(Font& font, float px, bool display)
             stbtt_aligned_quad quad{};
             float xpos = 0, ypos = 0;
             stbtt_GetPackedQuad(packed, atlasWidth, atlasHeight, c, &xpos, &ypos, &quad, 0);
-            font.glyphs[c] = Glyph{ quad.x0, quad.y0, quad.x1, quad.y1,
-                quad.s0 * atlasWidth, quad.t0 * atlasHeight, quad.s1 * atlasWidth, quad.t1 * atlasHeight,
-                packed[c].xadvance };
+            font.glyphs[c] = Glyph{ quad.x0, quad.y0, quad.x1, quad.y1, quad.s0 * atlasWidth, quad.t0 * atlasHeight,
+                quad.s1 * atlasWidth, quad.t1 * atlasHeight, packed[c].xadvance };
         }
         font.loaded = true;
         return true;
@@ -685,16 +698,15 @@ float LauncherPainter::Measure(std::string_view text, float px, bool display, fl
     return width;
 }
 
-void LauncherPainter::Text(std::string_view text, float x, float top, float px, SDL_Color color, bool display,
-    float tracking, bool shadow)
+void LauncherPainter::Text(
+    std::string_view text, float x, float top, float px, SDL_Color color, bool display, float tracking, bool shadow)
 {
     Font* font = GetFont(px, display);
     if (font == nullptr)
         return;
 
     float baseline = top + font->ascent;
-    auto draw = [&](float ox, float oy, SDL_Color tint)
-    {
+    auto draw = [&](float ox, float oy, SDL_Color tint) {
         SetTint(font->texture, tint);
         float pen = x + ox;
         while (!text.empty())
@@ -716,14 +728,14 @@ void LauncherPainter::Text(std::string_view text, float x, float top, float px, 
     draw(0, 0, color);
 }
 
-void LauncherPainter::TextCentered(std::string_view text, float centerX, float top, float px, SDL_Color color,
-    bool display, float tracking)
+void LauncherPainter::TextCentered(
+    std::string_view text, float centerX, float top, float px, SDL_Color color, bool display, float tracking)
 {
     Text(text, centerX - Measure(text, px, display, tracking) * 0.5f, top, px, color, display, tracking);
 }
 
-void LauncherPainter::TextRight(std::string_view text, float rightX, float top, float px, SDL_Color color,
-    bool display, float tracking)
+void LauncherPainter::TextRight(
+    std::string_view text, float rightX, float top, float px, SDL_Color color, bool display, float tracking)
 {
     Text(text, rightX - Measure(text, px, display, tracking), top, px, color, display, tracking);
 }
@@ -750,14 +762,13 @@ std::string LauncherPainter::Ellipsize(std::string_view text, float maxWidth, fl
     return dots;
 }
 
-std::vector<std::string> LauncherPainter::Wrap(std::string_view text, float maxWidth, float px, bool display,
-    float tracking)
+std::vector<std::string> LauncherPainter::Wrap(
+    std::string_view text, float maxWidth, float px, bool display, float tracking)
 {
     std::vector<std::string> lines;
     std::string line;
     std::string word;
-    auto flushWord = [&]()
-    {
+    auto flushWord = [&]() {
         if (word.empty())
             return;
         std::string candidate = line.empty() ? word : line + " " + word;

@@ -42,10 +42,7 @@ namespace
         return image;
     }
 
-    uint8_t Channel(uint32_t pixel, int channel)
-    {
-        return uint8_t(pixel >> (channel * 8));
-    }
+    uint8_t Channel(uint32_t pixel, int channel) { return uint8_t(pixel >> (channel * 8)); }
 
     struct Rect
     {
@@ -62,8 +59,7 @@ namespace
         rect = { left, top, width, height };
 
         Image expected{ outputWidth, outputHeight, std::vector<uint32_t>(outputWidth * outputHeight) };
-        auto texel = [&](int x, int y)
-        {
+        auto texel = [&](int x, int y) {
             x = std::clamp(x, 0, int(image.width) - 1);
             y = std::clamp(y, 0, int(image.height) - 1);
             return image.rgba[y * image.width + x];
@@ -80,7 +76,8 @@ namespace
                 for (int channel = 0; channel < 3; channel++)
                 {
                     float top0 = Channel(texel(x0, y0), channel) * (1 - fx) + Channel(texel(x0 + 1, y0), channel) * fx;
-                    float bottom = Channel(texel(x0, y0 + 1), channel) * (1 - fx) + Channel(texel(x0 + 1, y0 + 1), channel) * fx;
+                    float bottom =
+                        Channel(texel(x0, y0 + 1), channel) * (1 - fx) + Channel(texel(x0 + 1, y0 + 1), channel) * fx;
                     pixel |= uint32_t(std::lround(top0 * (1 - fy) + bottom * fy)) << (channel * 8);
                 }
                 expected.rgba[(top + y) * outputWidth + left + x] = pixel;
@@ -104,13 +101,15 @@ namespace
     }
 
     // Uploads each image in turn into one texture, presents it, and checks the output of the last.
-    bool RunCase(const char* name, uint32_t outputWidth, uint32_t outputHeight, const std::vector<Image>& images, const char* directory)
+    bool RunCase(const char* name, uint32_t outputWidth, uint32_t outputHeight, const std::vector<Image>& images,
+        const char* directory)
     {
         if (!gpu::Init(nullptr, outputWidth, outputHeight))
             return false;
 
         const Image& last = images.back();
-        gpu::Texture* texture = gpu::CreateTexture({ .width = last.width, .height = last.height, .format = gpu::Format::R8G8B8A8_UNORM });
+        gpu::Texture* texture =
+            gpu::CreateTexture({ .width = last.width, .height = last.height, .format = gpu::Format::R8G8B8A8_UNORM });
         for (const Image& image : images)
         {
             gpu::UploadTexture(texture, image.rgba.data(), image.width * 4);
@@ -138,7 +137,8 @@ namespace
                 uint32_t i = y * outputWidth + x;
                 int error = 0;
                 for (int channel = 0; channel < 3; channel++)
-                    error = std::max(error, std::abs(Channel(actual.rgba[i], channel) - Channel(expected.rgba[i], channel)));
+                    error = std::max(
+                        error, std::abs(Channel(actual.rgba[i], channel) - Channel(expected.rgba[i], channel)));
                 // The bars must be exactly black.
                 bool inside = x - rect.left < rect.width && y - rect.top < rect.height;
                 mismatches += error > (inside ? Tolerance : 0);
@@ -152,7 +152,8 @@ namespace
             WritePpm(std::string(directory) + "/gpu_" + name + "_expected.ppm", expected);
         }
         printf("%s: %ux%u image in %ux%u output at (%u, %u) %ux%u, max channel error %d, %u mismatching pixels\n", name,
-            last.width, last.height, outputWidth, outputHeight, rect.left, rect.top, rect.width, rect.height, maxError, mismatches);
+            last.width, last.height, outputWidth, outputHeight, rect.left, rect.top, rect.width, rect.height, maxError,
+            mismatches);
         return mismatches == 0;
     }
 
@@ -165,7 +166,8 @@ namespace
         if (!gpu::Init(nullptr, 64, 64))
             return false;
         Image image = Pattern(16, 16, 0);
-        gpu::Texture* texture = gpu::CreateTexture({ .width = image.width, .height = image.height, .format = gpu::Format::R8G8B8A8_UNORM });
+        gpu::Texture* texture =
+            gpu::CreateTexture({ .width = image.width, .height = image.height, .format = gpu::Format::R8G8B8A8_UNORM });
         gpu::UploadTexture(texture, image.rgba.data(), image.width * 4);
         std::vector<uint8_t> data(4096, 0x5A);
         std::atomic<bool> stop = false;

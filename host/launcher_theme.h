@@ -110,8 +110,8 @@ namespace LauncherTheme
 
     inline SDL_Color FromRgb(uint32_t rgb)
     {
-        return SDL_Color{ static_cast<uint8_t>(rgb >> 16), static_cast<uint8_t>(rgb >> 8),
-            static_cast<uint8_t>(rgb), 255 };
+        return SDL_Color{ static_cast<uint8_t>(rgb >> 16), static_cast<uint8_t>(rgb >> 8), static_cast<uint8_t>(rgb),
+            255 };
     }
 
     inline SDL_Color ThemeAlpha(SDL_Color color, float alpha) { return Alpha(color, alpha); }

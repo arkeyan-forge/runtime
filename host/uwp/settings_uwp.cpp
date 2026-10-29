@@ -59,20 +59,25 @@ void UwpApplySettings(const std::string& localState, uint32_t defaultScale)
     if (!LoadConfig(path, config))
     {
         std::ofstream(path) << fmt::format(
-            "# SSARecomp settings (docs/getting-started/settings.md). Edit through Device Portal, then restart the app.\n"
+            "# SSARecomp settings (docs/getting-started/settings.md). Edit through Device Portal, then restart the "
+            "app.\n"
             "\n[video]\nresolution_scale={}\nanisotropy=1\nvsync=1\n"
             "\n[ssa]\n# language=en\n# voice_language=en\n"
             "\n[portal]\n# auto: a real portal plugged in at start, else the emulated one; real: wait for a real one\n"
             "mode=auto\n"
-            "\n[gpu]\n# thread: the GPU thread (off: as 1.0.2488.555, which ran on this console); pipeline_library: keep\n"
-            "# the pipelines built (pipelines.d3d12; on, it removed the device on an Xbox Series X). Turn one on to try it.\n"
-            "thread=off\npipeline_library=off\n", defaultScale);
+            "\n[gpu]\n# thread: the GPU thread (off: as 1.0.2488.555, which ran on this console); pipeline_library: "
+            "keep\n"
+            "# the pipelines built (pipelines.d3d12; on, it removed the device on an Xbox Series X). Turn one on to "
+            "try it.\n"
+            "thread=off\npipeline_library=off\n",
+            defaultScale);
         fprintf(stderr, "[settings] wrote %s\n", path.c_str());
     }
 
     // [portal] mode (auto, real, emulated): read by PortalInit as SKY_PORTAL.
     auto portal = config.find("portal");
-    std::string portalMode = portal != config.end() && portal->second.count("mode") ? portal->second.at("mode") : "auto";
+    std::string portalMode =
+        portal != config.end() && portal->second.count("mode") ? portal->second.at("mode") : "auto";
     if (portalMode != "auto" && portalMode != "real" && portalMode != "emulated")
     {
         fprintf(stderr, "[settings] unknown [portal] mode \"%s\" (auto, real or emulated): auto\n", portalMode.c_str());
@@ -96,9 +101,12 @@ void UwpApplySettings(const std::string& localState, uint32_t defaultScale)
         if (!known)
             fprintf(stderr, "unknown text language \"%s\"\n", settings.language.c_str());
     }
-    if (!settings.voiceLanguage.empty() && (game::Current().SetVoiceLanguage == nullptr || !game::Current().SetVoiceLanguage(settings.voiceLanguage)))
+    if (!settings.voiceLanguage.empty() &&
+        (game::Current().SetVoiceLanguage == nullptr || !game::Current().SetVoiceLanguage(settings.voiceLanguage)))
         fprintf(stderr, "unknown voice language \"%s\"\n", settings.voiceLanguage.c_str());
-    gpu::g_settings = { .resolutionScale = settings.resolutionScale, .anisotropy = settings.anisotropy, .vsync = settings.vsync };
+    gpu::g_settings = {
+        .resolutionScale = settings.resolutionScale, .anisotropy = settings.anisotropy, .vsync = settings.vsync
+    };
     // [gpu] thread and pipeline_library (on/off). The GPU thread is off by default on the console: its first run there
     // lost the device at start (docs/history/handoffs/handoff_d3d12.md); the single-threaded renderer showed the game.
     auto flag = [&](const char* key, bool fallback) {

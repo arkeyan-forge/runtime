@@ -21,10 +21,7 @@ namespace imgui_software
         bool nearest = false; // false: scaled with bilinear filtering
     };
 
-    inline ImTextureRef Ref(const Texture* texture)
-    {
-        return ImTextureRef(ImTextureID(intptr_t(texture)));
-    }
+    inline ImTextureRef Ref(const Texture* texture) { return ImTextureRef(ImTextureID(intptr_t(texture))); }
 
     // After ImGui::CreateContext: declares the renderer to ImGui (textures it creates, large meshes).
     void Init();

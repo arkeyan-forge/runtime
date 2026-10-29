@@ -42,7 +42,7 @@ namespace art::lux
 
         struct Huffman
         {
-            uint16_t counts[16] = {};  // codes of each length
+            uint16_t counts[16] = {}; // codes of each length
             uint16_t symbols[320] = {}; // symbols ordered by code
 
             bool Build(const uint8_t* lengths, int count)
@@ -81,13 +81,14 @@ namespace art::lux
             }
         };
 
-        constexpr uint16_t LengthBase[29] = { 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99,
-            115, 131, 163, 195, 227, 258 };
-        constexpr uint8_t LengthExtra[29] = { 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0 };
-        constexpr uint16_t DistanceBase[30] = { 1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025,
-            1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577 };
-        constexpr uint8_t DistanceExtra[30] = { 0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12,
-            12, 13, 13 };
+        constexpr uint16_t LengthBase[29] = { 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59,
+            67, 83, 99, 115, 131, 163, 195, 227, 258 };
+        constexpr uint8_t LengthExtra[29] = { 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5,
+            5, 5, 5, 0 };
+        constexpr uint16_t DistanceBase[30] = { 1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385,
+            513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577 };
+        constexpr uint8_t DistanceExtra[30] = { 0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10,
+            10, 11, 11, 12, 12, 13, 13 };
 
         bool InflateBlock(BitReader& in, const Huffman& literals, const Huffman& distances, std::vector<uint8_t>& out)
         {
@@ -187,7 +188,7 @@ namespace art::lux
         {
             switch (format)
             {
-            case 2: out = TextureFormat::L8; return true;    // k_8
+            case 2: out = TextureFormat::L8; return true; // k_8
             case 6: out = TextureFormat::Argb8; return true; // k_8_8_8_8
             case 18: out = TextureFormat::Dxt1; return true; // k_DXT1
             case 19: out = TextureFormat::Dxt3; return true; // k_DXT2_3
@@ -200,7 +201,8 @@ namespace art::lux
     bool Inflate(const uint8_t* data, size_t size, std::vector<uint8_t>& out)
     {
         // zlib header: deflate, window <= 32 KB, no preset dictionary, header checksum.
-        if (size < 2 || (data[0] & 0x0F) != 8 || (data[0] >> 4) > 7 || (data[1] & 0x20) != 0 || ((data[0] << 8) | data[1]) % 31 != 0)
+        if (size < 2 || (data[0] & 0x0F) != 8 || (data[0] >> 4) > 7 || (data[1] & 0x20) != 0 ||
+            ((data[0] << 8) | data[1]) % 31 != 0)
             return false;
         BitReader in{ data + 2, size - 2 };
         bool last = false;

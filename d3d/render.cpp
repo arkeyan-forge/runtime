@@ -47,10 +47,7 @@ using plume::RenderPrimitiveTopology;
 
 namespace
 {
-    uint32_t Read32(uint32_t address)
-    {
-        return g_memory.Read<uint32_t>(address);
-    }
+    uint32_t Read32(uint32_t address) { return g_memory.Read<uint32_t>(address); }
 
     std::recursive_mutex g_mutex;
     uint64_t g_frame = 1;
@@ -83,14 +80,12 @@ namespace
     // A host target made for the frame: the wide frame at the current scale.
     bool IsFrameTexture(const gpu::TextureDesc& desc)
     {
-        return ultrawide::Active() && desc.width == ultrawide::FrameWidth() * Scale() && desc.height == ultrawide::FrameHeight * Scale();
+        return ultrawide::Active() && desc.width == ultrawide::FrameWidth() * Scale() &&
+               desc.height == ultrawide::FrameHeight * Scale();
     }
 
     // How far the guest's frame sits from the wide frame's left edge, in host pixels.
-    int32_t FrameShift()
-    {
-        return int32_t(ultrawide::FrameWidth() - ultrawide::FrameWidth16x9) / 2 * Scale();
-    }
+    int32_t FrameShift() { return int32_t(ultrawide::FrameWidth() - ultrawide::FrameWidth16x9) / 2 * Scale(); }
 
     // D3DSurface: +0x1C RB_COLOR_INFO / RB_DEPTH_INFO (EDRAM base tile, format), +0x24 size (width-1 << 18 | height-1 << 3).
     gpu::Texture* TargetFor(uint32_t device, uint32_t surface, bool depth)
@@ -116,7 +111,8 @@ namespace
             }
             uint32_t tileWidth = Read32(device + Device::TileRects + 8) - Read32(device + Device::TileRects);
             uint32_t tileHeight = Read32(device + Device::TileRects + 12) - Read32(device + Device::TileRects + 4);
-            if (right <= 4096 && bottom <= 4096 && ((width == tileWidth && right > width) || (height == tileHeight && bottom > height)))
+            if (right <= 4096 && bottom <= 4096 &&
+                ((width == tileWidth && right > width) || (height == tileHeight && bottom > height)))
             {
                 width = std::max(width, right);
                 height = std::max(height, bottom);
@@ -128,9 +124,11 @@ namespace
         gpu::Texture*& texture = g_targets[key];
         if (texture == nullptr)
         {
-            gpu::TextureDesc desc{ .width = (IsFrameSize(width, height) ? ultrawide::FrameWidth() : width) * Scale(), .height = height * Scale() };
+            gpu::TextureDesc desc{ .width = (IsFrameSize(width, height) ? ultrawide::FrameWidth() : width) * Scale(),
+                .height = height * Scale() };
             desc.format = depth ? xenos::DepthTargetFormat : xenos::ColorTargetFormat(format);
-            desc.usage = depth ? gpu::TextureUsage::DepthStencil : gpu::TextureUsage::RenderTarget | gpu::TextureUsage::Sampled;
+            desc.usage =
+                depth ? gpu::TextureUsage::DepthStencil : gpu::TextureUsage::RenderTarget | gpu::TextureUsage::Sampled;
             texture = gpu::CreateTexture(desc);
         }
         return texture;
@@ -141,26 +139,24 @@ namespace
     struct HostTexture
     {
         gpu::Texture* texture = nullptr;
-        bool resolved = false;   // written by resolves: the host copy is the only valid one
-        bool swapRB = false;     // resolved with red and blue swapped (RB_COPY_DEST_INFO.copy_dest_swap): the host copy is not
+        bool resolved = false; // written by resolves: the host copy is the only valid one
+        bool swapRB =
+            false; // resolved with red and blue swapped (RB_COPY_DEST_INFO.copy_dest_swap): the host copy is not
         uint64_t checkedFrame = 0;
         uint64_t contentHash = 0;
-        uint64_t guestHash = 0;  // GuestContentHash at the last full check (contentHash may be a glyph's host hash)
+        uint64_t guestHash = 0; // GuestContentHash at the last full check (contentHash may be a glyph's host hash)
         uint64_t sampleHash = 0; // GuestSampleHash then
-        uint64_t fullFrame = 0;  // the frame of the next full check
+        uint64_t fullFrame = 0; // the frame of the next full check
     };
     std::unordered_map<uint64_t, HostTexture> g_textures;
 
     uint64_t TextureKey(const xenos::TextureFetch& fetch)
     {
-        return uint64_t(fetch.BaseAddress() & 0x1FFFF000) >> 12 | uint64_t(fetch.Format()) << 17 | uint64_t(fetch.Width()) << 23 |
-            uint64_t(fetch.Height()) << 37 | uint64_t(fetch.Dimension()) << 51;
+        return uint64_t(fetch.BaseAddress() & 0x1FFFF000) >> 12 | uint64_t(fetch.Format()) << 17 |
+               uint64_t(fetch.Width()) << 23 | uint64_t(fetch.Height()) << 37 | uint64_t(fetch.Dimension()) << 51;
     }
 
-    uint32_t BlocksLog2(uint32_t bytes)
-    {
-        return uint32_t(std::countr_zero(bytes));
-    }
+    uint32_t BlocksLog2(uint32_t bytes) { return uint32_t(std::countr_zero(bytes)); }
 
     // 16-bit texels with no host format: expanded to R8G8B8A8 (component order as Xenos fetches them: X in the low bits).
     uint32_t ExpandTexel(uint32_t format, uint16_t texel)
@@ -169,11 +165,14 @@ namespace
         switch (format)
         {
         case 3: // k_1_5_5_5
-            return scale(texel & 31, 5) | scale((texel >> 5) & 31, 5) << 8 | scale((texel >> 10) & 31, 5) << 16 | (texel >> 15 ? 0xFF000000u : 0);
+            return scale(texel & 31, 5) | scale((texel >> 5) & 31, 5) << 8 | scale((texel >> 10) & 31, 5) << 16 |
+                   (texel >> 15 ? 0xFF000000u : 0);
         case 4: // k_5_6_5
-            return scale(texel & 31, 5) | scale((texel >> 5) & 63, 6) << 8 | scale((texel >> 11) & 31, 5) << 16 | 0xFF000000u;
+            return scale(texel & 31, 5) | scale((texel >> 5) & 63, 6) << 8 | scale((texel >> 11) & 31, 5) << 16 |
+                   0xFF000000u;
         default: // k_4_4_4_4
-            return scale(texel & 15, 4) | scale((texel >> 4) & 15, 4) << 8 | scale((texel >> 8) & 15, 4) << 16 | scale(texel >> 12, 4) << 24;
+            return scale(texel & 15, 4) | scale((texel >> 4) & 15, 4) << 8 | scale((texel >> 8) & 15, 4) << 16 |
+                   scale(texel >> 12, 4) << 24;
         }
     }
 
@@ -184,14 +183,13 @@ namespace
         uint32_t swizzle = fetch.Swizzle();
         if (swizzle == 0x688 && !swapRB) // XYZW
             return {};
-        auto component = [&](uint32_t c)
-        {
-            static const plume::RenderSwizzle Table[8] = { plume::RenderSwizzle::R, plume::RenderSwizzle::G, plume::RenderSwizzle::B,
-                plume::RenderSwizzle::A, plume::RenderSwizzle::ZERO, plume::RenderSwizzle::ONE, plume::RenderSwizzle::ZERO,
-                plume::RenderSwizzle::ZERO };
-            static const plume::RenderSwizzle Swapped[8] = { plume::RenderSwizzle::B, plume::RenderSwizzle::G, plume::RenderSwizzle::R,
-                plume::RenderSwizzle::A, plume::RenderSwizzle::ZERO, plume::RenderSwizzle::ONE, plume::RenderSwizzle::ZERO,
-                plume::RenderSwizzle::ZERO };
+        auto component = [&](uint32_t c) {
+            static const plume::RenderSwizzle Table[8] = { plume::RenderSwizzle::R, plume::RenderSwizzle::G,
+                plume::RenderSwizzle::B, plume::RenderSwizzle::A, plume::RenderSwizzle::ZERO, plume::RenderSwizzle::ONE,
+                plume::RenderSwizzle::ZERO, plume::RenderSwizzle::ZERO };
+            static const plume::RenderSwizzle Swapped[8] = { plume::RenderSwizzle::B, plume::RenderSwizzle::G,
+                plume::RenderSwizzle::R, plume::RenderSwizzle::A, plume::RenderSwizzle::ZERO, plume::RenderSwizzle::ONE,
+                plume::RenderSwizzle::ZERO, plume::RenderSwizzle::ZERO };
             return (swapRB ? Swapped : Table)[(swizzle >> (c * 3)) & 7];
         };
         return { component(0), component(1), component(2), component(3) };
@@ -220,7 +218,8 @@ namespace
             size_t sourcePitch = size_t(level.pitchBlocks) * info.blockBytes;
             for (uint32_t y = 0; y < blocksY; y++)
                 memcpy(&blocks[size_t(y) * blocksX * info.blockBytes],
-                    source + (level.y + y) * sourcePitch + size_t(level.x) * info.blockBytes, size_t(blocksX) * info.blockBytes);
+                    source + (level.y + y) * sourcePitch + size_t(level.x) * info.blockBytes,
+                    size_t(blocksX) * info.blockBytes);
         }
         xenos::SwapEndian(blocks.data(), blocks.size(), fetch.Endian());
 
@@ -279,7 +278,8 @@ namespace
     const bool g_textureStatsOn = skyenv::Get("SKY_TEXTURE_STATS") != nullptr;
 
     // The texture's guest hash this frame: GuestContentHash, or the last one when its sample says it did not change.
-    uint64_t CheckGuestContent(HostTexture& host, uint64_t key, const xenos::TextureFetch& fetch, const xenos::TextureFormatInfo& info)
+    uint64_t CheckGuestContent(
+        HostTexture& host, uint64_t key, const xenos::TextureFetch& fetch, const xenos::TextureFormatInfo& info)
     {
         g_textureStats.checks++;
         uint64_t bytes = GuestContentBytes(fetch, info);
@@ -296,7 +296,9 @@ namespace
             if (g_textureStatsOn && GuestContentHash(fetch, info) != host.guestHash)
             {
                 g_textureStats.missed++;
-                fprintf(stderr, "[textures] the sample missed a change: %08X format %u %ux%u, %llu bytes, frame %llu (full check at %llu)\n",
+                fprintf(stderr,
+                    "[textures] the sample missed a change: %08X format %u %ux%u, %llu bytes, frame %llu (full check "
+                    "at %llu)\n",
                     fetch.BaseAddress(), fetch.Format(), fetch.Width(), fetch.Height(), (unsigned long long)bytes,
                     (unsigned long long)g_frame, (unsigned long long)host.fullFrame);
             }
@@ -334,7 +336,8 @@ namespace
         for (uint32_t by = 0; by < blocksY; by++)
             for (uint32_t bx = 0; bx < blocksX; bx++)
             {
-                art::DecodeBlock(&blocks[(size_t(by) * blocksX + bx) * info.blockBytes], dxt5 ? art::TextureFormat::Dxt5 : art::TextureFormat::Dxt1, texels);
+                art::DecodeBlock(&blocks[(size_t(by) * blocksX + bx) * info.blockBytes],
+                    dxt5 ? art::TextureFormat::Dxt5 : art::TextureFormat::Dxt1, texels);
                 for (uint32_t i = 0; i < 16; i++)
                 {
                     uint32_t x = bx * 4 + i % 4, y = by * 4 + i / 4;
@@ -360,8 +363,14 @@ namespace
         case gpu::Format::BC4_UNORM: format = dds::Format::BC4; return true;
         case gpu::Format::BC5_UNORM: format = dds::Format::BC5; return true;
         case gpu::Format::R8G8B8A8_UNORM: format = dds::Format::RGBA8; return true;
-        case gpu::Format::R8G8_UNORM: format = dds::Format::RGBA8; channels = 2; return true;
-        case gpu::Format::R8_UNORM: format = dds::Format::RGBA8; channels = 1; return true;
+        case gpu::Format::R8G8_UNORM:
+            format = dds::Format::RGBA8;
+            channels = 2;
+            return true;
+        case gpu::Format::R8_UNORM:
+            format = dds::Format::RGBA8;
+            channels = 1;
+            return true;
         default: return false;
         }
     }
@@ -416,11 +425,12 @@ namespace
         dds::Format format;
         uint32_t channels;
         if (!texpack::Active() || guestHash == 0 || g_resolvedBases.contains(fetch.BaseAddress()) ||
-            g_churn[fetch.BaseAddress()].streak >= DynamicStreak || fetch.Dimension() != 1 || xenos::TextureArraySize(fetch) != 1 ||
-            !PackFormat(info, format, channels))
+            g_churn[fetch.BaseAddress()].streak >= DynamicStreak || fetch.Dimension() != 1 ||
+            xenos::TextureArraySize(fetch) != 1 || !PackFormat(info, format, channels))
             return {};
         // The same storage read with another layout is another texture.
-        const uint32_t layoutKey[] = { fetch.Format(), fetch.Endian(), fetch.Width(), fetch.Height(), fetch.Pitch(), fetch.Tiled() };
+        const uint32_t layoutKey[] = { fetch.Format(), fetch.Endian(), fetch.Width(), fetch.Height(), fetch.Pitch(),
+            fetch.Tiled() };
         uint64_t key = XXH3_64bits_withSeed(layoutKey, sizeof(layoutKey), guestHash);
         auto cached = g_contentHashes.find(key);
         if (cached == g_contentHashes.end())
@@ -432,7 +442,8 @@ namespace
             std::vector<uint8_t> data;
             uint32_t rowPitch;
             DecodeTexture(static_cast<const uint8_t*>(g_memory.Translate(guest)), fetch, info, base, data, rowPitch);
-            uint64_t hash = texpack::ContentHash(fetch.Format(), fetch.Width(), fetch.Height(), data.data(), data.size());
+            uint64_t hash =
+                texpack::ContentHash(fetch.Format(), fetch.Width(), fetch.Height(), data.data(), data.size());
             if (texpack::ShouldDump(hash))
             {
                 if (channels != 4 && !info.convertToRgba8)
@@ -458,8 +469,8 @@ namespace
         return { texpack::Find(cached->second) };
     }
 
-    gpu::Texture* TextureForUntimed(const xenos::TextureFetch& fetch, const xenos::TextureFormatInfo& info, uint64_t key,
-        HostTexture& host);
+    gpu::Texture* TextureForUntimed(
+        const xenos::TextureFetch& fetch, const xenos::TextureFormatInfo& info, uint64_t key, HostTexture& host);
 
     // The perf log's texture time: hashing the guest data, copying it and (without the GPU thread) decoding it. A texture
     // already checked this frame (most draws' textures) returns before the timer: its two clock reads cost more than the
@@ -476,17 +487,19 @@ namespace
         auto start = std::chrono::steady_clock::now();
         gpu::Texture* texture = TextureForUntimed(fetch, info, key, host);
         gpu::AddFrameTime(gpu::FrameTime::Textures,
-            uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count()));
+            uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start)
+                    .count()));
         return texture;
     }
 
-    gpu::Texture* TextureForUntimed(const xenos::TextureFetch& fetch, const xenos::TextureFormatInfo& info, uint64_t key,
-        HostTexture& host)
+    gpu::Texture* TextureForUntimed(
+        const xenos::TextureFetch& fetch, const xenos::TextureFormatInfo& info, uint64_t key, HostTexture& host)
     {
         // Guest textures can change at any time (movies, streaming): reload when the guest data differs.
         host.checkedFrame = g_frame;
         uint64_t hash = CheckGuestContent(host, key, fetch, info);
-        if (glyphs::Replace(hash, fetch.Width(), fetch.Height(), xenos::TextureLevelCount(fetch),
+        if (glyphs::Replace(
+                hash, fetch.Width(), fetch.Height(), xenos::TextureLevelCount(fetch),
                 [&] { return GuestBaseRgba(fetch, info); }, host.texture, host.contentHash))
             return host.texture; // a button glyph drawn for the device in use (host/glyphs.cpp)
         if (host.texture != nullptr && hash == host.contentHash)
@@ -508,8 +521,8 @@ namespace
         if (host.texture != nullptr)
         {
             const gpu::TextureDesc& desc = gpu::Desc(host.texture);
-            if (desc.mipLevels != levels || desc.arraySize != arraySize || desc.width != width || desc.height != height ||
-                desc.format != hostFormat)
+            if (desc.mipLevels != levels || desc.arraySize != arraySize || desc.width != width ||
+                desc.height != height || desc.format != hostFormat)
             {
                 gpu::DestroyTexture(host.texture);
                 host.texture = nullptr;
@@ -519,15 +532,17 @@ namespace
         {
             // A replacement file: the texture threads read its levels.
             if (host.texture == nullptr)
-                host.texture = gpu::CreateTexture({ .width = width, .height = height, .mipLevels = levels, .arraySize = 1, .format = hostFormat });
+                host.texture = gpu::CreateTexture(
+                    { .width = width, .height = height, .mipLevels = levels, .arraySize = 1, .format = hostFormat });
             for (uint32_t level = 0; level < levels; level++)
-                gpu::UploadTextureAsync(host.texture, level, 0, [pack, level](uint8_t* destination, uint32_t pitch)
-                {
+                gpu::UploadTextureAsync(host.texture, level, 0, [pack, level](uint8_t* destination, uint32_t pitch) {
                     std::vector<uint8_t> data;
                     texpack::ReadLevel(*pack, level, data);
-                    dds::LevelSize size = dds::SizeOfLevel(pack->info.format, pack->info.width, pack->info.height, level);
+                    dds::LevelSize size =
+                        dds::SizeOfLevel(pack->info.format, pack->info.width, pack->info.height, level);
                     for (uint32_t row = 0; row < size.rows; row++)
-                        memcpy(destination + size_t(row) * pitch, data.data() + size_t(row) * size.rowBytes, std::min(size.rowBytes, pitch));
+                        memcpy(destination + size_t(row) * pitch, data.data() + size_t(row) * size.rowBytes,
+                            std::min(size.rowBytes, pitch));
                 });
             host.contentHash = hash;
             return host.texture;
@@ -543,18 +558,22 @@ namespace
                 if (guest == 0)
                     return host.texture;
                 if (host.texture == nullptr)
-                    host.texture = gpu::CreateTexture({ .width = fetch.Width(), .height = fetch.Height(), .mipLevels = levels,
-                        .arraySize = arraySize, .format = info.host, .cube = fetch.Dimension() == 3 });
+                    host.texture = gpu::CreateTexture({ .width = fetch.Width(),
+                        .height = fetch.Height(),
+                        .mipLevels = levels,
+                        .arraySize = arraySize,
+                        .format = info.host,
+                        .cube = fetch.Dimension() == 3 });
                 auto source = static_cast<const uint8_t*>(g_memory.Translate(guest));
                 auto storage = std::make_shared<std::vector<uint8_t>>(source, source + layout.sliceBytes);
-                gpu::UploadTextureAsync(host.texture, level, slice, [storage, fetch, format = &info, layout](uint8_t* destination, uint32_t pitch)
-                {
-                    std::vector<uint8_t> data;
-                    uint32_t rowPitch;
-                    DecodeTexture(storage->data(), fetch, *format, layout, data, rowPitch);
-                    for (size_t row = 0; row < data.size() / rowPitch; row++)
-                        memcpy(destination + row * pitch, data.data() + row * rowPitch, std::min(rowPitch, pitch));
-                });
+                gpu::UploadTextureAsync(host.texture, level, slice,
+                    [storage, fetch, format = &info, layout](uint8_t* destination, uint32_t pitch) {
+                        std::vector<uint8_t> data;
+                        uint32_t rowPitch;
+                        DecodeTexture(storage->data(), fetch, *format, layout, data, rowPitch);
+                        for (size_t row = 0; row < data.size() / rowPitch; row++)
+                            memcpy(destination + row * pitch, data.data() + row * rowPitch, std::min(rowPitch, pitch));
+                    });
             }
         }
         host.contentHash = hash;
@@ -575,8 +594,10 @@ namespace
         // texture without mips is a render target read at computed coordinates or a colour table (Swap Force: anisotropic
         // taps along the coordinates' gradient smeared the whole frame and turned its lava and Eruptor green).
         bool mipmapped = xenos::TextureLevelCount(fetch) > 1;
-        state.maxAnisotropy = state.minFilter == plume::RenderFilter::LINEAR && state.magFilter == plume::RenderFilter::LINEAR && mipmapped
-            ? gpu::g_settings.anisotropy : 1;
+        state.maxAnisotropy = state.minFilter == plume::RenderFilter::LINEAR &&
+                                      state.magFilter == plume::RenderFilter::LINEAR && mipmapped
+                                  ? gpu::g_settings.anisotropy
+                                  : 1;
         state.minLod = float(fetch.MipMinLevel());
         state.maxLod = float(fetch.MipMaxLevel());
         return state;
@@ -616,11 +637,12 @@ namespace
                 std::vector<float> sorted = values;
                 std::sort(sorted.begin(), sorted.end());
                 float low = sorted.front(), high = sorted.back();
-                fprintf(stderr, "[dump] float file %02u: min %g, 10%% %g, median %g, 90%% %g, max %g\n", g_dump.index, low,
-                    sorted[sorted.size() / 10], sorted[sorted.size() / 2], sorted[sorted.size() * 9 / 10], high);
+                fprintf(stderr, "[dump] float file %02u: min %g, 10%% %g, median %g, 90%% %g, max %g\n", g_dump.index,
+                    low, sorted[sorted.size() / 10], sorted[sorted.size() / 2], sorted[sorted.size() * 9 / 10], high);
                 for (size_t i = 0; i < values.size(); i++)
                 {
-                    uint32_t grey = high > low ? uint32_t(std::clamp((values[i] - low) / (high - low), 0.0f, 1.0f) * 255.0f) : 0;
+                    uint32_t grey =
+                        high > low ? uint32_t(std::clamp((values[i] - low) / (high - low), 0.0f, 1.0f) * 255.0f) : 0;
                     rgba[i] = grey | grey << 8 | grey << 16 | 0xFF000000u;
                 }
             }
@@ -727,11 +749,12 @@ namespace
         {
             static std::vector<uint64_t> reported;
             for (const GuestShader* shader : { vs, ps })
-                if (shader != nullptr && gpu::FindXenosShader(shader->hash) == nullptr && std::find(reported.begin(), reported.end(), shader->hash) == reported.end())
+                if (shader != nullptr && gpu::FindXenosShader(shader->hash) == nullptr &&
+                    std::find(reported.begin(), reported.end(), shader->hash) == reported.end())
                 {
                     reported.push_back(shader->hash);
-                    fprintf(stderr, "[render] no translated %s shader %016llX (primitive %u): its draws are skipped\n", shader->vertex ? "vertex" : "pixel",
-                        (unsigned long long)shader->hash, primitive);
+                    fprintf(stderr, "[render] no translated %s shader %016llX (primitive %u): its draws are skipped\n",
+                        shader->vertex ? "vertex" : "pixel", (unsigned long long)shader->hash, primitive);
                 }
             g_stats.skippedShader++;
             return false;
@@ -762,13 +785,15 @@ namespace
         for (uint32_t i = 0; i < 4; i++)
             draw.blendFactor[i] = std::bit_cast<float>(GpuRegister(device, Reg::RB_BLEND_RED + i));
         // SKY_LOG_SHADER=<hex hash>: says once where a pixel shader is first used (a test aid for shaders built at run time).
-        static const uint64_t logShader = skyenv::Get("SKY_LOG_SHADER") != nullptr ? strtoull(skyenv::Get("SKY_LOG_SHADER"), nullptr, 16) : 0;
+        static const uint64_t logShader =
+            skyenv::Get("SKY_LOG_SHADER") != nullptr ? strtoull(skyenv::Get("SKY_LOG_SHADER"), nullptr, 16) : 0;
         static bool logged = false;
         if (logShader != 0 && !logged && ps != nullptr && ps->hash == logShader)
         {
             logged = true;
             const gpu::TextureDesc* target = draw.colorTargetCount != 0 ? &gpu::Desc(draw.colorTargets[0]) : nullptr;
-            fprintf(stderr, "[render] shader %016llX first drawn: frame %llu, primitive %u, vertex shader %016llX, target %ux%u\n",
+            fprintf(stderr,
+                "[render] shader %016llX first drawn: frame %llu, primitive %u, vertex shader %016llX, target %ux%u\n",
                 (unsigned long long)logShader, (unsigned long long)g_frame, primitive, (unsigned long long)vs->hash,
                 target != nullptr ? target->width : 0, target != nullptr ? target->height : 0);
         }
@@ -794,18 +819,23 @@ namespace
         draw.depthStencil.stencilReference = uint8_t(stencilRef);
         draw.depthStencil.stencilReadMask = uint8_t(stencilRef >> 8);
         draw.depthStencil.stencilWriteMask = uint8_t(stencilRef >> 16);
-        draw.depthStencil.front = { xenos::StencilOp((depthControl >> 14) & 7), xenos::StencilOp((depthControl >> 11) & 7),
-            xenos::StencilOp((depthControl >> 17) & 7), xenos::Compare((depthControl >> 8) & 7) };
-        draw.depthStencil.back = (depthControl >> 7) & 1
-            ? plume::RenderStencilFaceDesc{ xenos::StencilOp((depthControl >> 26) & 7), xenos::StencilOp((depthControl >> 23) & 7),
-                xenos::StencilOp((depthControl >> 29) & 7), xenos::Compare((depthControl >> 20) & 7) }
-            : draw.depthStencil.front;
+        draw.depthStencil.front = { xenos::StencilOp((depthControl >> 14) & 7),
+            xenos::StencilOp((depthControl >> 11) & 7), xenos::StencilOp((depthControl >> 17) & 7),
+            xenos::Compare((depthControl >> 8) & 7) };
+        draw.depthStencil.back =
+            (depthControl >> 7) & 1 ? plume::RenderStencilFaceDesc{ xenos::StencilOp((depthControl >> 26) & 7),
+                xenos::StencilOp((depthControl >> 23) & 7), xenos::StencilOp((depthControl >> 29) & 7),
+                xenos::Compare((depthControl >> 20) & 7) }
+                                    : draw.depthStencil.front;
 
         uint32_t mode = GpuRegister(device, Reg::PA_SU_SC_MODE_CNTL);
         bool cullFront = mode & 1, cullBack = (mode >> 1) & 1;
         draw.raster.cullMode = cullFront && cullBack ? plume::RenderCullMode::NONE // both: nothing drawn; not handled
-            : cullFront ? plume::RenderCullMode::FRONT : cullBack ? plume::RenderCullMode::BACK : plume::RenderCullMode::NONE;
-        draw.raster.frontFace = (mode >> 2) & 1 ? plume::RenderFrontFace::CLOCKWISE : plume::RenderFrontFace::COUNTER_CLOCKWISE;
+                               : cullFront           ? plume::RenderCullMode::FRONT
+                               : cullBack            ? plume::RenderCullMode::BACK
+                                                     : plume::RenderCullMode::NONE;
+        draw.raster.frontFace =
+            (mode >> 2) & 1 ? plume::RenderFrontFace::CLOCKWISE : plume::RenderFrontFace::COUNTER_CLOCKWISE;
 
         // Polygon offset (depth bias): PA_SU_POLY_OFFSET_{FRONT,BACK}_{SCALE,OFFSET} (0x2380-0x2383), enabled by
         // PA_SU_SC_MODE_CNTL bit 11 (front faces), 12 (back faces) and 13 (points and lines, with the front values); the
@@ -816,7 +846,10 @@ namespace
         // counts 1/16 subpixels, the constant offset is in units of 2^-19 of the 20e4 depth (2^-23 of a 24-bit one),
         // rounded away from zero; the slope is per guest pixel, so it grows with the host's scale. SKY_POLY_OFFSET=0
         // turns it off (to see the fault, or to check that tools/regress/analyze.py's shimmer check catches it).
-        static const bool polyOffset = [] { const char* v = skyenv::Get("SKY_POLY_OFFSET"); return v == nullptr || strcmp(v, "0") != 0; }();
+        static const bool polyOffset = [] {
+            const char* v = skyenv::Get("SKY_POLY_OFFSET");
+            return v == nullptr || strcmp(v, "0") != 0;
+        }();
         if (polyOffset)
         {
             const bool polygonal = primitive != 1 && primitive != 2 && primitive != 3 && primitive != 12;
@@ -838,7 +871,9 @@ namespace
                 if (!logged && (draw.raster.depthBias != 0 || draw.raster.slopeScaledDepthBias != 0.0f))
                 {
                     logged = true;
-                    fprintf(stderr, "[render] polygon offset first used: frame %llu, pixel shader %016llX, slope scale %g, offset %g\n",
+                    fprintf(stderr,
+                        "[render] polygon offset first used: frame %llu, pixel shader %016llX, slope scale %g, offset "
+                        "%g\n",
                         (unsigned long long)g_frame, (unsigned long long)g_drawPixelShader, scale,
                         std::bit_cast<float>(GpuRegister(device, 0x2381 + 2 * face)));
                 }
@@ -847,7 +882,8 @@ namespace
 
         // Viewport from the PA_CL_VPORT registers (screen = ndc * scale + offset).
         auto regFloat = [&](uint32_t reg) { return std::bit_cast<float>(GpuRegister(device, reg)); };
-        float xScale = regFloat(0x210F), xOffset = regFloat(0x2110), yScale = regFloat(0x2111), yOffset = regFloat(0x2112);
+        float xScale = regFloat(0x210F), xOffset = regFloat(0x2110), yScale = regFloat(0x2111),
+              yOffset = regFloat(0x2112);
         float zScale = regFloat(0x2113), zOffset = regFloat(0x2114);
         uint32_t vte = GpuRegister(device, Reg::PA_CL_VTE_CNTL);
         const gpu::TextureDesc& size = gpu::Desc(sizeTarget);
@@ -863,20 +899,32 @@ namespace
             draw.positionScale[1] = -2.0f / float(size.height / Scale());
             draw.halfPixelOffset[0] = -1.0f;
             draw.halfPixelOffset[1] = 1.0f;
-            xScale = guestWidth / 2; xOffset = xScale; yScale = -float(size.height / Scale()) / 2; yOffset = -yScale;
+            xScale = guestWidth / 2;
+            xOffset = xScale;
+            yScale = -float(size.height / Scale()) / 2;
+            yOffset = -yScale;
         }
         // An inverted depth range (MinZ > MaxZ) is kept as it is: Swap Force draws its scene with viewports 1..0.2 and
         // 1..0 into a depth buffer cleared to 0 with GEQUAL (reversed depth through the viewport). Swapping the two
         // inverted every depth: the sky dome, drawn last at the far plane, won every test and covered the scene.
-        draw.viewport = plume::RenderViewport(xOffset - std::fabs(xScale), yOffset - std::fabs(yScale), 2 * std::fabs(xScale),
-            2 * std::fabs(yScale), (vte & 0x20) ? zOffset : 0.0f, (vte & 0x10) ? zOffset + zScale : 1.0f);
-        draw.viewport.x *= Scale(); draw.viewport.y *= Scale(); draw.viewport.width *= Scale(); draw.viewport.height *= Scale();
+        draw.viewport =
+            plume::RenderViewport(xOffset - std::fabs(xScale), yOffset - std::fabs(yScale), 2 * std::fabs(xScale),
+                2 * std::fabs(yScale), (vte & 0x20) ? zOffset : 0.0f, (vte & 0x10) ? zOffset + zScale : 1.0f);
+        draw.viewport.x *= Scale();
+        draw.viewport.y *= Scale();
+        draw.viewport.width *= Scale();
+        draw.viewport.height *= Scale();
 
         int32_t left = int32_t(Read32(device + Device::Scissor)), top = int32_t(Read32(device + Device::Scissor + 4));
-        int32_t right = int32_t(Read32(device + Device::Scissor + 8)), bottom = int32_t(Read32(device + Device::Scissor + 12));
-        left *= Scale(); top *= Scale(); right *= Scale(); bottom *= Scale();
-        draw.scissor = plume::RenderRect(std::clamp(left, 0, int32_t(size.width)), std::clamp(top, 0, int32_t(size.height)),
-            std::clamp(right, 0, int32_t(size.width)), std::clamp(bottom, 0, int32_t(size.height)));
+        int32_t right = int32_t(Read32(device + Device::Scissor + 8)),
+                bottom = int32_t(Read32(device + Device::Scissor + 12));
+        left *= Scale();
+        top *= Scale();
+        right *= Scale();
+        bottom *= Scale();
+        draw.scissor =
+            plume::RenderRect(std::clamp(left, 0, int32_t(size.width)), std::clamp(top, 0, int32_t(size.height)),
+                std::clamp(right, 0, int32_t(size.width)), std::clamp(bottom, 0, int32_t(size.height)));
 
         // Alpha test (XenosRecomp clips alpha below the threshold).
         uint32_t colorControl = GpuRegister(device, Reg::RB_COLORCONTROL);
@@ -930,12 +978,14 @@ namespace
         g_frameSceneRead = false;
         if (frame)
             for (uint32_t slot = 0; slot < gpu::MaxSamplers; slot++)
-                if ((game::UltrawideCompositeSlot < 0 || int(slot) == game::UltrawideCompositeSlot) && draw.textures[slot] != nullptr &&
+                if ((game::UltrawideCompositeSlot < 0 || int(slot) == game::UltrawideCompositeSlot) &&
+                    draw.textures[slot] != nullptr &&
                     gpu::Desc(draw.textures[slot]).width == ultrawide::SceneWidth() * Scale() &&
                     gpu::Desc(draw.textures[slot]).height == ultrawide::SceneHeight() * Scale())
                     g_frameSceneRead = true;
 
-        draw.booleans = (GpuRegister(device, 0x4900) & 0xFFFF) | (GpuRegister(device, 0x4904) & 0xFFFF) << 16; // bool constants
+        draw.booleans = (GpuRegister(device, 0x4900) & 0xFFFF) | (GpuRegister(device, 0x4904) & 0xFFFF)
+                                                                     << 16; // bool constants
 
         // Point sprites: SQ_PROGRAM_CNTL.param_gen (bit 18) puts the point coordinate in pixel shader register
         // SQ_CONTEXT_MISC.param_gen_pos (bits 8-15). Both come from the pixel shader's own header: the device's shadows of
@@ -956,18 +1006,23 @@ namespace
     // stream, `offset` bytes into each.
     std::vector<float> g_pulledData;
 
-    void GatherPulled(gpu::DrawDesc& draw, uint32_t guest, uint32_t bytes, uint32_t stride, uint32_t offset, gpu::Format format)
+    void GatherPulled(
+        gpu::DrawDesc& draw, uint32_t guest, uint32_t bytes, uint32_t stride, uint32_t offset, gpu::Format format)
     {
         uint32_t count = bytes / stride;
         g_pulledData.assign(size_t(count) * 4, 0.0f);
-        uint32_t floats = format == gpu::Format::R32_FLOAT ? 1 : format == gpu::Format::R32G32_FLOAT ? 2
-            : format == gpu::Format::R32G32B32_FLOAT ? 3 : format == gpu::Format::R32G32B32A32_FLOAT ? 4 : 0;
+        uint32_t floats = format == gpu::Format::R32_FLOAT            ? 1
+                          : format == gpu::Format::R32G32_FLOAT       ? 2
+                          : format == gpu::Format::R32G32B32_FLOAT    ? 3
+                          : format == gpu::Format::R32G32B32A32_FLOAT ? 4
+                                                                      : 0;
         for (uint32_t i = 0; i < count; i++)
         {
             uint32_t at = guest + i * stride + offset;
             float* out = &g_pulledData[size_t(i) * 4];
             uint32_t v = Read32(at);
-            uint8_t bytes4[4] = { uint8_t(v), uint8_t(v >> 8), uint8_t(v >> 16), uint8_t(v >> 24) }; // as the GPU reads them
+            uint8_t bytes4[4] = { uint8_t(v), uint8_t(v >> 8), uint8_t(v >> 16),
+                uint8_t(v >> 24) }; // as the GPU reads them
             switch (format)
             {
             case gpu::Format::R8G8B8A8_UINT:
@@ -989,7 +1044,8 @@ namespace
                 {
                     static bool reported;
                     if (!reported)
-                        fprintf(stderr, "[render] computed-index fetch of vertex format %d: not supported, reads 0\n", int(format));
+                        fprintf(stderr, "[render] computed-index fetch of vertex format %d: not supported, reads 0\n",
+                            int(format));
                     reported = true;
                 }
                 break;
@@ -1001,8 +1057,8 @@ namespace
 
     // Streams kept on the GPU (gpu::CacheVertices) hold only the vertices the draw reads, [vertexStart, vertexEnd): a
     // stream can describe much more, such as the rest of the ring buffer the game streams vertices through.
-    bool PrepareVertices(uint32_t device, gpu::DrawDesc& draw, uint32_t vertexShaderInputs, uint32_t pulledInputs, uint32_t vertexCount,
-        uint32_t upData, uint32_t upStride, bool expand, uint32_t vertexStart, uint32_t vertexEnd)
+    bool PrepareVertices(uint32_t device, gpu::DrawDesc& draw, uint32_t vertexShaderInputs, uint32_t pulledInputs,
+        uint32_t vertexCount, uint32_t upData, uint32_t upStride, bool expand, uint32_t vertexStart, uint32_t vertexEnd)
     {
         draw.pulledCount = 0;
         uint32_t declaration = Read32(device + Device::VertexDeclaration);
@@ -1043,7 +1099,8 @@ namespace
 
             // Vertex data is byte-swapped in 32-bit words, which swaps the halves of 16-bit component pairs; for
             // texture coordinates the translated shaders swap them back (.yxwz) when told to.
-            bool sixteenBitPairs = format.host == gpu::Format::R16G16_FLOAT || format.host == gpu::Format::R16G16_SINT ||
+            bool sixteenBitPairs =
+                format.host == gpu::Format::R16G16_FLOAT || format.host == gpu::Format::R16G16_SINT ||
                 format.host == gpu::Format::R16G16_SNORM || format.host == gpu::Format::R16G16_UNORM ||
                 format.host == gpu::Format::R16G16B16A16_FLOAT || format.host == gpu::Format::R16G16B16A16_SINT ||
                 format.host == gpu::Format::R16G16B16A16_SNORM || format.host == gpu::Format::R16G16B16A16_UNORM;
@@ -1085,14 +1142,16 @@ namespace
                 }
                 else
                 {
-                    data.assign(static_cast<uint8_t*>(g_memory.Translate(guest)), static_cast<uint8_t*>(g_memory.Translate(guest)) + bytes);
+                    data.assign(static_cast<uint8_t*>(g_memory.Translate(guest)),
+                        static_cast<uint8_t*>(g_memory.Translate(guest)) + bytes);
                     xenos::SwapEndian(data.data(), data.size(), 2);
                     draw.streams[slot] = { data.data(), bytes, stride, false };
                 }
             }
 
             gpu::VertexInput& input = draw.inputs[draw.inputCount++];
-            input = { location, streamSlots[stream], offset, normal || floatIndices ? AsUint(format.host) : format.host };
+            input = { location, streamSlots[stream], offset,
+                normal || floatIndices ? AsUint(format.host) : format.host };
             provided |= 1u << location;
             if (((pulledInputs >> location) & 1) && upData == 0) // (BeginVertices data arrives later; not seen pulled)
                 GatherPulled(draw, streamGuest[stream], streamBytes[stream], streamStride[stream], offset, format.host);
@@ -1110,7 +1169,8 @@ namespace
                 if ((missing >> location) & 1)
                 {
                     bool color = location == 8 || location == 11;
-                    bool integer = (location >= 1 && location <= 3) || location == 9; // normals and blend indices: uint4
+                    bool integer =
+                        (location >= 1 && location <= 3) || location == 9; // normals and blend indices: uint4
                     draw.inputs[draw.inputCount++] = { location, slot, color ? 16u : 0u,
                         integer ? gpu::Format::R32G32B32A32_UINT : gpu::Format::R32G32B32A32_FLOAT };
                 }
@@ -1126,7 +1186,8 @@ namespace
         for (uint32_t base = 0; base + 4 <= vertexCount; base += 4)
         {
             const uint32_t quad[6] = { base, base + 1, base + 2, base, base + 2, base + 3 };
-            g_indexData.insert(g_indexData.end(), reinterpret_cast<const uint8_t*>(quad), reinterpret_cast<const uint8_t*>(quad) + sizeof(quad));
+            g_indexData.insert(g_indexData.end(), reinterpret_cast<const uint8_t*>(quad),
+                reinterpret_cast<const uint8_t*>(quad) + sizeof(quad));
         }
         draw.indices = g_indexData.data();
         draw.indexBytes = uint32_t(g_indexData.size());
@@ -1182,7 +1243,8 @@ namespace
             }
             const uint32_t base = r * 4;
             const uint32_t triangles[6] = { base, base + 1, base + 2, base + 2, base + 1, base + 3 };
-            g_indexData.insert(g_indexData.end(), reinterpret_cast<const uint8_t*>(triangles), reinterpret_cast<const uint8_t*>(triangles) + sizeof(triangles));
+            g_indexData.insert(g_indexData.end(), reinterpret_cast<const uint8_t*>(triangles),
+                reinterpret_cast<const uint8_t*>(triangles) + sizeof(triangles));
         }
         draw.streams[0].data = g_rectangleVertices.data();
         draw.streams[0].size = uint32_t(g_rectangleVertices.size());
@@ -1195,8 +1257,8 @@ namespace
 
     // Builds the host draw from the device state now. The data it points to (g_streamData, g_indexData, g_constants)
     // stays valid until the next BuildDraw.
-    bool BuildDraw(uint32_t device, uint32_t primitive, uint32_t first, uint32_t count, uint32_t upData, uint32_t upStride,
-        bool indexed, int32_t baseVertex, gpu::DrawDesc& draw)
+    bool BuildDraw(uint32_t device, uint32_t primitive, uint32_t first, uint32_t count, uint32_t upData,
+        uint32_t upStride, bool indexed, int32_t baseVertex, gpu::DrawDesc& draw)
     {
         if (!PrepareDraw(device, primitive, draw))
             return false;
@@ -1204,7 +1266,8 @@ namespace
         {
             // The wide frame. The composite (read from the scene: SSA's one triangle, Giants' one quad) fills it; the rest
             // (HUD, menus, movies) is centred.
-            const gpu::TextureDesc& size = gpu::Desc(draw.colorTargetCount != 0 ? draw.colorTargets[0] : draw.depthTarget);
+            const gpu::TextureDesc& size =
+                gpu::Desc(draw.colorTargetCount != 0 ? draw.colorTargets[0] : draw.depthTarget);
 #ifdef GAME_ULTRAWIDE_COMPOSITE_INDEXED
             g_frameComposite = g_frameSceneRead && indexed && count == game::UltrawideCompositeVertices;
 #else
@@ -1219,7 +1282,8 @@ namespace
             }
             if (g_frameComposite)
             {
-                draw.viewport = plume::RenderViewport(0, 0, float(size.width), float(size.height), draw.viewport.minDepth, draw.viewport.maxDepth);
+                draw.viewport = plume::RenderViewport(
+                    0, 0, float(size.width), float(size.height), draw.viewport.minDepth, draw.viewport.maxDepth);
                 draw.scissor = plume::RenderRect(0, 0, int32_t(size.width), int32_t(size.height));
             }
             else
@@ -1244,7 +1308,8 @@ namespace
             if (!g_dump.active)
             {
                 uint32_t minIndex, maxIndex;
-                draw.indicesConverted = gpu::CacheIndices(g_memory.Translate(guest + first * 2), guest + first * 2, bytes, minIndex, maxIndex);
+                draw.indicesConverted = gpu::CacheIndices(
+                    g_memory.Translate(guest + first * 2), guest + first * 2, bytes, minIndex, maxIndex);
                 if (draw.indicesConverted.buffer != nullptr && baseVertex >= 0)
                 {
                     vertexStart = uint32_t(baseVertex);
@@ -1272,8 +1337,8 @@ namespace
 
         bool expand = !indexed && (primitive == 13 || (primitive == 8 && upData == 0));
         const GuestShader* vs = FindGuestShader(Read32(device + Device::VertexShader));
-        if (!PrepareVertices(device, draw, vs != nullptr ? vs->inputs : 0, vs != nullptr ? vs->pulled : 0, vertexCount, upData, upStride,
-                expand, vertexStart, vertexEnd))
+        if (!PrepareVertices(device, draw, vs != nullptr ? vs->inputs : 0, vs != nullptr ? vs->pulled : 0, vertexCount,
+                upData, upStride, expand, vertexStart, vertexEnd))
             return false;
         if (upData == 0 && !expand && !g_dump.active)
         {
@@ -1307,28 +1372,34 @@ namespace
         }
         else
         {
-            draw.guestConstants = GpuFloatConstants(device, &draw.guestConstantsId, &draw.guestConstantGroups); // valid until the next call: gpu::Draw copies it
+            draw.guestConstants = GpuFloatConstants(device, &draw.guestConstantsId,
+                &draw.guestConstantGroups); // valid until the next call: gpu::Draw copies it
         }
         if (g_dump.active)
         {
-            fprintf(stderr, "[dump] prim %u count %u first %u idx %d vp %.1f %.1f %.1f %.1f z %.2f-%.2f sc %d %d %d %d pos %.3f %.3f blend %d %d/%d mask %x spec %x "
+            fprintf(stderr,
+                "[dump] prim %u count %u first %u idx %d vp %.1f %.1f %.1f %.1f z %.2f-%.2f sc %d %d %d %d pos %.3f "
+                "%.3f blend %d %d/%d mask %x spec %x "
                 "depthctl %08x stencil %08x targets %u%s vs %016llx ps %016llx sumode %08x polyoffset %g %g %g %g\n",
-                primitive, draw.count, draw.first, draw.indices != nullptr, draw.viewport.x, draw.viewport.y, draw.viewport.width, draw.viewport.height,
-                draw.viewport.minDepth, draw.viewport.maxDepth, draw.scissor.left, draw.scissor.top, draw.scissor.right, draw.scissor.bottom,
-                draw.positionScale[0], draw.positionScale[1], draw.blend[0].enabled, int(draw.blend[0].srcColor), int(draw.blend[0].dstColor),
-                draw.blend[0].writeMask, draw.specConstants, GpuRegister(device, Reg::RB_DEPTHCONTROL), GpuRegister(device, Reg::RB_STENCILREFMASK),
-                draw.colorTargetCount, draw.depthTarget != nullptr ? "+depth" : "",
-                static_cast<unsigned long long>(g_drawVertexShader), static_cast<unsigned long long>(g_drawPixelShader),
-                GpuRegister(device, Reg::PA_SU_SC_MODE_CNTL), std::bit_cast<float>(GpuRegister(device, 0x2380)),
-                std::bit_cast<float>(GpuRegister(device, 0x2381)), std::bit_cast<float>(GpuRegister(device, 0x2382)),
-                std::bit_cast<float>(GpuRegister(device, 0x2383)));
+                primitive, draw.count, draw.first, draw.indices != nullptr, draw.viewport.x, draw.viewport.y,
+                draw.viewport.width, draw.viewport.height, draw.viewport.minDepth, draw.viewport.maxDepth,
+                draw.scissor.left, draw.scissor.top, draw.scissor.right, draw.scissor.bottom, draw.positionScale[0],
+                draw.positionScale[1], draw.blend[0].enabled, int(draw.blend[0].srcColor), int(draw.blend[0].dstColor),
+                draw.blend[0].writeMask, draw.specConstants, GpuRegister(device, Reg::RB_DEPTHCONTROL),
+                GpuRegister(device, Reg::RB_STENCILREFMASK), draw.colorTargetCount,
+                draw.depthTarget != nullptr ? "+depth" : "", static_cast<unsigned long long>(g_drawVertexShader),
+                static_cast<unsigned long long>(g_drawPixelShader), GpuRegister(device, Reg::PA_SU_SC_MODE_CNTL),
+                std::bit_cast<float>(GpuRegister(device, 0x2380)), std::bit_cast<float>(GpuRegister(device, 0x2381)),
+                std::bit_cast<float>(GpuRegister(device, 0x2382)), std::bit_cast<float>(GpuRegister(device, 0x2383)));
             for (uint32_t i = 0; i < draw.inputCount; i++)
-                fprintf(stderr, "[dump]   input loc %u stream %u off %u fmt %d\n", draw.inputs[i].location, draw.inputs[i].stream, draw.inputs[i].offset, int(draw.inputs[i].format));
+                fprintf(stderr, "[dump]   input loc %u stream %u off %u fmt %d\n", draw.inputs[i].location,
+                    draw.inputs[i].stream, draw.inputs[i].offset, int(draw.inputs[i].format));
             for (uint32_t i = 0; i < draw.streamCount; i++)
             {
                 const float* f = static_cast<const float*>(draw.streams[i].data);
-                fprintf(stderr, "[dump]   stream %u size %u stride %u inst %d first floats %g %g %g %g %g %g\n", i, draw.streams[i].size, draw.streams[i].stride,
-                    draw.streams[i].perInstance, f[0], f[1], f[2], f[3], f[4], f[5]);
+                fprintf(stderr, "[dump]   stream %u size %u stride %u inst %d first floats %g %g %g %g %g %g\n", i,
+                    draw.streams[i].size, draw.streams[i].stride, draw.streams[i].perInstance, f[0], f[1], f[2], f[3],
+                    f[4], f[5]);
             }
             static std::vector<const gpu::Texture*> dumped;
             for (uint32_t i = 0; i < gpu::MaxSamplers; i++)
@@ -1338,21 +1409,28 @@ namespace
                     uint32_t fetch[6];
                     GpuRegisters(device, 0x4800 + i * 6, 6, fetch);
                     const gpu::SamplerState& sampler = draw.samplers[i];
-                    fprintf(stderr, "[dump]   tex %u %ux%u fmt %d levels %u filter %d%d%d aniso %u lod %g-%g bias %g fetch %08x %08x %08x\n", i,
-                        gpu::Desc(draw.textures[i]).width, gpu::Desc(draw.textures[i]).height, int(gpu::Desc(draw.textures[i]).format),
-                        gpu::Desc(draw.textures[i]).mipLevels, int(sampler.minFilter), int(sampler.magFilter), int(sampler.mipFilter),
-                        sampler.maxAnisotropy, sampler.minLod, sampler.maxLod, sampler.mipLodBias, fetch[3], fetch[4], fetch[5]);
-                    if (std::find(dumped.begin(), dumped.end(), draw.textures[i]) == dumped.end() && gpu::Desc(draw.textures[i]).format != gpu::Format::BC3_UNORM)
+                    fprintf(stderr,
+                        "[dump]   tex %u %ux%u fmt %d levels %u filter %d%d%d aniso %u lod %g-%g bias %g fetch %08x "
+                        "%08x %08x\n",
+                        i, gpu::Desc(draw.textures[i]).width, gpu::Desc(draw.textures[i]).height,
+                        int(gpu::Desc(draw.textures[i]).format), gpu::Desc(draw.textures[i]).mipLevels,
+                        int(sampler.minFilter), int(sampler.magFilter), int(sampler.mipFilter), sampler.maxAnisotropy,
+                        sampler.minLod, sampler.maxLod, sampler.mipLodBias, fetch[3], fetch[4], fetch[5]);
+                    if (std::find(dumped.begin(), dumped.end(), draw.textures[i]) == dumped.end() &&
+                        gpu::Desc(draw.textures[i]).format != gpu::Format::BC3_UNORM)
                     {
                         dumped.push_back(draw.textures[i]);
                         DumpResolve(draw.textures[i], 't');
                     }
                 }
-            fprintf(stderr, "[dump]   vs c0 %g %g %g %g c4 %g %g %g %g\n", g_constants[0], g_constants[1], g_constants[2], g_constants[3], g_constants[16], g_constants[17], g_constants[18], g_constants[19]);
+            fprintf(stderr, "[dump]   vs c0 %g %g %g %g c4 %g %g %g %g\n", g_constants[0], g_constants[1],
+                g_constants[2], g_constants[3], g_constants[16], g_constants[17], g_constants[18], g_constants[19]);
             // SKY_DUMP_VS_CONSTANTS=<n>: the vertex shader's c0 to c<n-1> too (a debugging aid: matrices, bone palettes,
             // motion-blur inputs).
-            static const uint32_t vsConstants = skyenv::Get("SKY_DUMP_VS_CONSTANTS") != nullptr
-                ? std::clamp(uint32_t(atoi(skyenv::Get("SKY_DUMP_VS_CONSTANTS"))), 1u, 256u) : 0;
+            static const uint32_t vsConstants =
+                skyenv::Get("SKY_DUMP_VS_CONSTANTS") != nullptr
+                    ? std::clamp(uint32_t(atoi(skyenv::Get("SKY_DUMP_VS_CONSTANTS"))), 1u, 256u)
+                    : 0;
             if (vsConstants != 0)
             {
                 fprintf(stderr, "[dump]   vs c0-c%u", vsConstants - 1);
@@ -1369,7 +1447,8 @@ namespace
         return true;
     }
 
-    void IssueDraw(uint32_t device, uint32_t primitive, uint32_t first, uint32_t count, bool indexed, int32_t baseVertex)
+    void IssueDraw(
+        uint32_t device, uint32_t primitive, uint32_t first, uint32_t count, bool indexed, int32_t baseVertex)
     {
         gpu::DrawDesc draw;
         if (BuildDraw(device, primitive, first, count, 0, 0, indexed, baseVertex, draw))
@@ -1391,7 +1470,8 @@ namespace
 
         // The vertex stream of a BeginVertices draw is always the first one (PrepareVertices creates it first).
         std::vector<uint8_t>& data = g_streamData[0];
-        data.assign(static_cast<uint8_t*>(g_memory.Translate(p.guestData)), static_cast<uint8_t*>(g_memory.Translate(p.guestData)) + p.bytes);
+        data.assign(static_cast<uint8_t*>(g_memory.Translate(p.guestData)),
+            static_cast<uint8_t*>(g_memory.Translate(p.guestData)) + p.bytes);
         xenos::SwapEndian(data.data(), data.size(), 2);
         p.draw.streams[0].data = data.data();
         if (p.primitive == 8)
@@ -1410,7 +1490,8 @@ namespace
         if (value == nullptr || g_dump.done)
             return;
         // SKY_DUMP_FRAMES=<n>: n consecutive frames (default 1), each opened by a "[dump] frame <swap> at <seconds>" line.
-        static const int frames = std::max(skyenv::Get("SKY_DUMP_FRAMES") != nullptr ? atoi(skyenv::Get("SKY_DUMP_FRAMES")) : 1, 1);
+        static const int frames =
+            std::max(skyenv::Get("SKY_DUMP_FRAMES") != nullptr ? atoi(skyenv::Get("SKY_DUMP_FRAMES")) : 1, 1);
         static int dumped = 0;
         if (g_dump.active)
         {
@@ -1423,12 +1504,14 @@ namespace
             g_dump.active = false;
             g_dump.done = true;
         }
-        else if (value[0] == 'f' ? g_frame > strtoull(value + 1, nullptr, 10) // "f<N>": the frame after the N-th swap
-                                 : std::chrono::duration<double>(std::chrono::steady_clock::now() - g_dump.start).count() >= atof(value))
+        else if (value[0] == 'f'
+                     ? g_frame > strtoull(value + 1, nullptr, 10) // "f<N>": the frame after the N-th swap
+                     : std::chrono::duration<double>(std::chrono::steady_clock::now() - g_dump.start).count() >=
+                           atof(value))
         {
             g_dump.active = true;
             fprintf(stderr, "[dump] frame %llu at %.4f s\n", static_cast<unsigned long long>(g_frame),
-                    std::chrono::duration<double>(std::chrono::steady_clock::now() - g_dump.start).count());
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - g_dump.start).count());
         }
     }
 
@@ -1464,8 +1547,8 @@ namespace
     // thread, loosely tied to the frame (before or after the next swap), and reads whatever is in memory.
     std::atomic<uint32_t> g_cpuReadDepth;
 
-    void WriteBackDepth(const xenos::TextureFetch& fetch, const gpu::Texture* texture, uint32_t x, uint32_t y, uint32_t width,
-        uint32_t height)
+    void WriteBackDepth(const xenos::TextureFetch& fetch, const gpu::Texture* texture, uint32_t x, uint32_t y,
+        uint32_t width, uint32_t height)
     {
         const xenos::TextureFormatInfo& info = xenos::TextureFormat(fetch.Format());
         xenos::TextureLevel level = xenos::TextureLevelLayout(fetch, info, 0);
@@ -1482,16 +1565,19 @@ namespace
 
         uint32_t scale = uint32_t(Scale());
         uint32_t left = x / scale, top = y / scale;
-        uint32_t right = std::min((x + width) / scale, level.width), bottom = std::min((y + height) / scale, level.height);
-        gpu::RequestReadback(texture, scale, [=](const uint32_t* depth, uint32_t depthWidth, uint32_t depthHeight, std::vector<uint32_t>& out) {
-            out.assign(size_t(pitch) * rows, 0);
-            for (uint32_t row = top; row < std::min(bottom, depthHeight); row++)
-                for (uint32_t column = left; column < std::min(right, depthWidth); column++)
-                {
-                    uint32_t offset = tiled ? xenos::Tiled2D(column, row, pitch, 2) / 4 : row * pitch + column;
-                    out[offset] = ByteSwap(Float32To20e4(std::bit_cast<float>(depth[size_t(row) * depthWidth + column])) << 8);
-                }
-        });
+        uint32_t right = std::min((x + width) / scale, level.width),
+                 bottom = std::min((y + height) / scale, level.height);
+        gpu::RequestReadback(texture, scale,
+            [=](const uint32_t* depth, uint32_t depthWidth, uint32_t depthHeight, std::vector<uint32_t>& out) {
+                out.assign(size_t(pitch) * rows, 0);
+                for (uint32_t row = top; row < std::min(bottom, depthHeight); row++)
+                    for (uint32_t column = left; column < std::min(right, depthWidth); column++)
+                    {
+                        uint32_t offset = tiled ? xenos::Tiled2D(column, row, pitch, 2) / 4 : row * pitch + column;
+                        out[offset] = ByteSwap(
+                            Float32To20e4(std::bit_cast<float>(depth[size_t(row) * depthWidth + column])) << 8);
+                    }
+            });
     }
 
     void Resolve(uint32_t device, const ResolveArgs& args)
@@ -1506,7 +1592,8 @@ namespace
         }
         uint32_t source = args.flags & 7;
         bool depth = source == 4;
-        gpu::Texture* target = TargetFor(device, Read32(device + (depth ? Device::DepthStencil : Device::RenderTargets + source * 4)), depth);
+        gpu::Texture* target = TargetFor(
+            device, Read32(device + (depth ? Device::DepthStencil : Device::RenderTargets + source * 4)), depth);
         if (target == nullptr)
             return;
 
@@ -1514,7 +1601,8 @@ namespace
         int32_t left = 0, top = 0, right = int32_t(gpu::Desc(target).width), bottom = int32_t(gpu::Desc(target).height);
         if (args.rect != 0)
         {
-            left = std::max(int32_t(Read32(args.rect)) * Scale(), 0); top = std::max(int32_t(Read32(args.rect + 4)) * Scale(), 0);
+            left = std::max(int32_t(Read32(args.rect)) * Scale(), 0);
+            top = std::max(int32_t(Read32(args.rect + 4)) * Scale(), 0);
             // A rectangle over the guest's whole frame takes the whole wide one. The tiles of a predicated-tiling frame
             // (Giants: 0-864 and 864-1280) take the wide frame from its left edge, or to its right edge, and meet at the
             // centred position of their common edge.
@@ -1548,12 +1636,16 @@ namespace
             const uint32_t hostWidth = frame ? gpu::Desc(target).width : fetch.Width() * Scale();
             // A cube texture receives one resolve per face (`slice`): the level's ambient cube map is built this way.
             bool cube = !depth && fetch.Dimension() == 3;
-            if (host.texture == nullptr || gpu::Desc(host.texture).format != format || gpu::Desc(host.texture).cube != cube ||
-                gpu::Desc(host.texture).width != hostWidth)
+            if (host.texture == nullptr || gpu::Desc(host.texture).format != format ||
+                gpu::Desc(host.texture).cube != cube || gpu::Desc(host.texture).width != hostWidth)
             {
                 gpu::DestroyTexture(host.texture);
-                host.texture = gpu::CreateTexture({ .width = hostWidth, .height = fetch.Height() * Scale(), .arraySize = cube ? 6u : 1u,
-                    .format = format, .usage = gpu::TextureUsage::Sampled | gpu::TextureUsage::RenderTarget, .cube = cube });
+                host.texture = gpu::CreateTexture({ .width = hostWidth,
+                    .height = fetch.Height() * Scale(),
+                    .arraySize = cube ? 6u : 1u,
+                    .format = format,
+                    .usage = gpu::TextureUsage::Sampled | gpu::TextureUsage::RenderTarget,
+                    .cube = cube });
             }
             host.resolved = true;
             g_resolvedBases.insert(fetch.BaseAddress());
@@ -1561,9 +1653,11 @@ namespace
             // start with X, as for ARGB textures (ZYXW): the host copy keeps the target's order, so sampling swaps back.
             host.swapRB = !depth && ((fetch.dword[3] >> 1) & 7) != 0;
 
-            uint32_t x = args.point != 0 ? Read32(args.point) * Scale() : 0, y = args.point != 0 ? Read32(args.point + 4) * Scale() : 0;
+            uint32_t x = args.point != 0 ? Read32(args.point) * Scale() : 0,
+                     y = args.point != 0 ? Read32(args.point + 4) * Scale() : 0;
             if (frame && game::ExpandTiledTargets && ultrawide::Active())
-                x = uint32_t(left); // a tile of the wide frame lands where it was read (the copy is as wide as the frame)
+                x = uint32_t(
+                    left); // a tile of the wide frame lands where it was read (the copy is as wide as the frame)
             int32_t copyRight = std::min(right, left + int32_t(gpu::Desc(host.texture).width) - int32_t(x));
             int32_t copyBottom = std::min(bottom, top + int32_t(gpu::Desc(host.texture).height) - int32_t(y));
             if (copyRight > left && copyBottom > top)
@@ -1572,23 +1666,28 @@ namespace
                 {
                     gpu::ResolveDepth(host.texture, x, y, target, plume::RenderRect(left, top, copyRight, copyBottom));
                     if ((fetch.BaseAddress() & 0x1FFFFFFF) == g_cpuReadDepth.load(std::memory_order_relaxed))
-                        WriteBackDepth(fetch, host.texture, x, y, uint32_t(copyRight - left), uint32_t(copyBottom - top));
+                        WriteBackDepth(
+                            fetch, host.texture, x, y, uint32_t(copyRight - left), uint32_t(copyBottom - top));
                 }
                 else
-                    gpu::CopyTexture(host.texture, x, y, target, plume::RenderRect(left, top, copyRight, copyBottom), cube ? args.slice % 6 : 0);
+                    gpu::CopyTexture(host.texture, x, y, target, plume::RenderRect(left, top, copyRight, copyBottom),
+                        cube ? args.slice % 6 : 0);
             }
             DumpResolve(host.texture);
         }
 
         if (g_dump.active)
-            fprintf(stderr, "[dump] resolve flags %x src %ux%u rect %d %d %d %d dest %08x depthsurf %08x (file %02u)\n", args.flags, gpu::Desc(target).width,
-                gpu::Desc(target).height, left, top, right, bottom, args.destination, Read32(device + Device::DepthStencil), g_dump.index - 1);
+            fprintf(stderr, "[dump] resolve flags %x src %ux%u rect %d %d %d %d dest %08x depthsurf %08x (file %02u)\n",
+                args.flags, gpu::Desc(target).width, gpu::Desc(target).height, left, top, right, bottom,
+                args.destination, Read32(device + Device::DepthStencil), g_dump.index - 1);
         // A resolve can also clear what it copied: the colour target, and/or the bound depth-stencil surface.
         if (right <= left || bottom <= top)
             return;
         plume::RenderRect region(left, top, right, bottom);
         const plume::RenderRect* clearRect = left == 0 && top == 0 && right == int32_t(gpu::Desc(target).width) &&
-            bottom == int32_t(gpu::Desc(target).height) ? nullptr : &region;
+                                                     bottom == int32_t(gpu::Desc(target).height)
+                                                 ? nullptr
+                                                 : &region;
         if ((args.flags & 0x100) && !depth)
         {
             float rgba[4] = {};
@@ -1601,7 +1700,8 @@ namespace
         {
             gpu::Texture* depthTarget = depth ? target : TargetFor(device, Read32(device + Device::DepthStencil), true);
             if (depthTarget != nullptr)
-                gpu::ClearDepthStencil(depthTarget, true, true, args.clearZ, uint8_t(args.clearStencil), depth ? clearRect : nullptr);
+                gpu::ClearDepthStencil(
+                    depthTarget, true, true, args.clearZ, uint8_t(args.clearStencil), depth ? clearRect : nullptr);
         }
     }
 
@@ -1627,7 +1727,10 @@ namespace
         }
         if (right <= left || bottom <= top)
             return;
-        left *= Scale(); top *= Scale(); right *= Scale(); bottom *= Scale();
+        left *= Scale();
+        top *= Scale();
+        right *= Scale();
+        bottom *= Scale();
 
         float rgba[4] = {};
         if (color != 0)
@@ -1635,8 +1738,7 @@ namespace
                 rgba[i] = g_memory.Read<float>(color + i * 4);
 
         // The whole target: a load-action clear, cheaper than plume's rectangle clear.
-        auto clearRect = [&](const gpu::Texture* target, plume::RenderRect& out) -> const plume::RenderRect*
-        {
+        auto clearRect = [&](const gpu::Texture* target, plume::RenderRect& out) -> const plume::RenderRect* {
             const gpu::TextureDesc& desc = gpu::Desc(target);
             int32_t l = left, r = right;
             if (IsFrameTexture(desc))
@@ -1647,7 +1749,8 @@ namespace
                 else
                     l += FrameShift(), r += FrameShift();
             }
-            out = plume::RenderRect(std::max(l, 0), std::max(top, 0), std::min(r, int32_t(desc.width)), std::min(bottom, int32_t(desc.height)));
+            out = plume::RenderRect(std::max(l, 0), std::max(top, 0), std::min(r, int32_t(desc.width)),
+                std::min(bottom, int32_t(desc.height)));
             if (out.left == 0 && out.top == 0 && out.right == int32_t(desc.width) && out.bottom == int32_t(desc.height))
                 return nullptr;
             return &out;
@@ -1655,7 +1758,8 @@ namespace
         plume::RenderRect region;
         for (uint32_t i = 0; i < 4; i++)
         {
-            gpu::Texture* target = (flags >> i) & 1 ? TargetFor(device, Read32(device + Device::RenderTargets + i * 4), false) : nullptr;
+            gpu::Texture* target =
+                (flags >> i) & 1 ? TargetFor(device, Read32(device + Device::RenderTargets + i * 4), false) : nullptr;
             if (target != nullptr)
             {
                 const plume::RenderRect* r = clearRect(target, region);
@@ -1684,7 +1788,9 @@ namespace
 {
     uint64_t NowNs()
     {
-        return uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+        return uint64_t(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
+                .count());
     }
 
     // The perf log's renderer time (gpu::AddFrameTime) for one hooked D3D call: all of it but what Exclude runs (the
@@ -1798,9 +1904,10 @@ PPC_FUNC(GAME_HOOK(D3DDevice_Resolve))
     uint32_t device = ctx.r3.u32;
     // (device, flags, source rect, destination, point, level, slice, clear color, clear Z, clear stencil on the stack);
     // newer XDKs (Giants) drop the level, which moves the slice, the clear color and the stencil up one place.
-    ResolveArgs args = game::ResolveHasLevel
-        ? ResolveArgs{ ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r9.u32, ctx.r10.u32, Read32(ctx.r1.u32 + 0x5C), float(ctx.f1.f64) }
-        : ResolveArgs{ ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32, Read32(ctx.r1.u32 + 0x54), float(ctx.f1.f64) };
+    ResolveArgs args = game::ResolveHasLevel ? ResolveArgs{ ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r9.u32,
+        ctx.r10.u32, Read32(ctx.r1.u32 + 0x5C), float(ctx.f1.f64) }
+                                             : ResolveArgs{ ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32,
+                                                   ctx.r9.u32, Read32(ctx.r1.u32 + 0x54), float(ctx.f1.f64) };
     {
         std::lock_guard lock(g_mutex);
         FlushPendingVertices();
@@ -1837,14 +1944,17 @@ PPC_FUNC(GAME_HOOK(D3DDevice_Swap))
     RendererTimer timer;
     // A game that paces itself by the interval it finds in its device (game::Adapter::presentIntervalPacesGame) is shown
     // interval 1 at 60 FPS: the guest D3D then does not hold the frame to two blanks, and the engine times its frames.
-    if (game::Current().presentIntervalPacesGame && FrameRateLimit() == 60 && Read32(ctx.r3.u32 + Device::PresentInterval) == 2)
+    if (game::Current().presentIntervalPacesGame && FrameRateLimit() == 60 &&
+        Read32(ctx.r3.u32 + Device::PresentInterval) == 2)
         g_memory.Write<uint32_t>(ctx.r3.u32 + Device::PresentInterval, 1);
     ScanRing(ctx.r3.u32);
     CaptureSwap(ctx);
     auto ready = std::chrono::steady_clock::now();
     timer.Exclude([&] {
         uint64_t waitStart = NowNs();
-        WaitForFlip(Read32(ctx.r3.u32 + Device::PresentInterval)); // D3DRS_PRESENTINTERVAL: the console shows frames at vertical blanks
+        WaitForFlip(
+            Read32(ctx.r3.u32 +
+                   Device::PresentInterval)); // D3DRS_PRESENTINTERVAL: the console shows frames at vertical blanks
         gpu::AddFrameTime(gpu::FrameTime::VblankWait, NowNs() - waitStart);
     });
     {
@@ -1869,27 +1979,33 @@ PPC_FUNC(GAME_HOOK(D3DDevice_Swap))
             auto now = std::chrono::steady_clock::now();
             double fps = 60.0 / std::chrono::duration<double>(now - last).count();
             last = now;
-            fprintf(stderr, "[render] frame %llu: %u draws, %u resolves, skipped %u (shader) %u (target) [%0.1f fps], ring jumps %u\n",
-                (unsigned long long)g_frame, g_stats.draws, g_stats.resolves, g_stats.skippedShader, g_stats.skippedTarget, fps,
-                TakeRingJumps());
+            fprintf(stderr,
+                "[render] frame %llu: %u draws, %u resolves, skipped %u (shader) %u (target) [%0.1f fps], ring jumps "
+                "%u\n",
+                (unsigned long long)g_frame, g_stats.draws, g_stats.resolves, g_stats.skippedShader,
+                g_stats.skippedTarget, fps, TakeRingJumps());
         }
         // SKY_FRAME_TIMES=<file>: one line per frame: milliseconds since start-up at the present (the origin of the
         // `[file] open` lines' times), the frame's work (from the previous swap's end to this swap, without the vblank
         // wait), its draws. tools/perf/frames.py and load_times.py read it.
-        static FILE* frameTimes = skyenv::Get("SKY_FRAME_TIMES") != nullptr ? fopen(skyenv::Get("SKY_FRAME_TIMES"), "w") : nullptr;
+        static FILE* frameTimes =
+            skyenv::Get("SKY_FRAME_TIMES") != nullptr ? fopen(skyenv::Get("SKY_FRAME_TIMES"), "w") : nullptr;
         if (frameTimes != nullptr)
         {
             auto now = std::chrono::steady_clock::now();
-            fprintf(frameTimes, "%.3f %.3f %u\n", std::chrono::duration<double, std::milli>(now - g_processStart).count(),
+            fprintf(frameTimes, "%.3f %.3f %u\n",
+                std::chrono::duration<double, std::milli>(now - g_processStart).count(),
                 std::chrono::duration<double, std::milli>(ready - g_swapEnd).count(), g_stats.draws);
             fflush(frameTimes);
         }
         if (g_textureStatsOn && g_frame % 60 == 0)
         {
-            fprintf(stderr, "[textures] last 60 frames, per frame: %.1f checked, %.1f hashed whole (%.2f MB), %.1f by sample; "
-                "%llu changes of sampled textures found, %llu missed by the sample\n", g_textureStats.checks / 60.0,
-                g_textureStats.full / 60.0, g_textureStats.bytes / 60.0 / 1048576, g_textureStats.sampled / 60.0,
-                (unsigned long long)g_textureStats.changed, (unsigned long long)g_textureStats.missed);
+            fprintf(stderr,
+                "[textures] last 60 frames, per frame: %.1f checked, %.1f hashed whole (%.2f MB), %.1f by sample; "
+                "%llu changes of sampled textures found, %llu missed by the sample\n",
+                g_textureStats.checks / 60.0, g_textureStats.full / 60.0, g_textureStats.bytes / 60.0 / 1048576,
+                g_textureStats.sampled / 60.0, (unsigned long long)g_textureStats.changed,
+                (unsigned long long)g_textureStats.missed);
             g_textureStats = {};
         }
         g_stats = {};

@@ -26,7 +26,8 @@ namespace collection
         {
             switch (type)
             {
-            case 28: case 416: return 16;
+            case 28:
+            case 416: return 16;
             case 404: return 4;
             case 419: return 19;
             case 430: return 30;
@@ -50,7 +51,8 @@ namespace collection
             for (int path = 1; path <= 2; path++)
                 for (int i = 0; i < 3; i++)
                     add(6 + i, UpgradePath(path), Prices[4 + i],
-                        (fr ? "Voie " : "Path ") + std::to_string(path) + (fr ? ", amélioration " : ", upgrade ") + std::to_string(i + 1));
+                        (fr ? "Voie " : "Path ") + std::to_string(path) + (fr ? ", amélioration " : ", upgrade ") +
+                            std::to_string(i + 1));
             add(UpgradeSoulGemBit, UpgradePath::SoulGem, Prices[7], fr ? "Gemme d'âme" : "Soul Gem");
             for (int path = 0; path < 2; path++)
                 table.pathNames[path] = (fr ? "Voie " : "Path ") + std::to_string(path + 1);
@@ -87,7 +89,8 @@ namespace collection
                 std::string parseError;
                 if (!Json::Parse(text.str(), json, parseError) || json["format"].AsInt() != 1)
                     return nullptr;
-                it = cache.insert_or_assign(game, std::pair{ time, std::make_shared<const Json>(std::move(json)) }).first;
+                it = cache.insert_or_assign(game, std::pair{ time, std::make_shared<const Json>(std::move(json)) })
+                         .first;
             }
             return it->second.second;
         }
@@ -112,8 +115,8 @@ namespace collection
         UpgradeTable table;
         table.fromDisc = true;
         for (const Json& item : (*entry)["upgrades"].Items())
-            table.upgrades.push_back({ int(item["bit"].AsInt()), UpgradePath(item["path"].AsInt()), int(item["price"].AsInt()),
-                Text(item["name"], language), Text(item["description"], language) });
+            table.upgrades.push_back({ int(item["bit"].AsInt()), UpgradePath(item["path"].AsInt()),
+                int(item["price"].AsInt()), Text(item["name"], language), Text(item["description"], language) });
         const std::vector<Json>& paths = (*entry)["paths"].Items();
         for (size_t i = 0; i < 2 && i < paths.size(); i++)
         {
@@ -129,14 +132,16 @@ namespace collection
             return false;
         if (upgrade.path != UpgradePath::First && upgrade.path != UpgradePath::Second)
             return true;
-        return (bits >> UpgradePathChosenBit & 1) && bool(bits >> UpgradePathSecondBit & 1) == (upgrade.path == UpgradePath::Second);
+        return (bits >> UpgradePathChosenBit & 1) &&
+               bool(bits >> UpgradePathSecondBit & 1) == (upgrade.path == UpgradePath::Second);
     }
 
     bool UpgradeGreyed(uint16_t bits, const Upgrade& upgrade)
     {
         if (upgrade.path != UpgradePath::First && upgrade.path != UpgradePath::Second)
             return false;
-        return (bits >> UpgradePathChosenBit & 1) && bool(bits >> UpgradePathSecondBit & 1) != (upgrade.path == UpgradePath::Second);
+        return (bits >> UpgradePathChosenBit & 1) &&
+               bool(bits >> UpgradePathSecondBit & 1) != (upgrade.path == UpgradePath::Second);
     }
 
     uint16_t ToggleUpgrade(uint16_t bits, const Upgrade& upgrade)
@@ -144,11 +149,13 @@ namespace collection
         if (upgrade.path == UpgradePath::First || upgrade.path == UpgradePath::Second)
         {
             // A path that is not the chosen one: choose it (its bought upgrades are the ones already marked) and buy this one.
-            bool active = (bits >> UpgradePathChosenBit & 1) && bool(bits >> UpgradePathSecondBit & 1) == (upgrade.path == UpgradePath::Second);
+            bool active = (bits >> UpgradePathChosenBit & 1) &&
+                          bool(bits >> UpgradePathSecondBit & 1) == (upgrade.path == UpgradePath::Second);
             if (!active)
             {
                 bits |= 1 << UpgradePathChosenBit;
-                bits = upgrade.path == UpgradePath::Second ? bits | (1 << UpgradePathSecondBit) : bits & ~(1 << UpgradePathSecondBit);
+                bits = upgrade.path == UpgradePath::Second ? bits | (1 << UpgradePathSecondBit)
+                                                           : bits & ~(1 << UpgradePathSecondBit);
                 return bits | (1 << upgrade.bit);
             }
         }
@@ -176,10 +183,7 @@ namespace collection
         return bits;
     }
 
-    uint16_t NoUpgrades(uint16_t bits)
-    {
-        return bits & ~0x0FFF;
-    }
+    uint16_t NoUpgrades(uint16_t bits) { return bits & ~0x0FFF; }
 
     uint16_t EditorBits(uint16_t field, uint8_t wowPow)
     {

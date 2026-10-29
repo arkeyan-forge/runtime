@@ -28,10 +28,7 @@ namespace
     std::vector<char> g_blob; // the library reads from it for its whole life
     std::mutex g_saveMutex;
 
-    plume::D3D12Device& Device(plume::RenderDevice& device)
-    {
-        return static_cast<plume::D3D12Device&>(device);
-    }
+    plume::D3D12Device& Device(plume::RenderDevice& device) { return static_cast<plume::D3D12Device&>(device); }
 }
 
 namespace gpu::detail
@@ -41,7 +38,8 @@ namespace gpu::detail
     // Opening the library removed the device on the Xbox (run 8, 1.0.2488.831: with a saved file or empty). A marker
     // file is written before opening and removed after: a marker left by an earlier run means that run did not get
     // past it, so the cache is skipped from then on (its file renamed .failed) until the marker is deleted.
-    void D3D12OpenPipelineLibrary(plume::RenderDevice& renderDevice, const std::filesystem::path& path, uint64_t identity)
+    void D3D12OpenPipelineLibrary(
+        plume::RenderDevice& renderDevice, const std::filesystem::path& path, uint64_t identity)
     {
         if (!gpu::g_settings.pipelineLibrary)
         {
@@ -56,8 +54,10 @@ namespace gpu::detail
             std::filesystem::path failed = path;
             failed += ".failed";
             std::filesystem::rename(path, failed, error);
-            fprintf(stderr, "[gpu] D3D12 pipeline cache skipped: an earlier run did not get past opening it (%s is left; "
-                "delete it to try again)\n", marker.filename().string().c_str());
+            fprintf(stderr,
+                "[gpu] D3D12 pipeline cache skipped: an earlier run did not get past opening it (%s is left; "
+                "delete it to try again)\n",
+                marker.filename().string().c_str());
             return;
         }
         std::ofstream(marker) << "opening the pipeline cache\n";
@@ -95,7 +95,8 @@ namespace gpu::detail
         if (header.magic == Magic && header.version == Version && header.identity == identity)
         {
             g_blob.assign(data.begin() + sizeof(header), data.end());
-            result = device.d3d->CreatePipelineLibrary(g_blob.data(), g_blob.size(), IID_PPV_ARGS(&device.pipelineLibrary));
+            result =
+                device.d3d->CreatePipelineLibrary(g_blob.data(), g_blob.size(), IID_PPV_ARGS(&device.pipelineLibrary));
             why = SUCCEEDED(result) ? nullptr : "rejected (another driver or adapter, or damaged)";
         }
         else if (!data.empty())

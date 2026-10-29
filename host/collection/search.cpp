@@ -11,7 +11,8 @@ namespace collection
     namespace
     {
         // U+00C0..U+00FF without their accents (Latin-1 letters; the multiplication and division signs become spaces).
-        constexpr char Latin1[] = "aaaaaaaceeeeiiiidnooooo ouuuuyts" "aaaaaaaceeeeiiiidnooooo ouuuuyty";
+        constexpr char Latin1[] = "aaaaaaaceeeeiiiidnooooo ouuuuyts"
+                                  "aaaaaaaceeeeiiiidnooooo ouuuuyty";
 
         // The words of folded text: runs of letters and digits.
         std::vector<std::string> Words(const std::string& folded)
@@ -48,7 +49,8 @@ namespace collection
             {
                 if (a.compare(i + 1, std::string::npos, b, i + 1, std::string::npos) == 0)
                     return true; // one letter differs
-                return i + 1 < la && a[i] == b[i + 1] && a[i + 1] == b[i] && a.compare(i + 2, std::string::npos, b, i + 2, std::string::npos) == 0;
+                return i + 1 < la && a[i] == b[i + 1] && a[i + 1] == b[i] &&
+                       a.compare(i + 2, std::string::npos, b, i + 2, std::string::npos) == 0;
             }
             const std::string& longer = la > lb ? a : b;
             const std::string& shorter = la > lb ? b : a;
@@ -90,26 +92,29 @@ namespace collection
         }
 
         // Folded words, English and French, in the order of the enums.
-        constexpr const char* ElementWords[] = { "air", "earth terre", "fire feu", "water eau", "magic magie", "tech technologie",
-            "life vie", "undead mort vivant", "light lumiere", "dark tenebres ombre", "" };
+        constexpr const char* ElementWords[] = { "air", "earth terre", "fire feu", "water eau", "magic magie",
+            "tech technologie", "life vie", "undead mort vivant", "light lumiere", "dark tenebres ombre", "" };
         static_assert(std::size(ElementWords) == size_t(Element::Count));
-        constexpr const char* CategoryWords[] = { "skylander skylanders character characters personnage personnages", "giant giants geant geants",
-            "swapper swappers swap top haut", "swapper swappers swap bottom bas", "trapmaster trapmasters trap master masters maitre maitres",
-            "supercharger superchargers super charger", "sensei senseis", "mini minis sidekick sidekicks acolyte acolytes compagnon",
-            "trap traps piege pieges", "villain villains vilain mechant mechants", "vehicle vehicles vehicule vehicules",
-            "creation crystal crystals cristal cristaux", "item items objet objets", "adventure adventures aventure aventures pack packs location",
-            "trophy trophies trophee trophees" };
+        constexpr const char* CategoryWords[] = { "skylander skylanders character characters personnage personnages",
+            "giant giants geant geants", "swapper swappers swap top haut", "swapper swappers swap bottom bas",
+            "trapmaster trapmasters trap master masters maitre maitres", "supercharger superchargers super charger",
+            "sensei senseis", "mini minis sidekick sidekicks acolyte acolytes compagnon", "trap traps piege pieges",
+            "villain villains vilain mechant mechants", "vehicle vehicles vehicule vehicules",
+            "creation crystal crystals cristal cristaux", "item items objet objets",
+            "adventure adventures aventure aventures pack packs location", "trophy trophies trophee trophees" };
         static_assert(std::size(CategoryWords) == size_t(Category::Count));
-        constexpr const char* KindWords[] = { "standard", "legendary legendaire", "dark sombre", "crystal clear cristal transparent",
-            "glow lueur phosphorescent", "metallic metal metallise", "gold dore", "silver argent argente", "chrome", "flocked floque",
-            "series serie", "lightcore", "eon eons elite", "alt alternate deco", "event evenement exclusive exclusif", "shape forme", "" };
+        constexpr const char* KindWords[] = { "standard", "legendary legendaire", "dark sombre",
+            "crystal clear cristal transparent", "glow lueur phosphorescent", "metallic metal metallise", "gold dore",
+            "silver argent argente", "chrome", "flocked floque", "series serie", "lightcore", "eon eons elite",
+            "alt alternate deco", "event evenement exclusive exclusif", "shape forme", "" };
         static_assert(std::size(KindWords) == size_t(VariantKind::Count));
 
         const char* GameWords(const std::string& id)
         {
-            static const std::map<std::string, const char*> Words = { { "ssa", "ssa spyro spyros" }, { "giants", "giants giant geants geant" },
-                { "swapforce", "swapforce swap force" }, { "trap_team", "trapteam trap team" },
-                { "superchargers", "superchargers supercharger super chargers" }, { "imaginators", "imaginators imaginator" } };
+            static const std::map<std::string, const char*> Words = { { "ssa", "ssa spyro spyros" },
+                { "giants", "giants giant geants geant" }, { "swapforce", "swapforce swap force" },
+                { "trap_team", "trapteam trap team" }, { "superchargers", "superchargers supercharger super chargers" },
+                { "imaginators", "imaginators imaginator" } };
             auto it = Words.find(id);
             return it != Words.end() ? it->second : id.c_str();
         }
@@ -123,9 +128,10 @@ namespace collection
         // Words that stand for two: folded and joined by single spaces, so "Magic item" is the toy type and not an element.
         std::vector<std::string> Phrases(const std::vector<std::string>& words)
         {
-            static const std::pair<const char*, const char*> Replace[] = { { " magic item ", " item " }, { " magic items ", " items " },
-                { " objet magique ", " objet " }, { " objets magiques ", " objets " }, { " trap master ", " trapmaster " },
-                { " trap masters ", " trapmasters " }, { " swap force ", " swapforce " }, { " light core ", " lightcore " },
+            static const std::pair<const char*, const char*> Replace[] = { { " magic item ", " item " },
+                { " magic items ", " items " }, { " objet magique ", " objet " }, { " objets magiques ", " objets " },
+                { " trap master ", " trapmaster " }, { " trap masters ", " trapmasters " },
+                { " swap force ", " swapforce " }, { " light core ", " lightcore " },
                 { " creation crystal ", " creation " }, { " creation crystals ", " creation " } };
             std::string text = " ";
             for (const std::string& word : words)
@@ -163,7 +169,8 @@ namespace collection
                 out += "oe";
                 i += 2;
             }
-            else if (c == 0xE2 && i + 2 < utf8.size() && uint8_t(utf8[i + 1]) == 0x80 && (uint8_t(utf8[i + 2]) == 0x98 || uint8_t(utf8[i + 2]) == 0x99))
+            else if (c == 0xE2 && i + 2 < utf8.size() && uint8_t(utf8[i + 1]) == 0x80 &&
+                     (uint8_t(utf8[i + 2]) == 0x98 || uint8_t(utf8[i + 2]) == 0x99))
             {
                 out += '\''; // a typographic apostrophe
                 i += 3;
@@ -190,8 +197,9 @@ namespace collection
         {
             if (figure == nullptr)
                 continue;
-            for (const std::string& text : { figure->label, figures::NicknameUtf8(figure->stats), figure->DisplayName(), figure->variantInfo.name,
-                     figure->edition, figure->toy != nullptr ? figure->toy->name : std::string(), figure->file })
+            for (const std::string& text :
+                { figure->label, figures::NicknameUtf8(figure->stats), figure->DisplayName(), figure->variantInfo.name,
+                    figure->edition, figure->toy != nullptr ? figure->toy->name : std::string(), figure->file })
                 for (const std::string& word : Words(Fold(text)))
                     names.push_back(word);
             if (const Toy* toy = figure->toy)
@@ -231,7 +239,8 @@ namespace collection
             }
             // "level10", "niveau10", "lv10".
             size_t digits = term.find_first_of("0123456789");
-            if (digits != std::string::npos && digits > 0 && IsLevelWord(term.substr(0, digits)) && term.find_first_not_of("0123456789", digits) == std::string::npos)
+            if (digits != std::string::npos && digits > 0 && IsLevelWord(term.substr(0, digits)) &&
+                term.find_first_not_of("0123456789", digits) == std::string::npos)
             {
                 if (!levelIs(atoi(term.c_str() + digits)))
                     return false;
@@ -294,8 +303,8 @@ namespace collection
             return int(games.size());
         };
         // The menus' order of the elements; toys with no element after them, by toy type.
-        constexpr Element Order[] = { Element::Magic, Element::Earth, Element::Water, Element::Air, Element::Fire, Element::Life,
-            Element::Undead, Element::Tech, Element::Light, Element::Dark };
+        constexpr Element Order[] = { Element::Magic, Element::Earth, Element::Water, Element::Air, Element::Fire,
+            Element::Life, Element::Undead, Element::Tech, Element::Light, Element::Dark };
         auto elementRank = [&](size_t i) {
             const Toy* toy = list[i].toy;
             for (size_t e = 0; e < std::size(Order); e++)

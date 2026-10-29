@@ -11,28 +11,32 @@ namespace d3d
     // 2.0.21076, +0x80; games/giants/docs/boot.md). The constants, register shadows and fence words before it do not move.
     namespace Device
     {
-        constexpr uint32_t FetchConstants = 0x480;   // 32 x 6 dwords: texture fetch constants (vertex fetch shares them)
-        constexpr uint32_t VertexConstants = 0x780;  // 256 float4
-        constexpr uint32_t PixelConstants = 0x1780;  // 256 float4
-        constexpr uint32_t VertexBooleans = 0x2780;  // 128 bits
-        constexpr uint32_t PixelBooleans = 0x2790;   // 128 bits
+        constexpr uint32_t FetchConstants = 0x480; // 32 x 6 dwords: texture fetch constants (vertex fetch shares them)
+        constexpr uint32_t VertexConstants = 0x780; // 256 float4
+        constexpr uint32_t PixelConstants = 0x1780; // 256 float4
+        constexpr uint32_t VertexBooleans = 0x2780; // 128 bits
+        constexpr uint32_t PixelBooleans = 0x2790; // 128 bits
         constexpr uint32_t LoopConstants = 0x27A0;
-        constexpr uint32_t VertexDeclaration = game::DeviceVertexDeclaration; // SSA 0x2F58, Giants 0x2FD0 (+0x78, not +0x80)
+        constexpr uint32_t VertexDeclaration =
+            game::DeviceVertexDeclaration; // SSA 0x2F58, Giants 0x2FD0 (+0x78, not +0x80)
         constexpr uint32_t Indices = 0x318C + game::DeviceStateShift;
         constexpr uint32_t RenderTargets = 0x3190 + game::DeviceStateShift; // 4 surfaces
         constexpr uint32_t DepthStencil = 0x31A0 + game::DeviceStateShift;
-        constexpr uint32_t Streams = 0x31A4 + game::DeviceStateShift;       // 16 vertex buffers
+        constexpr uint32_t Streams = 0x31A4 + game::DeviceStateShift; // 16 vertex buffers
         constexpr uint32_t StreamStrides = 0x31E8 + game::DeviceStateShift; // 16 bytes
-        constexpr uint32_t Textures = 0x31F8 + game::DeviceStateShift;      // 26 textures
-        constexpr uint32_t Viewport = 0x3260 + game::DeviceStateShift;      // float x, y, width, height, minZ, maxZ
-        constexpr uint32_t Scissor = 0x327C + game::DeviceStateShift;       // left, top, right, bottom
+        constexpr uint32_t Textures = 0x31F8 + game::DeviceStateShift; // 26 textures
+        constexpr uint32_t Viewport = 0x3260 + game::DeviceStateShift; // float x, y, width, height, minZ, maxZ
+        constexpr uint32_t Scissor = 0x327C + game::DeviceStateShift; // left, top, right, bottom
         constexpr uint32_t PixelShader = 0x328C + game::DeviceStateShift;
         constexpr uint32_t VertexShader = 0x3290 + game::DeviceStateShift;
         constexpr uint32_t ScissorTestEnable = 0x2F80 + game::DeviceStateShift; // D3DRS_SCISSORTESTENABLE
-        constexpr uint32_t RecordingBuffer = 0x35E0 + game::DeviceStateShift;   // command buffer being recorded, 0 if none
-        constexpr uint32_t TileCount = 0x32C4 + game::DeviceStateShift;  // predicated tiling: tile count, then the tiles'
-        constexpr uint32_t TileRects = 0x32C8 + game::DeviceStateShift;  // D3DRECTs (left, top, right, bottom); seen in Giants
-        constexpr uint32_t PresentInterval = 0x3630 + game::DeviceStateShift;   // D3DRS_PRESENTINTERVAL
+        constexpr uint32_t RecordingBuffer =
+            0x35E0 + game::DeviceStateShift; // command buffer being recorded, 0 if none
+        constexpr uint32_t TileCount =
+            0x32C4 + game::DeviceStateShift; // predicated tiling: tile count, then the tiles'
+        constexpr uint32_t TileRects =
+            0x32C8 + game::DeviceStateShift; // D3DRECTs (left, top, right, bottom); seen in Giants
+        constexpr uint32_t PresentInterval = 0x3630 + game::DeviceStateShift; // D3DRS_PRESENTINTERVAL
     }
 
     // Resource header: +0 Common (low 4 bits: 1 VB, 2 IB, 3 texture, 4 surface, 5 declaration, 6 VS, 7 PS), +4 refcount.
@@ -40,8 +44,8 @@ namespace d3d
     {
         constexpr uint32_t VertexBufferFetch = 0x18; // vertex fetch constant: address dword, size dword
         constexpr uint32_t IndexBufferAddress = 0x18;
-        constexpr uint32_t TextureFetch = 0x1C;      // 6-dword texture fetch constant
-        constexpr uint32_t SurfaceInfo = 0x1C;       // RB_COLOR_INFO / RB_DEPTH_INFO word
+        constexpr uint32_t TextureFetch = 0x1C; // 6-dword texture fetch constant
+        constexpr uint32_t SurfaceInfo = 0x1C; // RB_COLOR_INFO / RB_DEPTH_INFO word
         constexpr uint32_t SurfaceSize = 0x24;
     }
 

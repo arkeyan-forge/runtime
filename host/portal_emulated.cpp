@@ -137,13 +137,12 @@ bool EmulatedPortal::Write(const uint8_t* command, size_t size)
         response[3] = ActivateTrailer;
         break;
 
-    case 'S':
-        response = StatusReport();
-        break;
+    case 'S': response = StatusReport(); break;
 
     case 'C':
         // Colour of the portal light (Giants fades it all the time); real portals send no answer.
-        m_light = { size > 1 ? command[1] : uint8_t(0), size > 2 ? command[2] : uint8_t(0), size > 3 ? command[3] : uint8_t(0) };
+        m_light = { size > 1 ? command[1] : uint8_t(0), size > 2 ? command[2] : uint8_t(0),
+            size > 3 ? command[3] : uint8_t(0) };
         m_lightCommands++;
         return true;
 

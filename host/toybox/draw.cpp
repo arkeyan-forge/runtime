@@ -38,13 +38,16 @@ namespace toybox
         // Colours and type of the first Toy Box (the approved mockup, private/design/toybox-design), kept on purpose.
         namespace Look
         {
-            constexpr uint32_t Text = 0xF4F1FF, TextSoft = 0xD6D2FF, TextDim = 0xB9B4E8, TextDimmer = 0x9C97D6, ChipText = 0xE4E1FF;
-            constexpr uint32_t Gold = 0xFFC233, GoldDark = 0xD98A00, GoldInk = 0x3A1C00, GoldShadow = 0x7A3E00, GoldText = 0xFFD970;
+            constexpr uint32_t Text = 0xF4F1FF, TextSoft = 0xD6D2FF, TextDim = 0xB9B4E8, TextDimmer = 0x9C97D6,
+                               ChipText = 0xE4E1FF;
+            constexpr uint32_t Gold = 0xFFC233, GoldDark = 0xD98A00, GoldInk = 0x3A1C00, GoldShadow = 0x7A3E00,
+                               GoldText = 0xFFD970;
             constexpr uint32_t GoldBorder = 0x8A6A1A;
             constexpr uint32_t Night = 0x0B0F2E;
             constexpr uint32_t Panel = 0x161B4D, PanelBorder = 0x3A3F8C, CardBorder = 0x2B3070, CardSelected = 0x2A2F78;
             constexpr uint32_t Chip = 0x1C2160, KeyCap = 0x23285E, Control = 0x4A4F9A, Button = 0x2A3070;
-            constexpr uint32_t Field = 0x0E1240, Bar = 0x48D17A, Danger = 0xF85149, DangerText = 0xFFB4AE, Waiting = 0xFFB454;
+            constexpr uint32_t Field = 0x0E1240, Bar = 0x48D17A, Danger = 0xF85149, DangerText = 0xFFB4AE,
+                               Waiting = 0xFFB454;
         }
 
         imgui_software::Texture* g_background;
@@ -112,7 +115,8 @@ namespace toybox
         }
 
         // Lines cut at spaces to fit `width`.
-        std::vector<std::string> Wrap(ImFont* font, float size, const std::string& text, float width, size_t maxLines = 8)
+        std::vector<std::string> Wrap(
+            ImFont* font, float size, const std::string& text, float width, size_t maxLines = 8)
         {
             std::vector<std::string> lines;
             std::string line;
@@ -141,11 +145,13 @@ namespace toybox
             return lines;
         }
 
-        imgui_software::Texture* Bake(const std::string& key, int width, int height, const std::function<ImVec4(float, float)>& shade)
+        imgui_software::Texture* Bake(
+            const std::string& key, int width, int height, const std::function<ImVec4(float, float)>& shade)
         {
             if (auto found = g_baked.find(key); found != g_baked.end())
                 return found->second;
-            auto* texture = new imgui_software::Texture{ width, height, std::vector<uint32_t>(size_t(width) * size_t(height)) };
+            auto* texture =
+                new imgui_software::Texture{ width, height, std::vector<uint32_t>(size_t(width) * size_t(height)) };
             for (int y = 0; y < height; y++)
             {
                 for (int x = 0; x < width; x++)
@@ -162,7 +168,8 @@ namespace toybox
             return texture;
         }
 
-        imgui_software::Texture* Bake(const std::string& key, int size, const std::function<ImVec4(float, float)>& shade)
+        imgui_software::Texture* Bake(
+            const std::string& key, int size, const std::function<ImVec4(float, float)>& shade)
         {
             return Bake(key, size, size, shade);
         }
@@ -179,8 +186,10 @@ namespace toybox
         {
             ImTextureRef texture = imgui_software::Ref(disc);
             g_draw->AddImage(texture, min, ImVec2(min.x + r, min.y + r), ImVec2(0, 0), ImVec2(0.5f, 0.5f));
-            g_draw->AddImage(texture, ImVec2(max.x - r, min.y), ImVec2(max.x, min.y + r), ImVec2(0.5f, 0), ImVec2(1, 0.5f));
-            g_draw->AddImage(texture, ImVec2(min.x, max.y - r), ImVec2(min.x + r, max.y), ImVec2(0, 0.5f), ImVec2(0.5f, 1));
+            g_draw->AddImage(
+                texture, ImVec2(max.x - r, min.y), ImVec2(max.x, min.y + r), ImVec2(0.5f, 0), ImVec2(1, 0.5f));
+            g_draw->AddImage(
+                texture, ImVec2(min.x, max.y - r), ImVec2(min.x + r, max.y), ImVec2(0, 0.5f), ImVec2(0.5f, 1));
             g_draw->AddImage(texture, ImVec2(max.x - r, max.y - r), max, ImVec2(0.5f, 0.5f), ImVec2(1, 1));
         }
 
@@ -207,7 +216,8 @@ namespace toybox
         {
             min = ImVec2(std::round(min.x), std::round(min.y));
             max = ImVec2(std::round(max.x), std::round(max.y));
-            int r = int(std::min({ std::round(radius), std::floor((max.x - min.x) / 2), std::floor((max.y - min.y) / 2) }));
+            int r =
+                int(std::min({ std::round(radius), std::floor((max.x - min.x) / 2), std::floor((max.y - min.y) / 2) }));
             if (r <= 0)
             {
                 Fill(min, max, rgb, alpha);
@@ -218,7 +228,10 @@ namespace toybox
             Fill(ImVec2(min.x + r, max.y - r), ImVec2(max.x - r, max.y), rgb, alpha);
             char key[40];
             snprintf(key, sizeof(key), "corner %d %06X %.2f", r, rgb, alpha);
-            Corners(Bake(key, 2 * r, [&](float dx, float dy) { return Color(rgb, alpha * Coverage(float(r), std::sqrt(dx * dx + dy * dy))); }),
+            Corners(Bake(key, 2 * r,
+                        [&](float dx, float dy) {
+                            return Color(rgb, alpha * Coverage(float(r), std::sqrt(dx * dx + dy * dy)));
+                        }),
                 min, max, float(r));
         }
 
@@ -234,10 +247,12 @@ namespace toybox
             Fill(ImVec2(max.x - t, min.y + fr), ImVec2(max.x, max.y - fr), rgb);
             char key[40];
             snprintf(key, sizeof(key), "ring %d %d %06X", r, thickness, rgb);
-            Corners(Bake(key, 2 * r, [&](float dx, float dy) {
-                float distance = std::sqrt(dx * dx + dy * dy);
-                return Color(rgb, Coverage(fr, distance) * (1 - Coverage(fr - t, distance)));
-            }), min, max, fr);
+            Corners(Bake(key, 2 * r,
+                        [&](float dx, float dy) {
+                            float distance = std::sqrt(dx * dx + dy * dy);
+                            return Color(rgb, Coverage(fr, distance) * (1 - Coverage(fr - t, distance)));
+                        }),
+                min, max, fr);
         }
 
         // A box: fill, then a border of `thickness` inside its edge.
@@ -248,7 +263,8 @@ namespace toybox
             else if (thickness > 0)
                 RoundFrame(min, max, border, radius, int(thickness));
             float inset = std::max(thickness, 0.0f);
-            RoundRect(ImVec2(min.x + inset, min.y + inset), ImVec2(max.x - inset, max.y - inset), fill, std::max(radius - inset, 0.0f), alpha);
+            RoundRect(ImVec2(min.x + inset, min.y + inset), ImVec2(max.x - inset, max.y - inset), fill,
+                std::max(radius - inset, 0.0f), alpha);
         }
 
         void FocusRing(ImVec2 min, ImVec2 max, float radius, uint32_t rgb = Look::Gold)
@@ -271,21 +287,25 @@ namespace toybox
         {
             char key[48];
             snprintf(key, sizeof(key), "disc %d %06X %.2f", diameter, rgb, alpha);
-            Blit(Bake(key, diameter, [&](float dx, float dy) {
-                ImVec4 color = Color(rgb, alpha);
-                color.w *= Coverage(diameter / 2.0f, std::sqrt(dx * dx + dy * dy));
-                return color;
-            }), center, float(diameter));
+            Blit(Bake(key, diameter,
+                     [&](float dx, float dy) {
+                         ImVec4 color = Color(rgb, alpha);
+                         color.w *= Coverage(diameter / 2.0f, std::sqrt(dx * dx + dy * dy));
+                         return color;
+                     }),
+                center, float(diameter));
         }
 
         void Ring(ImVec2 center, int diameter, uint32_t rgb, float thickness)
         {
             char key[48];
             snprintf(key, sizeof(key), "dring %d %06X %.1f", diameter, rgb, thickness);
-            Blit(Bake(key, diameter + 4, [&](float dx, float dy) {
-                float d = std::sqrt(dx * dx + dy * dy), r = diameter / 2.0f;
-                return Color(rgb, Coverage(r, d) * (1 - Coverage(r - thickness, d)));
-            }), center, float(diameter + 4));
+            Blit(Bake(key, diameter + 4,
+                     [&](float dx, float dy) {
+                         float d = std::sqrt(dx * dx + dy * dy), r = diameter / 2.0f;
+                         return Color(rgb, Coverage(r, d) * (1 - Coverage(r - thickness, d)));
+                     }),
+                center, float(diameter + 4));
         }
 
         // A five-pointed star (the fonts have no ★).
@@ -303,7 +323,8 @@ namespace toybox
                 g_draw->AddTriangleFilled(center, points[i], points[(i + 1) % 10], Rgb(rgb));
         }
 
-        void AddHit(ImVec2 min, ImVec2 max, std::function<void()> left, std::function<void()> right = {}, std::function<void()> twice = {})
+        void AddHit(ImVec2 min, ImVec2 max, std::function<void()> left, std::function<void()> right = {},
+            std::function<void()> twice = {})
         {
             g_hits.push_back({ min, max, std::move(left), std::move(right), std::move(twice) });
         }
@@ -351,37 +372,45 @@ namespace toybox
         void Portrait(const Toy* toy, VariantKind kind, ImVec2 center, int diameter, bool grey = false)
         {
             char key[64];
-            snprintf(key, sizeof(key), "portrait %u %d %d %d", toy != nullptr ? toy->type : 0xFFFF, int(kind), diameter, grey ? 1 : 0);
+            snprintf(key, sizeof(key), "portrait %u %d %d %d", toy != nullptr ? toy->type : 0xFFFF, int(kind), diameter,
+                grey ? 1 : 0);
             const collection::Image& image = IconOf(toy, kind);
-            Blit(Bake(key, diameter, [&](float dx, float dy) {
-                float radius = diameter / 2.0f;
-                ImVec4 color = Color(ColourOf(toy));
-                if (dx * dx + (dy + diameter * 0.07f) * (dy + diameter * 0.07f) > radius * radius)
-                    color = ImVec4(color.x * 0.75f, color.y * 0.75f, color.z * 0.75f, 1);
-                if (!image.Empty())
-                {
-                    float u = std::clamp((dx + radius) / diameter * image.width - 0.5f, 0.0f, image.width - 1.001f);
-                    float v = std::clamp((dy + radius) / diameter * image.height - 0.5f, 0.0f, image.height - 1.001f);
-                    int x0 = int(u), y0 = int(v);
-                    float fx = u - x0, fy = v - y0, texel[4] = {};
-                    for (int c = 0; c < 4; c++)
-                    {
-                        auto at = [&](int x, int y) { return float(image.rgba[size_t(y) * image.width + x] >> (c * 8) & 0xFF) / 255.0f; };
-                        texel[c] = (at(x0, y0) * (1 - fx) + at(x0 + 1, y0) * fx) * (1 - fy) + (at(x0, y0 + 1) * (1 - fx) + at(x0 + 1, y0 + 1) * fx) * fy;
-                    }
-                    float alpha = texel[3];
-                    color.x = color.x * (1 - alpha) + texel[0] * alpha;
-                    color.y = color.y * (1 - alpha) + texel[1] * alpha;
-                    color.z = color.z * (1 - alpha) + texel[2] * alpha;
-                }
-                if (grey)
-                {
-                    float l = (color.x + color.y + color.z) / 3 * 0.6f;
-                    color = ImVec4(l, l, l, 1);
-                }
-                color.w = Coverage(radius, std::sqrt(dx * dx + dy * dy));
-                return color;
-            }), center, float(diameter));
+            Blit(Bake(key, diameter,
+                     [&](float dx, float dy) {
+                         float radius = diameter / 2.0f;
+                         ImVec4 color = Color(ColourOf(toy));
+                         if (dx * dx + (dy + diameter * 0.07f) * (dy + diameter * 0.07f) > radius * radius)
+                             color = ImVec4(color.x * 0.75f, color.y * 0.75f, color.z * 0.75f, 1);
+                         if (!image.Empty())
+                         {
+                             float u =
+                                 std::clamp((dx + radius) / diameter * image.width - 0.5f, 0.0f, image.width - 1.001f);
+                             float v = std::clamp(
+                                 (dy + radius) / diameter * image.height - 0.5f, 0.0f, image.height - 1.001f);
+                             int x0 = int(u), y0 = int(v);
+                             float fx = u - x0, fy = v - y0, texel[4] = {};
+                             for (int c = 0; c < 4; c++)
+                             {
+                                 auto at = [&](int x, int y) {
+                                     return float(image.rgba[size_t(y) * image.width + x] >> (c * 8) & 0xFF) / 255.0f;
+                                 };
+                                 texel[c] = (at(x0, y0) * (1 - fx) + at(x0 + 1, y0) * fx) * (1 - fy) +
+                                            (at(x0, y0 + 1) * (1 - fx) + at(x0 + 1, y0 + 1) * fx) * fy;
+                             }
+                             float alpha = texel[3];
+                             color.x = color.x * (1 - alpha) + texel[0] * alpha;
+                             color.y = color.y * (1 - alpha) + texel[1] * alpha;
+                             color.z = color.z * (1 - alpha) + texel[2] * alpha;
+                         }
+                         if (grey)
+                         {
+                             float l = (color.x + color.y + color.z) / 3 * 0.6f;
+                             color = ImVec4(l, l, l, 1);
+                         }
+                         color.w = Coverage(radius, std::sqrt(dx * dx + dy * dy));
+                         return color;
+                     }),
+                center, float(diameter));
             if (image.Empty() && toy != nullptr)
                 TextCentered(g_display, diameter * 0.37f, center, 0xFFFFFF, Initials(toy->name));
         }
@@ -421,26 +450,31 @@ namespace toybox
             float scale = std::min(float(box) / source.width, float(box) / source.height);
             int w = std::max(1, int(source.width * scale)), h = std::max(1, int(source.height * scale));
             if (backing)
-                RoundRect(ImVec2(center.x - box / 2.0f, center.y - box / 2.0f), ImVec2(center.x + box / 2.0f, center.y + box / 2.0f), Look::Field, 18);
+                RoundRect(ImVec2(center.x - box / 2.0f, center.y - box / 2.0f),
+                    ImVec2(center.x + box / 2.0f, center.y + box / 2.0f), Look::Field, 18);
             std::string key = path + " " + std::to_string(box);
             collection::Image fitted;
             if (!g_baked.count(key))
                 fitted = collection::Resize(source, w, h);
             imgui_software::Texture* texture = Bake(key, w, h, [&](float dx, float dy) {
-                uint32_t pixel = fitted.rgba[size_t(std::clamp(int(dy + h / 2.0f), 0, h - 1)) * w + size_t(std::clamp(int(dx + w / 2.0f), 0, w - 1))];
-                return ImVec4((pixel & 0xFF) / 255.0f, (pixel >> 8 & 0xFF) / 255.0f, (pixel >> 16 & 0xFF) / 255.0f, (pixel >> 24 & 0xFF) / 255.0f);
+                uint32_t pixel = fitted.rgba[size_t(std::clamp(int(dy + h / 2.0f), 0, h - 1)) * w +
+                                             size_t(std::clamp(int(dx + w / 2.0f), 0, w - 1))];
+                return ImVec4((pixel & 0xFF) / 255.0f, (pixel >> 8 & 0xFF) / 255.0f, (pixel >> 16 & 0xFF) / 255.0f,
+                    (pixel >> 24 & 0xFF) / 255.0f);
             });
             ImVec2 min(std::round(center.x - w / 2.0f), std::round(center.y - h / 2.0f));
             g_draw->AddImage(imgui_software::Ref(texture), min, ImVec2(min.x + w, min.y + h));
             return true;
         }
 
-        std::map<std::string, collection::Image> g_stacks; // swappers' joined pictures (an empty one: the halves have none)
+        std::map<std::string, collection::Image>
+            g_stacks; // swappers' joined pictures (an empty one: the halves have none)
 
         // A swapper's two halves joined at the waist, as the game's swap screen (collection::SwapperPicture, the same
         // picture as Skylauncher's), fitted into a square of `box` pixels at `center`. False when a half has no such picture
         // from a disc: the caller draws the round portrait with the bottom small in a corner.
-        bool SwapperStack(const Toy* top, uint16_t topVariant, const Toy* bottom, uint16_t bottomVariant, ImVec2 center, int box, bool grey = false)
+        bool SwapperStack(const Toy* top, uint16_t topVariant, const Toy* bottom, uint16_t bottomVariant, ImVec2 center,
+            int box, bool grey = false)
         {
             if (top == nullptr || bottom == nullptr)
                 return false;
@@ -449,8 +483,10 @@ namespace toybox
             auto found = g_stacks.find(key);
             if (found == g_stacks.end())
             {
-                found = g_stacks.emplace(key, collection::SwapperPicture(*top, topVariant, *bottom, bottomVariant)).first;
-                fprintf(stderr, "[toybox] swapper picture %s + %s: %s\n", top->name.c_str(), bottom->name.c_str(), found->second.Empty() ? "no halves from the disc (round portrait)" : "joined");
+                found =
+                    g_stacks.emplace(key, collection::SwapperPicture(*top, topVariant, *bottom, bottomVariant)).first;
+                fprintf(stderr, "[toybox] swapper picture %s + %s: %s\n", top->name.c_str(), bottom->name.c_str(),
+                    found->second.Empty() ? "no halves from the disc (round portrait)" : "joined");
             }
             const collection::Image& source = found->second;
             if (source.Empty())
@@ -462,8 +498,10 @@ namespace toybox
             if (!g_baked.count(baked))
                 fitted = collection::Resize(source, w, h);
             imgui_software::Texture* texture = Bake(baked, w, h, [&](float dx, float dy) {
-                uint32_t pixel = fitted.rgba[size_t(std::clamp(int(dy + h / 2.0f), 0, h - 1)) * w + size_t(std::clamp(int(dx + w / 2.0f), 0, w - 1))];
-                ImVec4 color((pixel & 0xFF) / 255.0f, (pixel >> 8 & 0xFF) / 255.0f, (pixel >> 16 & 0xFF) / 255.0f, (pixel >> 24 & 0xFF) / 255.0f);
+                uint32_t pixel = fitted.rgba[size_t(std::clamp(int(dy + h / 2.0f), 0, h - 1)) * w +
+                                             size_t(std::clamp(int(dx + w / 2.0f), 0, w - 1))];
+                ImVec4 color((pixel & 0xFF) / 255.0f, (pixel >> 8 & 0xFF) / 255.0f, (pixel >> 16 & 0xFF) / 255.0f,
+                    (pixel >> 24 & 0xFF) / 255.0f);
                 if (grey)
                 {
                     float l = (color.x + color.y + color.z) / 3 * 0.6f;
@@ -494,7 +532,8 @@ namespace toybox
         bool CardStack(const Model& model, const Figure& f, ImVec2 center, int box, bool grey = false)
         {
             collection::Card card = model.CardFor(f);
-            return card.Swapper() && SwapperStack(card.first->toy, card.first->variant, card.second->toy, card.second->variant, center, box, grey);
+            return card.Swapper() && SwapperStack(card.first->toy, card.first->variant, card.second->toy,
+                                         card.second->variant, center, box, grey);
         }
 
         void CardPortrait(const Model& model, const Figure& f, ImVec2 center, int diameter, bool grey = false)
@@ -509,18 +548,25 @@ namespace toybox
         void OutOfHealthCross(ImVec2 center, float half)
         {
             const float width = std::max(3.0f, half / 3.0f);
-            g_draw->AddLine(ImVec2(center.x - half, center.y - half), ImVec2(center.x + half, center.y + half), IM_COL32(0, 0, 0, 120), width + 3);
-            g_draw->AddLine(ImVec2(center.x - half, center.y + half), ImVec2(center.x + half, center.y - half), IM_COL32(0, 0, 0, 120), width + 3);
-            g_draw->AddLine(ImVec2(center.x - half, center.y - half), ImVec2(center.x + half, center.y + half), Rgb(Look::Danger), width);
-            g_draw->AddLine(ImVec2(center.x - half, center.y + half), ImVec2(center.x + half, center.y - half), Rgb(Look::Danger), width);
+            g_draw->AddLine(ImVec2(center.x - half, center.y - half), ImVec2(center.x + half, center.y + half),
+                IM_COL32(0, 0, 0, 120), width + 3);
+            g_draw->AddLine(ImVec2(center.x - half, center.y + half), ImVec2(center.x + half, center.y - half),
+                IM_COL32(0, 0, 0, 120), width + 3);
+            g_draw->AddLine(ImVec2(center.x - half, center.y - half), ImVec2(center.x + half, center.y + half),
+                Rgb(Look::Danger), width);
+            g_draw->AddLine(ImVec2(center.x - half, center.y + half), ImVec2(center.x + half, center.y - half),
+                Rgb(Look::Danger), width);
         }
 
         void HeroPortrait(const Model& model, const Figure& f, ImVec2 center, int diameter)
         {
-            if (collection::Card card = model.CardFor(f); card.Swapper() && card.first->toy != nullptr && card.second->toy != nullptr &&
-                !collection::HalfPicturePath(*card.first->toy, card.first->variant).empty() && !collection::HalfPicturePath(*card.second->toy, card.second->variant).empty())
+            if (collection::Card card = model.CardFor(f);
+                card.Swapper() && card.first->toy != nullptr && card.second->toy != nullptr &&
+                !collection::HalfPicturePath(*card.first->toy, card.first->variant).empty() &&
+                !collection::HalfPicturePath(*card.second->toy, card.second->variant).empty())
             {
-                RoundRect(ImVec2(center.x - diameter / 2.0f - 12, center.y - diameter / 2.0f - 12), ImVec2(center.x + diameter / 2.0f + 12, center.y + diameter / 2.0f + 12), Look::Field, 18);
+                RoundRect(ImVec2(center.x - diameter / 2.0f - 12, center.y - diameter / 2.0f - 12),
+                    ImVec2(center.x + diameter / 2.0f + 12, center.y + diameter / 2.0f + 12), Look::Field, 18);
                 if (CardStack(model, f, center, diameter + 8))
                     return;
             }
@@ -530,11 +576,13 @@ namespace toybox
                 return;
             }
             int size = diameter + 2 * 40;
-            Blit(Bake("halo " + std::to_string(diameter), size, [&](float dx, float dy) {
-                float distance = std::sqrt(dx * dx + dy * dy), ring = diameter / 2.0f + 5;
-                float glow = 0.43f * std::clamp(1 - (distance - ring) / 32, 0.0f, 1.0f);
-                return Color(Look::Gold, std::max(Coverage(ring, distance), glow * glow / 0.43f));
-            }), center, float(size));
+            Blit(Bake("halo " + std::to_string(diameter), size,
+                     [&](float dx, float dy) {
+                         float distance = std::sqrt(dx * dx + dy * dy), ring = diameter / 2.0f + 5;
+                         float glow = 0.43f * std::clamp(1 - (distance - ring) / 32, 0.0f, 1.0f);
+                         return Color(Look::Gold, std::max(Coverage(ring, distance), glow * glow / 0.43f));
+                     }),
+                center, float(size));
             FigurePortrait(f, center, diameter);
             BottomBadge(model, f, center, diameter);
         }
@@ -548,7 +596,8 @@ namespace toybox
         void Pill(ImVec2 center, const std::string& text, uint32_t fill, uint32_t ink = Look::Night, float size = 13)
         {
             float width = Measure(g_black, size, text).x + 20, height = size + 11;
-            RoundRect(ImVec2(center.x - width / 2, center.y - height / 2), ImVec2(center.x + width / 2, center.y + height / 2), fill, height / 2);
+            RoundRect(ImVec2(center.x - width / 2, center.y - height / 2),
+                ImVec2(center.x + width / 2, center.y + height / 2), fill, height / 2);
             TextCentered(g_black, size, center, ink, text);
         }
 
@@ -577,16 +626,18 @@ namespace toybox
         {
             RoundRect(min, max, Look::GoldDark, 14);
             RoundRect(min, ImVec2(max.x, max.y - 5), Look::Gold, 14);
-            TextCentered(g_display, size, ImVec2((min.x + max.x) / 2, (min.y + max.y) / 2 - 2), Look::GoldInk, Fit(g_display, size, label, max.x - min.x - 16));
+            TextCentered(g_display, size, ImVec2((min.x + max.x) / 2, (min.y + max.y) / 2 - 2), Look::GoldInk,
+                Fit(g_display, size, label, max.x - min.x - 16));
             if (focused)
                 FocusRing(min, max, 14, Look::Text);
         }
 
-        void PlainButton(ImVec2 min, ImVec2 max, const std::string& label, float size, bool focused, uint32_t text = Look::Text,
-            uint32_t fill = Look::Button, uint32_t border = Look::Control)
+        void PlainButton(ImVec2 min, ImVec2 max, const std::string& label, float size, bool focused,
+            uint32_t text = Look::Text, uint32_t fill = Look::Button, uint32_t border = Look::Control)
         {
             Box(min, max, fill, border, 12, 2);
-            TextCentered(g_black, size, ImVec2((min.x + max.x) / 2, (min.y + max.y) / 2), text, Fit(g_black, size, label, max.x - min.x - 16));
+            TextCentered(g_black, size, ImVec2((min.x + max.x) / 2, (min.y + max.y) / 2), text,
+                Fit(g_black, size, label, max.x - min.x - 16));
             if (focused)
                 FocusRing(min, max, 12);
         }
@@ -624,13 +675,23 @@ namespace toybox
         // Width of one hint's button part.
         float HintButton(char button, float x, float centerY, bool draw)
         {
-            struct Face { char letter; uint32_t fill, ink; };
-            static const Face Faces[] = { { 'A', 0x3FB950, 0x06240F }, { 'X', 0x2F81F7, 0x04163A }, { 'Y', 0xE3B341, 0x2E2000 },
-                { 'B', 0xF85149, 0x3A0603 } };
+            struct Face
+            {
+                char letter;
+                uint32_t fill, ink;
+            };
+            static const Face Faces[] = { { 'A', 0x3FB950, 0x06240F }, { 'X', 0x2F81F7, 0x04163A },
+                { 'Y', 0xE3B341, 0x2E2000 }, { 'B', 0xF85149, 0x3A0603 } };
             if (KeyboardStyle())
             {
-                const char* key = button == 'A' ? "Enter" : button == 'B' ? "Esc" : button == 'X' ? "F2" : button == 'Y' ? "F3"
-                    : button == 'L' ? "PgUp PgDn" : button == 'V' ? "Tab" : button == 'F' ? "F4" : "Enter";
+                const char* key = button == 'A'   ? "Enter"
+                                  : button == 'B' ? "Esc"
+                                  : button == 'X' ? "F2"
+                                  : button == 'Y' ? "F3"
+                                  : button == 'L' ? "PgUp PgDn"
+                                  : button == 'V' ? "Tab"
+                                  : button == 'F' ? "F4"
+                                                  : "Enter";
                 float width = std::max(Measure(g_black, 12, key).x + 14, 28.0f);
                 if (draw)
                     KeyCap(ImVec2(x, centerY - 13), 26, 12, key);
@@ -638,8 +699,9 @@ namespace toybox
             }
             if (button == 'L' || button == 'V' || button == 'S' || button == 'F')
             {
-                const char* label = button == 'L' ? "LB  RB" : button == 'V' ? (glyphs::Current() == glyphs::Style::Xbox360 ? "Back" : "View")
-                    : (glyphs::Current() == glyphs::Style::Xbox360 ? "Start" : "Menu");
+                const char* label = button == 'L'   ? "LB  RB"
+                                    : button == 'V' ? (glyphs::Current() == glyphs::Style::Xbox360 ? "Back" : "View")
+                                                    : (glyphs::Current() == glyphs::Style::Xbox360 ? "Start" : "Menu");
                 float width = Measure(g_black, 12, label).x + 16;
                 if (draw)
                 {
@@ -740,7 +802,8 @@ namespace toybox
                     if (min.x >= at.x && max.x <= at.x + width)
                     {
                         RoundRect(min, max, lit ? Look::Gold : Look::Chip, 13);
-                        TextCentered(g_black, 13, ImVec2((min.x + max.x) / 2, at.y + 13), lit ? Look::GoldInk : Look::ChipText, label);
+                        TextCentered(g_black, 13, ImVec2((min.x + max.x) / 2, at.y + 13),
+                            lit ? Look::GoldInk : Look::ChipText, label);
                         int first = -1;
                         for (size_t c = 0; c < grid.cells.size() && first < 0; c++)
                         {
@@ -777,10 +840,12 @@ namespace toybox
             CardPortrait(model, f, ImVec2(cx, a.y + 54), 80, grey);
             if (model.OutOfHealth(f))
                 OutOfHealthCross(ImVec2(cx, a.y + 54), 26);
-            TextCentered(g_black, 15, ImVec2(cx, a.y + 110), grey ? Look::TextDimmer : Look::Text, Fit(g_black, 15, model.FigureName(f), width - 16));
+            TextCentered(g_black, 15, ImVec2(cx, a.y + 110), grey ? Look::TextDimmer : Look::Text,
+                Fit(g_black, 15, model.FigureName(f), width - 16));
             std::string line = model.LevelLine(f);
             if (!line.empty())
-                TextCentered(g_bold, 12, ImVec2(cx, a.y + 128), model.CardBusy(f) ? Look::DangerText : Look::TextDim, Fit(g_bold, 12, line, width - 16));
+                TextCentered(g_bold, 12, ImVec2(cx, a.y + 128), model.CardBusy(f) ? Look::DangerText : Look::TextDim,
+                    Fit(g_bold, 12, line, width - 16));
             if (f.favourite)
                 Star(ImVec2(a.x + 18, a.y + 18), 9, Look::Gold);
             if (int on = model.SeatOf(f.path); on >= 0)
@@ -794,7 +859,8 @@ namespace toybox
             {
                 // A padlock.
                 ImVec2 lock(b.x - 26, a.y + 10);
-                g_draw->AddRect(ImVec2(lock.x + 3, lock.y), ImVec2(lock.x + 13, lock.y + 10), Rgb(Look::DangerText), 4.0f, ImDrawFlags_None, 2.0f);
+                g_draw->AddRect(ImVec2(lock.x + 3, lock.y), ImVec2(lock.x + 13, lock.y + 10), Rgb(Look::DangerText),
+                    4.0f, ImDrawFlags_None, 2.0f);
                 Fill(ImVec2(lock.x, lock.y + 7), ImVec2(lock.x + 16, lock.y + 18), Look::DangerText);
             }
             if (cursor)
@@ -808,14 +874,17 @@ namespace toybox
             Grid& grid = model.list;
             grid.visibleHeight = int(max.y - min.y);
             float width = max.x - min.x, gap = 12;
-            float cardWidth = (width - gap * (Model::ListColumns - 1)) / Model::ListColumns, cardHeight = float(grid.rowHeight - 12);
+            float cardWidth = (width - gap * (Model::ListColumns - 1)) / Model::ListColumns,
+                  cardHeight = float(grid.rowHeight - 12);
             g_draw->PushClipRect(ImVec2(min.x - 8, min.y), ImVec2(max.x + 8, max.y), true);
             for (size_t s = 0; s < grid.sections.size(); s++)
             {
                 const ListSection& section = grid.sections[s];
                 float y = min.y + grid.HeaderY(int(s)) - grid.scroll;
-                if (section.titled && y + grid.headerHeight >= min.y - 40 && y < max.y && section.kind != Section::Kind::Foreign)
-                    TextMiddle(g_black, 17, min.x, y + 18, section.foreign ? Look::TextDimmer : Look::Gold, model.SectionLabel(section));
+                if (section.titled && y + grid.headerHeight >= min.y - 40 && y < max.y &&
+                    section.kind != Section::Kind::Foreign)
+                    TextMiddle(g_black, 17, min.x, y + 18, section.foreign ? Look::TextDimmer : Look::Gold,
+                        model.SectionLabel(section));
             }
             const SeatState& seat = model.seats[wheelList ? model.wheel.seat : model.seat];
             for (size_t i = 0; i < grid.cells.size(); i++)
@@ -832,7 +901,8 @@ namespace toybox
                 {
                     ImVec2 fb(min.x + width, y + 40);
                     Box(a, fb, Look::Chip, Look::CardBorder, 12, 2);
-                    std::string label = model.SectionLabel(section) + "   " + (section.folded ? L("A: open", "A : ouvrir") : L("A: fold", "A : replier"));
+                    std::string label = model.SectionLabel(section) + "   " +
+                                        (section.folded ? L("A: open", "A : ouvrir") : L("A: fold", "A : replier"));
                     TextMiddle(g_black, 15, a.x + 16, y + 20, Look::TextDim, label);
                     if (cursor)
                         FocusRing(a, fb, 12);
@@ -843,29 +913,36 @@ namespace toybox
                 {
                     Box(a, b, Look::Night, Look::CardBorder, 16, 2, 0.6f);
                     EmptySeatPicture(ImVec2(x + cardWidth / 2, y + 54), 64);
-                    TextCentered(g_black, 15, ImVec2(x + cardWidth / 2, y + 110), Look::TextDim, L("Add a figure", "Ajouter"));
+                    TextCentered(
+                        g_black, 15, ImVec2(x + cardWidth / 2, y + 110), Look::TextDim, L("Add a figure", "Ajouter"));
                     if (cursor)
                         FocusRing(a, b, 16);
-                    AddHit(a, b, [&model, i] { model.FocusCell(int(i)); }, {}, [&model, i] { model.ActivateCell(int(i)); });
+                    AddHit(
+                        a, b, [&model, i] { model.FocusCell(int(i)); }, {},
+                        [&model, i] { model.ActivateCell(int(i)); });
                     continue;
                 }
                 const Figure& f = model.figures[cell.figure];
                 Card(model, f, a, b, cursor, section.foreign || model.CardBusy(f));
-                AddHit(a, b, [&model, i] { model.FocusCell(int(i)); }, [&model, i] { model.OptionsCell(int(i)); },
+                AddHit(
+                    a, b, [&model, i] { model.FocusCell(int(i)); }, [&model, i] { model.OptionsCell(int(i)); },
                     [&model, i] { model.ActivateCell(int(i)); });
             }
             g_draw->PopClipRect();
             // "Not owned yet" beside the + card, for a seat without figures of its family.
-            if (!wheelList && !grid.sections.empty() && grid.sections[0].count == 0 && grid.sections[0].kind == Section::Kind::Shelf && !model.FiltersActive())
+            if (!wheelList && !grid.sections.empty() && grid.sections[0].count == 0 &&
+                grid.sections[0].kind == Section::Kind::Shelf && !model.FiltersActive())
             {
                 int total = 0;
                 for (const Toy* toy : Catalogue::Get().Accepted(model.game))
                 {
-                    if (std::find(seat.seat.accepts.begin(), seat.seat.accepts.end(), toy->category) != seat.seat.accepts.end())
+                    if (std::find(seat.seat.accepts.begin(), seat.seat.accepts.end(), toy->category) !=
+                        seat.seat.accepts.end())
                         total++;
                 }
                 char text[200];
-                snprintf(text, sizeof(text), L("None yet: %d exist for this game.", "Aucune pour l'instant : %d existent pour ce jeu."), total);
+                snprintf(text, sizeof(text),
+                    L("None yet: %d exist for this game.", "Aucune pour l'instant : %d existent pour ce jeu."), total);
                 float y = min.y + grid.RowY(0) - grid.scroll + 40;
                 for (const std::string& line : Wrap(g_bold, 15, text, width - cardWidth - 40))
                 {
@@ -874,7 +951,6 @@ namespace toybox
                 }
             }
         }
-
 
         // --- The shelf's bar: the search field, the Filters button, the tags and the count ---------------------------------
 
@@ -888,8 +964,10 @@ namespace toybox
         // A small x.
         void Cross(ImVec2 center, float half, uint32_t rgb)
         {
-            g_draw->AddLine(ImVec2(center.x - half, center.y - half), ImVec2(center.x + half, center.y + half), Rgb(rgb), 2);
-            g_draw->AddLine(ImVec2(center.x - half, center.y + half), ImVec2(center.x + half, center.y - half), Rgb(rgb), 2);
+            g_draw->AddLine(
+                ImVec2(center.x - half, center.y - half), ImVec2(center.x + half, center.y + half), Rgb(rgb), 2);
+            g_draw->AddLine(
+                ImVec2(center.x - half, center.y + half), ImVec2(center.x + half, center.y - half), Rgb(rgb), 2);
         }
 
         // The bar sits on the line of "Choose for ...": the search field (typing on a keyboard goes straight into it, Y opens
@@ -903,8 +981,11 @@ namespace toybox
             ImVec2 fa(max.x - 150, cy - rowHeight / 2), fb(max.x, cy + rowHeight / 2);
             bool on = !tags.empty() || model.filtersOpen;
             Box(fa, fb, on ? Look::Chip : Look::Button, on ? Look::Gold : Look::Control, 18, 2);
-            std::string label = tags.empty() ? std::string(L("Filters", "Filtres")) : std::string(L("Filters", "Filtres")) + " · " + std::to_string(tags.size());
-            TextCentered(g_black, 15, ImVec2((fa.x + fb.x) / 2, cy), on ? Look::GoldText : Look::Text, Fit(g_black, 15, label, fb.x - fa.x - 20));
+            std::string label = tags.empty()
+                                    ? std::string(L("Filters", "Filtres"))
+                                    : std::string(L("Filters", "Filtres")) + " · " + std::to_string(tags.size());
+            TextCentered(g_black, 15, ImVec2((fa.x + fb.x) / 2, cy), on ? Look::GoldText : Look::Text,
+                Fit(g_black, 15, label, fb.x - fa.x - 20));
             AddHit(fa, fb, [&model] { model.filtersOpen ? model.CloseFilters() : model.OpenFilters(); });
             // The search field.
             ImVec2 sa(fa.x - 10 - 360, fa.y), sb(fa.x - 10, fb.y);
@@ -913,7 +994,9 @@ namespace toybox
             float textRight = sb.x - 46;
             if (model.search.empty())
             {
-                TextMiddle(g_bold, 15, sa.x + 46, cy, Look::TextDimmer, Fit(g_bold, 15, L("Name, element, game, level…", "Nom, élément, jeu, niveau…"), textRight - sa.x - 46));
+                TextMiddle(g_bold, 15, sa.x + 46, cy, Look::TextDimmer,
+                    Fit(g_bold, 15, L("Name, element, game, level…", "Nom, élément, jeu, niveau…"),
+                        textRight - sa.x - 46));
                 HintButton('Y', sb.x - 40, cy, true);
             }
             else
@@ -975,7 +1058,8 @@ namespace toybox
                 if (row == Model::FilterRows)
                 {
                     Box(a, b, Look::Button, focused ? Look::Gold : Look::Control, 12, focused ? 3 : 2);
-                    TextCentered(g_black, 15, ImVec2((a.x + b.x) / 2, cy), focused ? Look::GoldText : Look::Text, model.FilterRowLabel(row));
+                    TextCentered(g_black, 15, ImVec2((a.x + b.x) / 2, cy), focused ? Look::GoldText : Look::Text,
+                        model.FilterRowLabel(row));
                     AddHit(a, b, [&model, row] {
                         model.filterRow = row;
                         model.Run(Command::Accept);
@@ -983,14 +1067,21 @@ namespace toybox
                     continue;
                 }
                 Box(a, b, Look::Field, focused ? Look::Gold : Look::Control, 12, focused ? 3 : 2);
-                TextMiddle(g_bold, 14, a.x + 14, cy, focused ? Look::GoldText : Look::TextDim, model.FilterRowLabel(row));
+                TextMiddle(
+                    g_bold, 14, a.x + 14, cy, focused ? Look::GoldText : Look::TextDim, model.FilterRowLabel(row));
                 float vx = a.x + 130;
                 float valueRight = b.x - 34;
                 std::string value = model.FilterValueLabel(row);
-                bool set = row == 3 ? model.sort != Sort::Recent : (row == 0 ? model.filterElement >= 0 : row == 1 ? !model.filterGame.empty() : model.filterCategory >= 0);
-                g_draw->AddTriangleFilled(ImVec2(vx, cy), ImVec2(vx + 7, cy - 6), ImVec2(vx + 7, cy + 6), Rgb(focused ? Look::Gold : Look::TextDimmer));
-                g_draw->AddTriangleFilled(ImVec2(b.x - 14, cy), ImVec2(b.x - 21, cy - 6), ImVec2(b.x - 21, cy + 6), Rgb(focused ? Look::Gold : Look::TextDimmer));
-                TextCentered(g_black, 15, ImVec2((vx + 14 + valueRight - 8) / 2, cy), set ? Look::GoldText : Look::Text, Fit(g_black, 15, value, valueRight - vx - 30));
+                bool set = row == 3 ? model.sort != Sort::Recent
+                                    : (row == 0      ? model.filterElement >= 0
+                                          : row == 1 ? !model.filterGame.empty()
+                                                     : model.filterCategory >= 0);
+                g_draw->AddTriangleFilled(ImVec2(vx, cy), ImVec2(vx + 7, cy - 6), ImVec2(vx + 7, cy + 6),
+                    Rgb(focused ? Look::Gold : Look::TextDimmer));
+                g_draw->AddTriangleFilled(ImVec2(b.x - 14, cy), ImVec2(b.x - 21, cy - 6), ImVec2(b.x - 21, cy + 6),
+                    Rgb(focused ? Look::Gold : Look::TextDimmer));
+                TextCentered(g_black, 15, ImVec2((vx + 14 + valueRight - 8) / 2, cy), set ? Look::GoldText : Look::Text,
+                    Fit(g_black, 15, value, valueRight - vx - 30));
                 float split = (vx + b.x) / 2;
                 AddHit(a, b, [&model, row] {
                     model.filterRow = row;
@@ -1026,9 +1117,12 @@ namespace toybox
                 if (s.physical)
                 {
                     const Toy* toy = s.physicalKnown ? Catalogue::Get().Find(s.physicalType) : nullptr;
-                    Portrait(toy, s.physicalKnown ? Catalogue::Get().Describe(toy, s.physicalVariant).kind : VariantKind::Base, picture, 64);
+                    Portrait(toy,
+                        s.physicalKnown ? Catalogue::Get().Describe(toy, s.physicalVariant).kind : VariantKind::Base,
+                        picture, 64);
                     label += L(" · on your portal", " · sur ton portail");
-                    name = s.physicalKnown ? Catalogue::Get().Describe(toy, s.physicalVariant).name : L("reading...", "lecture...");
+                    name = s.physicalKnown ? Catalogue::Get().Describe(toy, s.physicalVariant).name
+                                           : L("reading...", "lecture...");
                     if (s.physicalLevel > 0)
                         line = (French() ? "Niveau " : "Level ") + std::to_string(s.physicalLevel);
                 }
@@ -1041,7 +1135,8 @@ namespace toybox
                     line = model.LevelLine(*f);
                     if (s.waiting)
                     {
-                        line = s.late ? L("not taken yet: X to undo", "pas encore pris : X pour annuler") : L("waiting for the game...", "en attente du jeu...");
+                        line = s.late ? L("not taken yet: X to undo", "pas encore pris : X pour annuler")
+                                      : L("waiting for the game...", "en attente du jeu...");
                         lineColor = Look::Waiting;
                     }
                 }
@@ -1057,31 +1152,40 @@ namespace toybox
                     if (!model.realPortal)
                         line = L("A: choose", "A : choisir");
                 }
-                if (s.seat.player == 2 && s.seat.id[0] == 'p' && !s.physical && (f == nullptr || !s.waiting) && !GamepadConnected(1))
+                if (s.seat.player == 2 && s.seat.id[0] == 'p' && !s.physical && (f == nullptr || !s.waiting) &&
+                    !GamepadConnected(1))
                 {
                     line = L("needs a 2nd controller", "il faut une 2e manette");
                     lineColor = Look::TextDimmer;
                 }
                 // A LightCore toy lights up with the portal's light, where the game drives it.
-                bool lightCore = s.physical ? s.physicalKnown && Catalogue::Get().Describe(Catalogue::Get().Find(s.physicalType), s.physicalVariant).kind == VariantKind::LightCore
-                                            : f != nullptr && f->Kind() == VariantKind::LightCore;
+                bool lightCore =
+                    s.physical
+                        ? s.physicalKnown && Catalogue::Get()
+                                                     .Describe(Catalogue::Get().Find(s.physicalType), s.physicalVariant)
+                                                     .kind == VariantKind::LightCore
+                        : f != nullptr && f->Kind() == VariantKind::LightCore;
                 if (lightCore && model.lightRgb != 0)
                     RoundRect(ImVec2(a.x + 10, y + 10), ImVec2(a.x + 20, y + 20), model.lightRgb, 5);
                 float tx = a.x + 86, tw = b.x - tx - 10;
-                Text(g_bold, 12, ImVec2(tx, y + 18), lit ? Look::GoldText : Look::TextDimmer, Fit(g_bold, 12, label, tw));
+                Text(g_bold, 12, ImVec2(tx, y + 18), lit ? Look::GoldText : Look::TextDimmer,
+                    Fit(g_bold, 12, label, tw));
                 Text(g_black, 16, ImVec2(tx, y + 36), Look::Text, Fit(g_black, 16, name, tw));
                 if (!line.empty())
                     Text(g_bold, 12, ImVec2(tx, y + 62), lineColor, Fit(g_bold, 12, line, tw));
                 if (focused)
                     FocusRing(a, b, 16, Look::Text);
                 int index = int(i);
-                AddHit(a, b, [&model, index] { model.FocusColumnRow(index); }, [&model, index] {
-                    model.FocusColumnRow(index);
-                    model.Run(Command::Options);
-                }, [&model, index] {
-                    model.FocusColumnRow(index);
-                    model.Run(Command::Accept);
-                });
+                AddHit(
+                    a, b, [&model, index] { model.FocusColumnRow(index); },
+                    [&model, index] {
+                        model.FocusColumnRow(index);
+                        model.Run(Command::Options);
+                    },
+                    [&model, index] {
+                        model.FocusColumnRow(index);
+                        model.Run(Command::Accept);
+                    });
             }
             // Add a figure and Manage, at the end of the row.
             std::vector<std::string> rows = model.ColumnRows();
@@ -1099,7 +1203,8 @@ namespace toybox
                 });
             }
             if (model.realPortal)
-                TextMiddle(g_bold, 13, Left, SeatTop + SeatHeight + 16, Look::TextDim, L("Change the toys on your portal.", "Change les jouets sur ton portail."));
+                TextMiddle(g_bold, 13, Left, SeatTop + SeatHeight + 16, Look::TextDim,
+                    L("Change the toys on your portal.", "Change les jouets sur ton portail."));
         }
 
         void DrawEmpty(Model& model, ImVec2 min, ImVec2 max)
@@ -1107,9 +1212,11 @@ namespace toybox
             float x = min.x, y = min.y + 10;
             Text(g_display, 28, ImVec2(x, y), Look::Text, L("My Skylanders is empty", "Mes Skylanders est vide"));
             y += 50;
-            Text(g_bold, 16, ImVec2(x, y), Look::TextDim, L("Add the figures you want to play with.", "Ajoute les figurines avec lesquelles jouer."));
+            Text(g_bold, 16, ImVec2(x, y), Look::TextDim,
+                L("Add the figures you want to play with.", "Ajoute les figurines avec lesquelles jouer."));
             y += 44;
-            const std::string choices[] = { L("Add a figure", "Ajouter une figurine"), L("Import figure files", "Importer des fichiers de figurines"),
+            const std::string choices[] = { L("Add a figure", "Ajouter une figurine"),
+                L("Import figure files", "Importer des fichiers de figurines"),
                 L("Start with Spyro, Gill Grunt, Trigger Happy", "Commencer avec Spyro, Gill Grunt, Trigger Happy") };
             for (int i = 0; i < 3; i++)
             {
@@ -1120,7 +1227,8 @@ namespace toybox
                 else
                     PlainButton(a, b, choices[i], 16, focused);
                 if (i == 2)
-                    Text(g_bold, 13, ImVec2(b.x + 16, y + 20), Look::TextDimmer, L("the starter pack", "le pack de démarrage"));
+                    Text(g_bold, 13, ImVec2(b.x + 16, y + 20), Look::TextDimmer,
+                        L("the starter pack", "le pack de démarrage"));
                 AddHit(a, b, [&model, i] {
                     model.inList = true;
                     model.list.cursor = i;
@@ -1133,7 +1241,8 @@ namespace toybox
 
         void DrawHome(Model& model)
         {
-            Header(L("TOY BOX", "TOY BOX"), model.GameName() + (model.realPortal ? L(" · your portal", " · ton portail") : ""));
+            Header(L("TOY BOX", "TOY BOX"),
+                model.GameName() + (model.realPortal ? L(" · your portal", " · ton portail") : ""));
             std::vector<HintItem> top;
             top.push_back({ 'B', L("Close", "Fermer") });
             Hints(1248, 44, top);
@@ -1146,18 +1255,22 @@ namespace toybox
                 return;
             }
             // What the grid is for: the chosen seat, and that only what this game reads is shown.
-            std::string choosing = model.realPortal ? std::string(L("Your figures", "Tes figurines"))
-                : std::string(L("Choose for ", "Choisir pour ")) + model.SeatLabel(model.seat);
+            std::string choosing = model.realPortal
+                                       ? std::string(L("Your figures", "Tes figurines"))
+                                       : std::string(L("Choose for ", "Choisir pour ")) + model.SeatLabel(model.seat);
             TextMiddle(g_black, 18, min.x, min.y + 10, Look::Text, choosing);
             std::string only = model.realPortal ? L("Browse only", "Consultation seule")
-                : std::string(L("for ", "pour ")) + model.GameName();
+                                                : std::string(L("for ", "pour ")) + model.GameName();
             TextMiddle(g_bold, 13, min.x + Measure(g_black, 18, choosing).x + 16, min.y + 11, Look::TextDimmer, only);
             float listTop = DrawShelfBar(model, min, max);
-            DrawList(model, ImVec2(min.x, listTop), max, model.inList && model.screen == Screen::Home && !model.filtersOpen, false);
+            DrawList(model, ImVec2(min.x, listTop), max,
+                model.inList && model.screen == Screen::Home && !model.filtersOpen, false);
             if (model.shownCount == 0 && model.FiltersActive())
             {
-                Text(g_black, 20, ImVec2(min.x, listTop + 24), Look::Text, L("No figure matches", "Aucune figurine ne correspond"));
-                Text(g_bold, 14, ImVec2(min.x, listTop + 54), Look::TextDim, L("Change the search or Clear all.", "Change la recherche ou Tout effacer."));
+                Text(g_black, 20, ImVec2(min.x, listTop + 24), Look::Text,
+                    L("No figure matches", "Aucune figurine ne correspond"));
+                Text(g_bold, 14, ImVec2(min.x, listTop + 54), Look::TextDim,
+                    L("Change the search or Clear all.", "Change la recherche ou Tout effacer."));
             }
             if (model.filtersOpen)
                 DrawFiltersPanel(model, listTop, max);
@@ -1174,9 +1287,11 @@ namespace toybox
                 if (cell != nullptr && cell->kind == Cell::Kind::Figure && !model.realPortal)
                     hints.push_back({ 'A', std::string(L("Put on ", "Poser en ")) + model.SeatLabel(model.seat) });
                 else if (cell != nullptr && cell->kind == Cell::Kind::Figure)
-                    hints.push_back({ 'A', L("Use the virtual portal next time", "Utiliser le portail virtuel la prochaine fois") });
+                    hints.push_back({ 'A',
+                        L("Use the virtual portal next time", "Utiliser le portail virtuel la prochaine fois") });
                 else if (cell != nullptr)
-                    hints.push_back({ 'A', cell->kind == Cell::Kind::Add ? L("Add a figure", "Ajouter une figurine") : L("Open / fold", "Ouvrir / replier") });
+                    hints.push_back({ 'A', cell->kind == Cell::Kind::Add ? L("Add a figure", "Ajouter une figurine")
+                                                                         : L("Open / fold", "Ouvrir / replier") });
                 if (cell != nullptr && cell->kind == Cell::Kind::Figure)
                     hints.push_back({ 'X', L("Figure", "Figurine") });
                 if (model.seats.size() > 1)
@@ -1232,11 +1347,13 @@ namespace toybox
             if (f.toy != nullptr)
             {
                 const Game* g = Catalogue::Get().FindGame(f.toy->game);
-                from = std::string(L("from ", "de ")) + (g != nullptr ? g->name.substr(g->name.rfind("Skylanders: ", 0) == 0 ? 12 : 0) : f.toy->game);
+                from = std::string(L("from ", "de ")) +
+                       (g != nullptr ? g->name.substr(g->name.rfind("Skylanders: ", 0) == 0 ? 12 : 0) : f.toy->game);
             }
             std::string line;
             for (const std::string& part : { toy == name ? std::string() : toy, version,
-                     f.toy != nullptr && f.toy->element < Element::None ? ElementLabel(f.toy->element) : std::string(), from })
+                     f.toy != nullptr && f.toy->element < Element::None ? ElementLabel(f.toy->element) : std::string(),
+                     from })
                 line += part.empty() ? std::string() : (line.empty() ? "" : " · ") + part;
             for (const std::string& l : Wrap(g_bold, 14, line, max.x - min.x - 48, 2))
             {
@@ -1245,7 +1362,8 @@ namespace toybox
             }
             y += 12;
             float x = min.x + 28, w = max.x - min.x - 56;
-            bool progress = f.toy == nullptr || f.toy->category <= Category::Mini || f.toy->category == Category::CreationCrystal;
+            bool progress =
+                f.toy == nullptr || f.toy->category <= Category::Mini || f.toy->category == Category::CreationCrystal;
             if (progress && f.state == figures::AreaState::Valid)
             {
                 // "Level 10 (15)": the game's cap, and the figure's own level when a later game took it higher.
@@ -1256,7 +1374,9 @@ namespace toybox
                 y += 32;
                 uint32_t low = level > 1 ? figures::LevelExperience[level - 1] : 0;
                 uint32_t high = level < cap ? figures::LevelExperience[level] : low + 1;
-                float t = level >= cap ? 1.0f : std::clamp(float(figures::TotalExperience(f.stats) - low) / float(high - low), 0.0f, 1.0f);
+                float t = level >= cap ? 1.0f
+                                       : std::clamp(float(figures::TotalExperience(f.stats) - low) / float(high - low),
+                                             0.0f, 1.0f);
                 RoundRect(ImVec2(x, y), ImVec2(x + w, y + 10), Look::Field, 5);
                 if (t > 0)
                     RoundRect(ImVec2(x, y), ImVec2(x + std::max(w * t, 10.0f), y + 10), Look::Bar, 5);
@@ -1264,22 +1384,28 @@ namespace toybox
             }
             std::vector<std::string> facts;
             if (collection::Card card = model.CardFor(f); card.Swapper())
-                facts.push_back(std::string(L("Top: ", "Haut : ")) + WithoutHalf(card.first->DisplayName()) + L(" · Bottom: ", " · Bas : ") + WithoutHalf(card.second->DisplayName()));
+                facts.push_back(std::string(L("Top: ", "Haut : ")) + WithoutHalf(card.first->DisplayName()) +
+                                L(" · Bottom: ", " · Bas : ") + WithoutHalf(card.second->DisplayName()));
             else if (f.IsSwapTop() || f.IsSwapBottom())
-                facts.push_back(f.IsSwapTop() ? L("A top with no bottom yet.", "Un haut sans bas pour l'instant.") : L("A bottom with no top yet.", "Un bas sans haut pour l'instant."));
+                facts.push_back(f.IsSwapTop() ? L("A top with no bottom yet.", "Un haut sans bas pour l'instant.")
+                                              : L("A bottom with no top yet.", "Un bas sans haut pour l'instant."));
             std::string nickname = figures::NicknameUtf8(f.stats);
             if (progress && f.state == figures::AreaState::Blank)
                 facts.push_back(L("New: never played", "Neuve : jamais jouée"));
             else if (progress && f.state != figures::AreaState::Valid)
-                facts.push_back(L("Unreadable. Restore a backup or reset it.", "Illisible. Restaure une sauvegarde ou remets-la à neuf."));
+                facts.push_back(L("Unreadable. Restore a backup or reset it.",
+                    "Illisible. Restaure une sauvegarde ou remets-la à neuf."));
             if (progress && !nickname.empty())
                 facts.push_back(std::string(L("Nickname in the game: ", "Surnom dans le jeu : ")) + nickname);
             if (progress && f.state == figures::AreaState::Valid)
-                facts.push_back(std::string(L("Played ", "Joué ")) + Duration(f.stats.playSeconds) + L(" · hero points ", " · points de héros ") + std::to_string(f.stats.heroPoints));
-            if (!f.lastUsed.empty() && f.state != figures::AreaState::Blank) // a figure the game never wrote was not played
+                facts.push_back(std::string(L("Played ", "Joué ")) + Duration(f.stats.playSeconds) +
+                                L(" · hero points ", " · points de héros ") + std::to_string(f.stats.heroPoints));
+            if (!f.lastUsed.empty() &&
+                f.state != figures::AreaState::Blank) // a figure the game never wrote was not played
             {
                 const Game* g = Catalogue::Get().FindGame(f.lastGame);
-                std::string game = g != nullptr ? g->name.substr(g->name.rfind("Skylanders: ", 0) == 0 ? 12 : 0) : f.lastGame;
+                std::string game =
+                    g != nullptr ? g->name.substr(g->name.rfind("Skylanders: ", 0) == 0 ? 12 : 0) : f.lastGame;
                 std::string when = f.lastUsed.substr(0, 10);
                 facts.push_back(std::string(L("Last played: ", "Dernière partie : ")) + game + ", " + when);
             }
@@ -1290,7 +1416,8 @@ namespace toybox
                 snprintf(toy, sizeof(toy), L("Toy %u · variant %04X", "Jouet %u · variante %04X"), f.type, f.variant);
                 facts.push_back(toy);
                 size_t backups = Backups(f.path).size();
-                facts.push_back(std::string(L("File: ", "Fichier : ")) + f.file + " · " + std::to_string(backups) + L(" backups", " sauvegardes"));
+                facts.push_back(std::string(L("File: ", "Fichier : ")) + f.file + " · " + std::to_string(backups) +
+                                L(" backups", " sauvegardes"));
                 if (!f.origin.empty())
                     facts.push_back(std::string(L("Made by: ", "Origine : ")) + f.origin);
             }
@@ -1308,7 +1435,8 @@ namespace toybox
         void DrawFigure(Model& model)
         {
             const Figure& f = model.figures[model.figure];
-            Header(L("TOY BOX", "TOY BOX"), std::string(L("My Skylanders › ", "Mes Skylanders › ")) + model.FigureName(f));
+            Header(
+                L("TOY BOX", "TOY BOX"), std::string(L("My Skylanders › ", "Mes Skylanders › ")) + model.FigureName(f));
             Hints(1248, 44, { { 'L', L("previous / next figure", "figurine précédente / suivante") } });
             DrawFigureInfo(model, f);
             ImVec2 min(540, 88), max(1248, 664);
@@ -1324,15 +1452,18 @@ namespace toybox
             for (size_t i = 0; i < actions.size(); i++)
             {
                 size_t tab = actions[i].find('\t');
-                std::string label = actions[i].substr(0, tab), hint = tab == std::string::npos ? "" : actions[i].substr(tab + 1);
+                std::string label = actions[i].substr(0, tab),
+                            hint = tab == std::string::npos ? "" : actions[i].substr(tab + 1);
                 ImVec2 a(min.x + 20, y), b(max.x - 20, y + rowHeight - 8);
                 bool focused = model.figureAction == int(i) && model.screen == Screen::Figure;
                 bool danger = label == L("Delete", "Supprimer") || label == L("Reset to new", "Remettre à neuf");
                 Box(a, b, focused ? Look::CardSelected : Look::Night, focused ? Look::Gold : Look::CardBorder, 12, 2);
                 TextMiddle(g_black, 16, a.x + 18, (a.y + b.y) / 2, danger ? Look::DangerText : Look::Text, label);
                 // More opens a list (a chevron to the right), Details unfolds lines (down, up once open).
-                int fold = label == L("Details", "Détails") ? 1 : label == L("Hide the details", "Masquer les détails") ? -1
-                    : label == L("More…", "Plus…") ? 0 : 2;
+                int fold = label == L("Details", "Détails")                        ? 1
+                           : label == L("Hide the details", "Masquer les détails") ? -1
+                           : label == L("More…", "Plus…")                          ? 0
+                                                                                   : 2;
                 float right = b.x - 18;
                 if (fold != 2)
                 {
@@ -1340,17 +1471,22 @@ namespace toybox
                     right -= 28;
                 }
                 if (!hint.empty())
-                    TextMiddle(g_bold, 13, right - Measure(g_bold, 13, hint).x, (a.y + b.y) / 2, Look::TextDimmer, hint);
+                    TextMiddle(
+                        g_bold, 13, right - Measure(g_bold, 13, hint).x, (a.y + b.y) / 2, Look::TextDimmer, hint);
                 int index = int(i);
-                AddHit(a, b, [&model, index] {
-                    bool again = model.figureAction == index;
-                    model.FocusAction(index);
-                    if (again)
+                AddHit(
+                    a, b,
+                    [&model, index] {
+                        bool again = model.figureAction == index;
+                        model.FocusAction(index);
+                        if (again)
+                            model.Run(Command::Accept);
+                    },
+                    {},
+                    [&model, index] {
+                        model.FocusAction(index);
                         model.Run(Command::Accept);
-                }, {}, [&model, index] {
-                    model.FocusAction(index);
-                    model.Run(Command::Accept);
-                });
+                    });
                 y += rowHeight;
             }
             Footer({ { 'A', L("Do it", "Valider") }, { 'B', L("Back", "Retour") } });
@@ -1361,14 +1497,18 @@ namespace toybox
         {
             const Figure& f = model.figures[model.figure];
             bool bottom = f.IsSwapTop();
-            Header(L("TOY BOX", "TOY BOX"), std::string(L("My Skylanders › ", "Mes Skylanders › ")) + model.FigureName(f));
+            Header(
+                L("TOY BOX", "TOY BOX"), std::string(L("My Skylanders › ", "Mes Skylanders › ")) + model.FigureName(f));
             ImVec2 min(32, 88), max(1248, 664);
             Panel(min, max, 0.95f);
-            Title(bottom ? L("Change the bottom", "Changer le bas") : L("Change the top", "Changer le haut"), ImVec2(min.x + 28, min.y + 18), 28);
+            Title(bottom ? L("Change the bottom", "Changer le bas") : L("Change the top", "Changer le haut"),
+                ImVec2(min.x + 28, min.y + 18), 28);
             if (model.list.cells.empty())
                 Text(g_bold, 16, ImVec2(min.x + 28, min.y + 90), Look::TextDim,
-                    bottom ? L("No other bottom to choose: add one from Add a figure.", "Pas d'autre bas à choisir : ajoute-en un avec Ajouter.")
-                           : L("No other top to choose: add one from Add a figure.", "Pas d'autre haut à choisir : ajoutes-en un avec Ajouter."));
+                    bottom ? L("No other bottom to choose: add one from Add a figure.",
+                                 "Pas d'autre bas à choisir : ajoute-en un avec Ajouter.")
+                           : L("No other top to choose: add one from Add a figure.",
+                                 "Pas d'autre haut à choisir : ajoutes-en un avec Ajouter."));
             DrawList(model, ImVec2(min.x + 28, min.y + 80), ImVec2(max.x - 28, max.y - 56), true, true);
             Footer({ { 'A', L("Use this one", "Prendre celle-ci") }, { 'B', L("Back", "Retour") } });
         }
@@ -1382,9 +1522,11 @@ namespace toybox
             ImVec2 min(380, 120), max(900, 620);
             Panel(min, max);
             Title(L("PIN TO THE WHEEL", "ÉPINGLER SUR LA ROUE"), ImVec2(min.x + 24, min.y + 18), 26);
-            int playerSeat = model.seats[model.seat].seat.player > 0 && model.seats[model.seat].seat.id[0] == 'p' ? model.seat : 0;
+            int playerSeat =
+                model.seats[model.seat].seat.player > 0 && model.seats[model.seat].seat.id[0] == 'p' ? model.seat : 0;
             Text(g_bold, 14, ImVec2(min.x + 24, min.y + 60), Look::TextDim,
-                std::string(L("Pick a place for the wheel of ", "Choisis une place sur la roue du ")) + model.SeatLabel(playerSeat) + ":");
+                std::string(L("Pick a place for the wheel of ", "Choisis une place sur la roue du ")) +
+                    model.SeatLabel(playerSeat) + ":");
             std::vector<WheelPlace> places = GetWheel(model.game, model.seats[playerSeat].seat.id);
             places.resize(Model::WheelPlaces);
             ImVec2 center((min.x + max.x) / 2, min.y + 290);
@@ -1431,12 +1573,17 @@ namespace toybox
             {
                 std::string file = model.backups[i].substr(model.backups[i].find_last_of('/') + 1);
                 // 2026-10-24T101500Z.sky → 2026-10-24 10:15 UTC
-                std::string date = file.size() >= 17 ? file.substr(0, 10) + " " + file.substr(11, 2) + ":" + file.substr(13, 2) + " UTC" : file;
+                std::string date = file.size() >= 17 ? file.substr(0, 10) + " " + file.substr(11, 2) + ":" +
+                                                           file.substr(13, 2) + " UTC"
+                                                     : file;
                 FigureData tag;
                 figures::FigureStats st;
                 std::string detail;
                 if (LoadFigure(model.backups[i], tag) && figures::ReadStats(tag, st) == figures::AreaState::Valid)
-                    detail = (French() ? "Niv " : "Lv ") + std::to_string(figures::LevelForExperience(figures::ExperienceFor(st, model.LevelCap()), model.LevelCap())) + " · " + std::to_string(st.gold) + L(" gold", " or");
+                    detail = (French() ? "Niv " : "Lv ") +
+                             std::to_string(figures::LevelForExperience(
+                                 figures::ExperienceFor(st, model.LevelCap()), model.LevelCap())) +
+                             " · " + std::to_string(st.gold) + L(" gold", " or");
                 else
                     detail = L("never played", "jamais jouée");
                 ImVec2 a(min.x + 20, y), b(max.x - 20, y + 44);
@@ -1497,7 +1644,9 @@ namespace toybox
                     return model.HatName(s.hat);
                 snprintf(text, sizeof(text), "%u", cap > figures::MaxLevel ? s.hat : s.ssaHat);
                 break;
-            case 2: snprintf(text, sizeof(text), "%d", figures::LevelForExperience(figures::ExperienceFor(s, cap), cap)); break;
+            case 2:
+                snprintf(text, sizeof(text), "%d", figures::LevelForExperience(figures::ExperienceFor(s, cap), cap));
+                break;
             case 3: snprintf(text, sizeof(text), "%u", figures::ExperienceFor(s, cap)); break;
             case 4: snprintf(text, sizeof(text), "%u", s.gold); break;
             case 5: return Duration(s.playSeconds);
@@ -1509,7 +1658,9 @@ namespace toybox
                 if (f.toy == nullptr)
                     return "";
                 collection::UpgradeTable table = collection::Upgrades(*f.toy, model.game, French() ? "fr" : "en");
-                snprintf(text, sizeof(text), L("%d of %d", "%d sur %d"), collection::BoughtCount(collection::EditorBits(s.upgrades, s.wowPow), table), int(table.upgrades.size()));
+                snprintf(text, sizeof(text), L("%d of %d", "%d sur %d"),
+                    collection::BoughtCount(collection::EditorBits(s.upgrades, s.wowPow), table),
+                    int(table.upgrades.size()));
                 break;
             }
             }
@@ -1524,7 +1675,11 @@ namespace toybox
             std::string label = StatLabel(row, model.LevelCap());
             Text(g_bold, 13, at, gold ? Look::Gold : Look::TextDim, label);
             ImVec2 min(at.x, at.y + Measure(g_bold, 13, label).y + 6), max(at.x + width, min.y + height);
-            Box(min, max, Look::Field, focused ? Look::Gold : gold ? Look::GoldBorder : Look::Control, 12, focused ? 3 : 2);
+            Box(min, max, Look::Field,
+                focused ? Look::Gold
+                : gold  ? Look::GoldBorder
+                        : Look::Control,
+                12, focused ? 3 : 2);
             std::string value = StatValue(row, model);
             uint32_t color = gold ? Look::GoldText : Look::Text;
             if (value.empty())
@@ -1539,7 +1694,8 @@ namespace toybox
             {
                 float cy = (min.y + max.y) / 2, x = max.x - 30;
                 g_draw->AddTriangleFilled(ImVec2(x, cy), ImVec2(x + 7, cy - 6), ImVec2(x + 7, cy + 6), Rgb(Look::Gold));
-                g_draw->AddTriangleFilled(ImVec2(x + 20, cy), ImVec2(x + 13, cy - 6), ImVec2(x + 13, cy + 6), Rgb(Look::Gold));
+                g_draw->AddTriangleFilled(
+                    ImVec2(x + 20, cy), ImVec2(x + 13, cy - 6), ImVec2(x + 13, cy + 6), Rgb(Look::Gold));
             }
             if (row == 8) // opens the Upgrades screen
                 Chevron(ImVec2(max.x - 26, (min.y + max.y) / 2), 16, focused ? Look::GoldText : Look::TextDim, 0);
@@ -1589,8 +1745,9 @@ namespace toybox
                 StatField(model, 8, ImVec2(x, y), Inner, 46, 20);
                 y += FieldHeight(46) + 18;
                 int seatIndex = model.SeatOf(f.path);
-                std::string where = seatIndex >= 0 ? std::string(L("On the portal as ", "Sur le portail en ")) + model.SeatLabel(seatIndex)
-                    : std::string(L("Not on the portal.", "Pas sur le portail."));
+                std::string where = seatIndex >= 0 ? std::string(L("On the portal as ", "Sur le portail en ")) +
+                                                         model.SeatLabel(seatIndex)
+                                                   : std::string(L("Not on the portal.", "Pas sur le portail."));
                 for (const std::string& line : Wrap(g_bold, 14, where, Inner))
                 {
                     Text(g_bold, 14, ImVec2(x, y), Look::TextDim, line);
@@ -1601,11 +1758,19 @@ namespace toybox
             ImVec2 cancelMin(820, 636), cancelMax(1010, 680), saveMin(1030, 636), saveMax(1248, 680);
             PlainButton(cancelMin, cancelMax, L("Cancel", "Annuler"), 16, model.stats.row == 9);
             GoldButton(saveMin, saveMax, L("Save", "Enregistrer"), 16, model.stats.row == 10);
-            AddHit(cancelMin, cancelMax, [&model] { model.FocusStatsRow(9); model.FocusStatsRow(9); });
-            AddHit(saveMin, saveMax, [&model] { model.FocusStatsRow(10); model.FocusStatsRow(10); });
-            TextMiddle(g_bold, 14, 32, 658, Look::TextSoft, model.stats.dirty ? L("Changed: B or Save to keep it", "Modifiée : B ou Enregistrer pour garder")
+            AddHit(cancelMin, cancelMax, [&model] {
+                model.FocusStatsRow(9);
+                model.FocusStatsRow(9);
+            });
+            AddHit(saveMin, saveMax, [&model] {
+                model.FocusStatsRow(10);
+                model.FocusStatsRow(10);
+            });
+            TextMiddle(g_bold, 14, 32, 658, Look::TextSoft,
+                model.stats.dirty      ? L("Changed: B or Save to keep it", "Modifiée : B ou Enregistrer pour garder")
                 : model.stats.row == 8 ? L("A: choose the upgrades", "A : choisir les améliorations")
-                : L("Left / right: change · LB / RB or Shift: by 10", "Gauche / droite : changer · LB / RB ou Maj : par 10"));
+                                       : L("Left / right: change · LB / RB or Shift: by 10",
+                                             "Gauche / droite : changer · LB / RB ou Maj : par 10"));
         }
 
         // --- Upgrades: by name, the basic ones, the two paths side by side, the Soul Gem ---------------------------------------
@@ -1620,12 +1785,14 @@ namespace toybox
             constexpr float Left = 32, Gap = 16, Width = (1216 - 2 * Gap) / 3, Top = 88, Card = 58, Step = 66;
             auto columnX = [&](int column) { return Left + column * (Width + Gap); };
             // Column titles: the basic ones, then the two paths (the chosen one lit).
-            bool chosen = (bits >> collection::UpgradePathChosenBit & 1) != 0, second = (bits >> collection::UpgradePathSecondBit & 1) != 0;
+            bool chosen = (bits >> collection::UpgradePathChosenBit & 1) != 0,
+                 second = (bits >> collection::UpgradePathSecondBit & 1) != 0;
             const std::string titles[3] = { L("Basic", "De base"), u.table.pathNames[0], u.table.pathNames[1] };
             for (int column = 0; column < 3; column++)
             {
                 bool lit = column == 0 || (chosen && second == (column == 2));
-                TextMiddle(g_black, 17, columnX(column), Top + 12, lit ? Look::Gold : Look::TextDimmer, Fit(g_black, 17, titles[column], Width));
+                TextMiddle(g_black, 17, columnX(column), Top + 12, lit ? Look::Gold : Look::TextDimmer,
+                    Fit(g_black, 17, titles[column], Width));
             }
             std::string detail;
             for (size_t i = 0; i < u.items.size(); i++)
@@ -1641,7 +1808,9 @@ namespace toybox
                         a.x = 1248 - 200;
                         b.x = 1248;
                     }
-                    std::string label = item.kind == UpgradeItem::Kind::All ? L("All", "Tout") : item.kind == UpgradeItem::Kind::None ? L("None", "Aucune") : L("Done", "OK");
+                    std::string label = item.kind == UpgradeItem::Kind::All    ? L("All", "Tout")
+                                        : item.kind == UpgradeItem::Kind::None ? L("None", "Aucune")
+                                                                               : L("Done", "OK");
                     if (item.kind == UpgradeItem::Kind::Done)
                         GoldButton(a, b, label, 16, focused);
                     else
@@ -1651,7 +1820,8 @@ namespace toybox
                     continue;
                 }
                 const collection::Upgrade& upgrade = u.table.upgrades[item.index];
-                bool bought = collection::UpgradeBought(bits, upgrade), greyed = collection::UpgradeGreyed(bits, upgrade);
+                bool bought = collection::UpgradeBought(bits, upgrade),
+                     greyed = collection::UpgradeGreyed(bits, upgrade);
                 float x = columnX(item.column), y = Top + 36 + item.row * Step;
                 ImVec2 a(x, y), b(x + Width, y + Card);
                 Box(a, b, focused ? Look::CardSelected : Look::Panel, focused ? Look::Gold : Look::CardBorder, 14, 2);
@@ -1664,8 +1834,10 @@ namespace toybox
                 uint32_t ink = greyed ? Look::TextDimmer : Look::Text;
                 std::string price = std::to_string(upgrade.price) + L(" gold", " or");
                 float priceW = Measure(g_bold, 12, price).x;
-                TextMiddle(g_black, 15, a.x + 54, (a.y + b.y) / 2, ink, Fit(g_black, 15, collection::UpgradeName(upgrade.name, language), Width - 54 - priceW - 28));
-                TextMiddle(g_bold, 12, b.x - 14 - priceW, (a.y + b.y) / 2, bought ? Look::GoldText : Look::TextDimmer, price);
+                TextMiddle(g_black, 15, a.x + 54, (a.y + b.y) / 2, ink,
+                    Fit(g_black, 15, collection::UpgradeName(upgrade.name, language), Width - 54 - priceW - 28));
+                TextMiddle(
+                    g_bold, 12, b.x - 14 - priceW, (a.y + b.y) / 2, bought ? Look::GoldText : Look::TextDimmer, price);
                 if (focused)
                     detail = collection::UpgradeLine(upgrade.description, language);
                 int index = int(i);
@@ -1681,7 +1853,8 @@ namespace toybox
         void DrawAdd(Model& model)
         {
             char subtitle[128];
-            snprintf(subtitle, sizeof(subtitle), L("toys %s reads · %d", "jouets que %s lit · %d"), model.GameName().c_str(), int(model.addToys.size()));
+            snprintf(subtitle, sizeof(subtitle), L("toys %s reads · %d", "jouets que %s lit · %d"),
+                model.GameName().c_str(), int(model.addToys.size()));
             Header(L("ADD A FIGURE", "AJOUTER UNE FIGURINE"), subtitle);
             Hints(1248, 44, { { 'B', L("Back", "Retour") } });
             Grid& grid = model.add;
@@ -1689,7 +1862,8 @@ namespace toybox
             SectionStrip(model, grid, min, max.x - min.x);
             ImVec2 listMin(min.x, min.y + 40);
             grid.visibleHeight = int(max.y - listMin.y);
-            float gap = 10, cardWidth = (max.x - min.x - gap * (Model::AddColumns - 1)) / Model::AddColumns, cardHeight = float(grid.rowHeight - 8);
+            float gap = 10, cardWidth = (max.x - min.x - gap * (Model::AddColumns - 1)) / Model::AddColumns,
+                  cardHeight = float(grid.rowHeight - 8);
             g_draw->PushClipRect(ImVec2(listMin.x - 8, listMin.y), ImVec2(max.x + 8, max.y), true);
             for (const ListSection& section : grid.sections)
             {
@@ -1700,22 +1874,28 @@ namespace toybox
             for (size_t i = 0; i < grid.cells.size(); i++)
             {
                 const Cell& cell = grid.cells[i];
-                float x = listMin.x + cell.column * (cardWidth + gap), y = listMin.y + grid.RowY(cell.row) - grid.scroll;
+                float x = listMin.x + cell.column * (cardWidth + gap),
+                      y = listMin.y + grid.RowY(cell.row) - grid.scroll;
                 if (y + cardHeight < listMin.y || y > max.y)
                     continue;
                 const Toy* toy = model.addToys[cell.figure];
                 ImVec2 a(x, y), b(x + cardWidth, y + cardHeight);
                 bool cursor = int(i) == grid.cursor;
-                Box(a, b, cursor ? Look::CardSelected : Look::Panel, cursor && !model.addVersions ? Look::Gold : Look::CardBorder, 14, 2);
+                Box(a, b, cursor ? Look::CardSelected : Look::Panel,
+                    cursor && !model.addVersions ? Look::Gold : Look::CardBorder, 14, 2);
                 if (!SwapperStackOfToy(toy, 0, ImVec2(x + 34, y + cardHeight / 2), 52))
                     Portrait(toy, toy->edition, ImVec2(x + 34, y + cardHeight / 2), 48);
                 const size_t versionCount = Catalogue::Get().VersionsFor(model.game, *toy).size();
-                Text(g_black, 14, ImVec2(x + 66, y + 12), Look::Text, Fit(g_black, 14, Model::AddName(*toy), cardWidth - 74 - (versionCount == 0 ? 0 : 42)));
+                Text(g_black, 14, ImVec2(x + 66, y + 12), Look::Text,
+                    Fit(g_black, 14, Model::AddName(*toy), cardWidth - 74 - (versionCount == 0 ? 0 : 42)));
                 int owned = 0;
                 for (const Figure& f : model.figures)
                     owned += f.type == toy->type ? 1 : 0;
-                std::string line = owned == 0 ? L("not owned", "pas à toi") : owned == 1 ? L("owned", "à toi") : std::string(L("owned ×", "à toi ×")) + std::to_string(owned);
-                Text(g_bold, 12, ImVec2(x + 66, y + 34), owned > 0 ? Look::Bar : Look::TextDimmer, Fit(g_bold, 12, line, cardWidth - 74));
+                std::string line = owned == 0   ? L("not owned", "pas à toi")
+                                   : owned == 1 ? L("owned", "à toi")
+                                                : std::string(L("owned ×", "à toi ×")) + std::to_string(owned);
+                Text(g_bold, 12, ImVec2(x + 66, y + 34), owned > 0 ? Look::Bar : Look::TextDimmer,
+                    Fit(g_bold, 12, line, cardWidth - 74));
                 if (versionCount != 0) // it has versions this game tells apart: a small badge with their count
                     Pill(ImVec2(b.x - 30, a.y + 16), "+" + std::to_string(versionCount), Look::Gold, Look::GoldInk, 12);
                 if (cursor && !model.addVersions)
@@ -1734,7 +1914,8 @@ namespace toybox
                 float y = pmin.y + 20;
                 if (!SwapperStackOfToy(toy, 0, ImVec2(pmin.x + 52, y + 32), 68))
                     Portrait(toy, toy->edition, ImVec2(pmin.x + 52, y + 32), 64);
-                Text(g_display, 20, ImVec2(pmin.x + 96, y + 8), 0xFFFFFF, Fit(g_display, 20, Model::AddName(*toy), pmax.x - pmin.x - 110));
+                Text(g_display, 20, ImVec2(pmin.x + 96, y + 8), 0xFFFFFF,
+                    Fit(g_display, 20, Model::AddName(*toy), pmax.x - pmin.x - 110));
                 Text(g_bold, 14, ImVec2(pmin.x + 96, y + 38), Look::TextDim, L("Versions", "Versions"));
                 y += 84;
                 float rowHeight = std::min(46.0f, (pmax.y - y - 110) / std::max(int(model.versions.size()), 1));
@@ -1743,40 +1924,52 @@ namespace toybox
                     const Version& version = model.versions[v];
                     ImVec2 a(pmin.x + 16, y), b(pmax.x - 16, y + rowHeight - 6);
                     bool focused = model.addVersions && model.addVersion == int(v);
-                    Box(a, b, focused ? Look::CardSelected : Look::Night, focused ? Look::Gold : Look::CardBorder, 10, 2);
+                    Box(a, b, focused ? Look::CardSelected : Look::Night, focused ? Look::Gold : Look::CardBorder, 10,
+                        2);
                     // The version's picture (the toy's own when it has none), its name and its kind.
                     float middle = (a.y + b.y) / 2, picture = std::min(36.0f, b.y - a.y - 6);
                     if (!SwapperStackOfToy(toy, version.variant, ImVec2(a.x + 8 + picture / 2, middle), int(picture)) &&
-                        !ArtworkPicture(toy, version.variant, ImVec2(a.x + 8 + picture / 2, middle), int(picture), false))
+                        !ArtworkPicture(
+                            toy, version.variant, ImVec2(a.x + 8 + picture / 2, middle), int(picture), false))
                         Portrait(toy, version.kind, ImVec2(a.x + 8 + picture / 2, middle), int(picture));
                     float textX = a.x + 16 + picture;
-                    Text(g_black, 14, ImVec2(textX, middle - (version.kind == VariantKind::Base ? 9 : 17)), Look::Text, Fit(g_black, 14, version.name, b.x - textX - 100));
+                    Text(g_black, 14, ImVec2(textX, middle - (version.kind == VariantKind::Base ? 9 : 17)), Look::Text,
+                        Fit(g_black, 14, version.name, b.x - textX - 100));
                     if (version.kind != VariantKind::Base)
                         Text(g_bold, 12, ImVec2(textX, middle + 2), Look::TextDim, VariantLabel(version.kind));
                     std::string mark = version.owned == 0 ? (version.edition.empty() ? "" : L("same tag", "même puce"))
-                        : version.owned == 1 ? L("owned", "à toi") : std::string(L("owned ×", "à toi ×")) + std::to_string(version.owned);
-                    TextMiddle(g_bold, 12, b.x - 12 - Measure(g_bold, 12, mark).x, (a.y + b.y) / 2, version.owned > 0 ? Look::Bar : Look::TextDimmer, mark);
+                                       : version.owned == 1
+                                           ? L("owned", "à toi")
+                                           : std::string(L("owned ×", "à toi ×")) + std::to_string(version.owned);
+                    TextMiddle(g_bold, 12, b.x - 12 - Measure(g_bold, 12, mark).x, (a.y + b.y) / 2,
+                        version.owned > 0 ? Look::Bar : Look::TextDimmer, mark);
                     int index = int(v);
                     AddHit(a, b, [&model, index] { model.FocusVersion(index); });
                     y += rowHeight;
                 }
             }
-            Footer({ { 'A', model.addVersions ? L("Create", "Créer") : L("Choose", "Choisir") }, { 'L', L("Section", "Section") }, { 'B', L("Back", "Retour") } });
+            Footer({ { 'A', model.addVersions ? L("Create", "Créer") : L("Choose", "Choisir") },
+                { 'L', L("Section", "Section") }, { 'B', L("Back", "Retour") } });
         }
 
         // --- Names -----------------------------------------------------------------------------------------------------
 
         std::string KeyLabel(const std::string& key, const NameEntry& name)
         {
-            if (key == "\x01" "shift")
+            if (key == "\x01"
+                       "shift")
                 return L("Shift", "Maj");
-            if (key == "\x01" "symbols")
+            if (key == "\x01"
+                       "symbols")
                 return name.symbols ? "ABC" : "123";
-            if (key == "\x01" "space")
+            if (key == "\x01"
+                       "space")
                 return L("space", "espace");
-            if (key == "\x01" "delete")
+            if (key == "\x01"
+                       "delete")
                 return L("Delete", "Effacer");
-            if (key == "\x01" "done")
+            if (key == "\x01"
+                       "done")
                 return L("Done", "OK");
             return key;
         }
@@ -1832,7 +2025,11 @@ namespace toybox
                 std::vector<float> widths;
                 for (const std::string& key : keys[r])
                 {
-                    float w = special ? (key == "\x01" "space" ? keyWidth * 3 : keyWidth * 1.5f) : keyWidth;
+                    float w = special ? (key == "\x01"
+                                                "space"
+                                                ? keyWidth * 3
+                                                : keyWidth * 1.5f)
+                                      : keyWidth;
                     widths.push_back(w);
                     rowWidth += w + gap;
                 }
@@ -1841,10 +2038,19 @@ namespace toybox
                 {
                     ImVec2 a(x, y), b(x + widths[c], y + keyHeight);
                     bool focused = name.onKeys && name.keyRow == int(r) && name.keyColumn == int(c);
-                    bool lit = (keys[r][c] == "\x01" "shift" && name.shift) || (keys[r][c] == "\x01" "done");
-                    Box(a, b, focused ? Look::CardSelected : lit ? Look::Button : Look::KeyCap, focused ? Look::Gold : Look::Control, 10, 2);
+                    bool lit = (keys[r][c] == "\x01"
+                                              "shift" &&
+                                   name.shift) ||
+                               (keys[r][c] == "\x01"
+                                              "done");
+                    Box(a, b,
+                        focused ? Look::CardSelected
+                        : lit   ? Look::Button
+                                : Look::KeyCap,
+                        focused ? Look::Gold : Look::Control, 10, 2);
                     std::string label = KeyLabel(keys[r][c], name);
-                    TextCentered(g_black, special ? 16 : 24, ImVec2((a.x + b.x) / 2, (a.y + b.y) / 2), Look::Text, label);
+                    TextCentered(
+                        g_black, special ? 16 : 24, ImVec2((a.x + b.x) / 2, (a.y + b.y) / 2), Look::Text, label);
                     if (focused)
                         FocusRing(a, b, 10);
                     int row = int(r), column = int(c);
@@ -1854,10 +2060,13 @@ namespace toybox
                 y += keyHeight + gap;
             }
             if (name.purpose == NameEntry::Purpose::Nickname)
-                Text(g_bold, 13, ImVec2(160, y + 6), Look::TextDimmer, L("15 characters at most.", "15 caractères au plus."));
+                Text(g_bold, 13, ImVec2(160, y + 6), Look::TextDimmer,
+                    L("15 characters at most.", "15 caractères au plus."));
             else if (name.purpose == NameEntry::Purpose::Rename || name.purpose == NameEntry::Purpose::NewFigure)
-                Text(g_bold, 13, ImVec2(160, y + 6), Look::TextDimmer, L("Shown in the menus.", "Affiché dans les menus."));
-            Footer({ { 'A', L("Type", "Taper") }, { 'X', L("Delete", "Effacer") }, { 'L', L("Cursor", "Curseur") }, { 'Y', L("Done", "OK") }, { 'B', L("Cancel", "Annuler") } });
+                Text(g_bold, 13, ImVec2(160, y + 6), Look::TextDimmer,
+                    L("Shown in the menus.", "Affiché dans les menus."));
+            Footer({ { 'A', L("Type", "Taper") }, { 'X', L("Delete", "Effacer") }, { 'L', L("Cursor", "Curseur") },
+                { 'Y', L("Done", "OK") }, { 'B', L("Cancel", "Annuler") } });
         }
 
         // --- Manage ---------------------------------------------------------------------------------------------------
@@ -1866,12 +2075,14 @@ namespace toybox
         {
             ManageState& m = model.manage;
             char subtitle[96];
-            snprintf(subtitle, sizeof(subtitle), L("collection · %d figures", "collection · %d figurines"), int(model.figures.size()));
+            snprintf(subtitle, sizeof(subtitle), L("collection · %d figures", "collection · %d figurines"),
+                int(model.figures.size()));
             Header(L("MANAGE", "GÉRER"), subtitle);
             Hints(1248, 44, { { 'B', L("Back", "Retour") } });
-            const std::string names[] = { L("Trash", "Corbeille"), L("Backups", "Sauvegardes"), L("Import", "Importer"), L("Export", "Exporter"),
-                L("Unknown toys", "Jouets inconnus"), L("Tidy", "Ranger") };
-            const int counts[] = { int(m.trash.size()), int(m.withBackups.size()), -1, -1, int(m.unknown.size()), int(m.starters.size()) };
+            const std::string names[] = { L("Trash", "Corbeille"), L("Backups", "Sauvegardes"), L("Import", "Importer"),
+                L("Export", "Exporter"), L("Unknown toys", "Jouets inconnus"), L("Tidy", "Ranger") };
+            const int counts[] = { int(m.trash.size()), int(m.withBackups.size()), -1, -1, int(m.unknown.size()),
+                int(m.starters.size()) };
             ImVec2 min(32, 88), max(330, 664);
             Panel(min, max);
             float y = min.y + 20;
@@ -1883,7 +2094,8 @@ namespace toybox
                 Box(a, b, lit ? Look::CardSelected : Look::Night, focused ? Look::Gold : Look::CardBorder, 12, 2);
                 TextMiddle(g_black, 17, a.x + 16, y + 26, Look::Text, names[i]);
                 if (counts[i] >= 0)
-                    TextMiddle(g_black, 16, b.x - 16 - Measure(g_black, 16, std::to_string(counts[i])).x, y + 26, Look::TextDim, std::to_string(counts[i]));
+                    TextMiddle(g_black, 16, b.x - 16 - Measure(g_black, 16, std::to_string(counts[i])).x, y + 26,
+                        Look::TextDim, std::to_string(counts[i]));
                 AddHit(a, b, [&model, i] { model.FocusManage(i, 0, false); });
                 y += 62;
             }
@@ -1903,7 +2115,8 @@ namespace toybox
                 }
                 y += 8;
             };
-            auto row = [&](int item, const std::string& left, const std::string& right, const Figure* figure, const Toy* toy = nullptr) {
+            auto row = [&](int item, const std::string& left, const std::string& right, const Figure* figure,
+                           const Toy* toy = nullptr) {
                 ImVec2 a(x, y), b(pmax.x - 24, y + 50);
                 bool focused = m.inPanel && m.item == item;
                 Box(a, b, focused ? Look::CardSelected : Look::Night, focused ? Look::Gold : Look::CardBorder, 12, 2);
@@ -1937,12 +2150,13 @@ namespace toybox
                 {
                     const TrashEntry& e = m.trash[i];
                     std::string when = e.deleted.substr(0, 10);
-                    std::string why = e.reason == "tidy" ? L("never played · tidy, ", "jamais jouée · rangement, ") : L("deleted ", "supprimée le ");
+                    std::string why = e.reason == "tidy" ? L("never played · tidy, ", "jamais jouée · rangement, ")
+                                                         : L("deleted ", "supprimée le ");
                     std::string stem = e.file.substr(0, e.file.find_last_of('.'));
                     bool numbered = stem.size() > 4 && isdigit(uint8_t(stem[0])) && stem[3] == ' ';
                     uint16_t type = uint16_t(atoi(stem.c_str()));
-                    row(i, numbered ? stem.substr(4) : stem, why + when + L(" · A: put back", " · A : remettre"), nullptr,
-                        numbered ? Catalogue::Get().Find(type) : nullptr);
+                    row(i, numbered ? stem.substr(4) : stem, why + when + L(" · A: put back", " · A : remettre"),
+                        nullptr, numbered ? Catalogue::Get().Find(type) : nullptr);
                 }
                 break;
             case 1:
@@ -1951,12 +2165,16 @@ namespace toybox
                 for (int i = std::max(0, m.item - 6); i < int(m.withBackups.size()) && y < pmax.y - 60; i++)
                 {
                     const Figure& f = model.figures[m.withBackups[i]];
-                    row(i, model.FigureName(f), std::to_string(Backups(f.path).size()) + L(" backups · A: restore one", " sauvegardes · A : en restaurer une"), &f);
+                    row(i, model.FigureName(f),
+                        std::to_string(Backups(f.path).size()) +
+                            L(" backups · A: restore one", " sauvegardes · A : en restaurer une"),
+                        &f);
                 }
                 break;
             case 2:
                 heading(L("Import", "Importer"));
-                note(L("Put figure files in this folder, then import.", "Mets des fichiers de figurines dans ce dossier, puis importe."));
+                note(L("Put figure files in this folder, then import.",
+                    "Mets des fichiers de figurines dans ce dossier, puis importe."));
                 note(m.importFolder);
                 button(L("Import now", "Importer maintenant"));
                 note(L("Not available on Xbox yet.", "Pas encore disponible sur Xbox."));
@@ -1972,7 +2190,8 @@ namespace toybox
                 if (m.unknown.empty())
                     note(L("None.", "Aucun."));
                 else
-                    note(L("Toys missing from the catalogue. Name one to show it.", "Jouets absents du catalogue. Nommes-en un pour l'afficher."));
+                    note(L("Toys missing from the catalogue. Name one to show it.",
+                        "Jouets absents du catalogue. Nommes-en un pour l'afficher."));
                 for (int i = 0; i < int(m.unknown.size()) && y < pmax.y - 60; i++)
                 {
                     const Figure& f = model.figures[m.unknown[i]];
@@ -1983,7 +2202,10 @@ namespace toybox
             {
                 heading(L("Tidy", "Ranger"));
                 char text[200];
-                snprintf(text, sizeof(text), L("%d blank figures made by old game versions. Tidy moves them to the trash.", "%d figurines vierges créées par d'anciennes versions du jeu. Ranger les met à la corbeille."), int(m.starters.size()));
+                snprintf(text, sizeof(text),
+                    L("%d blank figures made by old game versions. Tidy moves them to the trash.",
+                        "%d figurines vierges créées par d'anciennes versions du jeu. Ranger les met à la corbeille."),
+                    int(m.starters.size()));
                 note(text);
                 button(L("Tidy now", "Ranger maintenant"));
                 break;
@@ -2005,7 +2227,8 @@ namespace toybox
             Dialog& dialog = model.dialogs.back();
             Fill(ImVec2(0, 0), ImVec2(CanvasWidth, CanvasHeight), Look::Night, 0.6f);
             float width = 600;
-            std::vector<std::string> lines = dialog.text.empty() ? std::vector<std::string>() : Wrap(g_bold, 16, dialog.text, width - 56);
+            std::vector<std::string> lines =
+                dialog.text.empty() ? std::vector<std::string>() : Wrap(g_bold, 16, dialog.text, width - 56);
             float height = 80 + lines.size() * 22 + (lines.empty() ? 0 : 16) + dialog.buttons.size() * 58 + 10;
             ImVec2 min(640 - width / 2, 360 - height / 2), max(640 + width / 2, 360 + height / 2);
             Panel(min, max);
@@ -2028,7 +2251,8 @@ namespace toybox
                     Box(a, b, Look::Chip, Look::Danger, 12, 2);
                     if (model.holdProgress > 0)
                         RoundRect(a, ImVec2(a.x + (b.x - a.x) * model.holdProgress, b.y), Look::Danger, 12);
-                    TextCentered(g_black, 16, ImVec2((a.x + b.x) / 2, (a.y + b.y) / 2), Look::DangerText, dialog.buttons[i]);
+                    TextCentered(
+                        g_black, 16, ImVec2((a.x + b.x) / 2, (a.y + b.y) / 2), Look::DangerText, dialog.buttons[i]);
                     if (focused)
                         FocusRing(a, b, 12);
                 }
@@ -2061,7 +2285,8 @@ namespace toybox
                 std::string label = row.label + (row.nextStart ? " *" : "");
                 anyNextStart = anyNextStart || row.nextStart;
                 if (action)
-                    TextCentered(g_black, 17, ImVec2((a.x + b.x) / 2, y + 22), i + 1 == rows.size() ? Look::TextSoft : Look::GoldText, label);
+                    TextCentered(g_black, 17, ImVec2((a.x + b.x) / 2, y + 22),
+                        i + 1 == rows.size() ? Look::TextSoft : Look::GoldText, label);
                 else
                     TextMiddle(g_black, 16, a.x + 16, y + 22, Look::Text, label);
                 int index = int(i);
@@ -2073,7 +2298,8 @@ namespace toybox
                 bool stepped = row.kind == MenuRow::Kind::Slider || row.kind == MenuRow::Kind::Choice;
                 if (stepped)
                 {
-                    ImVec2 plusA(right - 34, y + 7), plusB(right, y + 37), minusA(right - 34 - 130 - 8 - 34, y + 7), minusB(right - 34 - 130 - 8, y + 37);
+                    ImVec2 plusA(right - 34, y + 7), plusB(right, y + 37), minusA(right - 34 - 130 - 8 - 34, y + 7),
+                        minusB(right - 34 - 130 - 8, y + 37);
                     PlainButton(minusA, minusB, "-", 18, false);
                     PlainButton(plusA, plusB, "+", 18, false);
                     AddHit(minusA, minusB, [&model, index] { model.FocusMenuRow(index, -1); });
@@ -2083,22 +2309,27 @@ namespace toybox
                     {
                         ImVec2 track(minusB.x + 8, y + 15), trackEnd(plusA.x - 8, y + 21);
                         RoundRect(track, trackEnd, Look::Field, 3);
-                        RoundRect(track, ImVec2(track.x + (trackEnd.x - track.x) * float(row.percent) / 100.0f, trackEnd.y), Look::Gold, 3);
+                        RoundRect(track,
+                            ImVec2(track.x + (trackEnd.x - track.x) * float(row.percent) / 100.0f, trackEnd.y),
+                            Look::Gold, 3);
                         TextCentered(g_black, 13, ImVec2(centerX, y + 33), Look::TextDim, row.value);
                     }
                     else
-                        TextCentered(g_black, 16, ImVec2(centerX, y + 22), focused ? Look::GoldText : Look::TextSoft, row.value);
+                        TextCentered(
+                            g_black, 16, ImVec2(centerX, y + 22), focused ? Look::GoldText : Look::TextSoft, row.value);
                 }
                 else
                 {
                     ImVec2 pillA(right - 80, y + 8), pillB(right, y + 36);
                     bool on = row.value == L("On", "Oui");
                     Box(pillA, pillB, on ? Look::Bar : Look::Chip, on ? Look::Bar : Look::Control, 14, 2);
-                    TextCentered(g_black, 14, ImVec2((pillA.x + pillB.x) / 2, y + 22), on ? Look::GoldInk : Look::TextSoft, row.value);
+                    TextCentered(g_black, 14, ImVec2((pillA.x + pillB.x) / 2, y + 22),
+                        on ? Look::GoldInk : Look::TextSoft, row.value);
                 }
             }
             if (anyNextStart)
-                Text(g_bold, 13, ImVec2(min.x + 28, max.y - 34), Look::TextDim, L("* applies at the next start", "* au prochain démarrage"));
+                Text(g_bold, 13, ImVec2(min.x + 28, max.y - 34), Look::TextDim,
+                    L("* applies at the next start", "* au prochain démarrage"));
             Hints(max.x - 28, max.y - 26, { { 'A', L("Change", "Changer") }, { 'B', L("Close", "Fermer") } });
         }
 
@@ -2137,7 +2368,8 @@ namespace toybox
                     const Figure& f = model.figures[index];
                     CardPortrait(model, f, at, 92);
                     std::string name = model.FigureName(f);
-                    TextCentered(g_black, 15, ImVec2(at.x, at.y + 60), aimed ? Look::GoldText : Look::Text, Fit(g_black, 15, name, 170));
+                    TextCentered(g_black, 15, ImVec2(at.x, at.y + 60), aimed ? Look::GoldText : Look::Text,
+                        Fit(g_black, 15, name, 170));
                     // The card's words: the level for this game, unless the place says more.
                     std::string tag = model.LevelLine(f);
                     int on = model.SeatOf(f.path);
@@ -2171,19 +2403,24 @@ namespace toybox
             if (w.aimed < 0)
                 Ring(WheelCenter, 122, Look::Text, 3);
             TextCentered(g_display, 18, ImVec2(WheelCenter.x, WheelCenter.y + 74), Look::Gold, model.SeatLabel(w.seat));
-            TextCentered(g_bold, 12, ImVec2(WheelCenter.x, WheelCenter.y + 96), Look::TextDim, L("release here: cancel", "relâcher ici : annuler"));
+            TextCentered(g_bold, 12, ImVec2(WheelCenter.x, WheelCenter.y + 96), Look::TextDim,
+                L("release here: cancel", "relâcher ici : annuler"));
             (void)s;
             // Hints under the wheel.
             float y = 676;
-            std::vector<HintItem> hints = { { 'A', L("Swap", "Changer") }, { 'Y', L("All", "Tout") }, { 'L', L("Other seat", "Autre place") },
-                { 'X', L("hold: pin here", "maintenir : épingler ici") }, { 'B', L("Cancel", "Annuler") } };
+            std::vector<HintItem> hints = { { 'A', L("Swap", "Changer") }, { 'Y', L("All", "Tout") },
+                { 'L', L("Other seat", "Autre place") }, { 'X', L("hold: pin here", "maintenir : épingler ici") },
+                { 'B', L("Cancel", "Annuler") } };
             float width = 0;
             for (const HintItem& hint : hints)
                 width += HintButton(hint.button, 0, 0, false) + 6 + Measure(g_bold, 14, hint.text).x + 20;
-            RoundRect(ImVec2(640 - width / 2 - 16, y - 22), ImVec2(640 + width / 2 + 4, y + 22), Look::Night, 22, 0.85f);
+            RoundRect(
+                ImVec2(640 - width / 2 - 16, y - 22), ImVec2(640 + width / 2 + 4, y + 22), Look::Night, 22, 0.85f);
             Hints(640 + width / 2, y, hints);
             if (KeyboardStyle())
-                TextCentered(g_bold, 13, ImVec2(640, 30), Look::TextSoft, L("Arrows or 1-8: aim · release Tab: swap · Esc: cancel", "Flèches ou 1-8 : viser · relâcher Tab : changer · Échap : annuler"));
+                TextCentered(g_bold, 13, ImVec2(640, 30), Look::TextSoft,
+                    L("Arrows or 1-8: aim · release Tab: swap · Esc: cancel",
+                        "Flèches ou 1-8 : viser · relâcher Tab : changer · Échap : annuler"));
             for (int i = 0; i < Model::WheelPlaces; i++)
             {
                 float angle = -1.5707963f + i * 6.2831853f / Model::WheelPlaces;
@@ -2203,23 +2440,33 @@ namespace toybox
             float w = Title(title, ImVec2(min.x + 28, min.y + 18), 28);
             const Figure* now = model.SeatFigure(model.wheel.seat);
             if (now != nullptr)
-                TextMiddle(g_bold, 16, min.x + 28 + w + 20, min.y + 36, Look::TextDim, std::string(L("Now: ", "Maintenant : ")) + model.FigureName(*now));
+                TextMiddle(g_bold, 16, min.x + 28 + w + 20, min.y + 36, Look::TextDim,
+                    std::string(L("Now: ", "Maintenant : ")) + model.FigureName(*now));
             SectionStrip(model, model.list, ImVec2(min.x + 28, min.y + 70), max.x - min.x - 56);
             DrawList(model, ImVec2(min.x + 28, min.y + 110), ImVec2(max.x - 28, max.y - 56), true, true);
-            Hints(max.x - 28, max.y - 28, { { 'A', L("Swap", "Changer") }, { 'L', L("Section", "Section") }, { 'B', L("Back to the game", "Retour au jeu") } });
+            Hints(max.x - 28, max.y - 28,
+                { { 'A', L("Swap", "Changer") }, { 'L', L("Section", "Section") },
+                    { 'B', L("Back to the game", "Retour au jeu") } });
         }
 
         imgui_software::Texture* MakeBackground()
         {
-            auto* texture = new imgui_software::Texture{ CanvasWidth, CanvasHeight, std::vector<uint32_t>(size_t(CanvasWidth) * CanvasHeight) };
-            struct Stop { float at; float rgb[3]; };
-            static const Stop Stops[] = { { 0, { 0x3B, 0x2A, 0x8C } }, { 0.55f, { 0x16, 0x1A, 0x4A } }, { 1, { 0x0B, 0x0F, 0x2E } } };
+            auto* texture = new imgui_software::Texture{ CanvasWidth, CanvasHeight,
+                std::vector<uint32_t>(size_t(CanvasWidth) * CanvasHeight) };
+            struct Stop
+            {
+                float at;
+                float rgb[3];
+            };
+            static const Stop Stops[] = { { 0, { 0x3B, 0x2A, 0x8C } }, { 0.55f, { 0x16, 0x1A, 0x4A } },
+                { 1, { 0x0B, 0x0F, 0x2E } } };
             for (int y = 0; y < CanvasHeight; y++)
             {
                 auto* row = reinterpret_cast<uint8_t*>(texture->pixels.data() + size_t(y) * CanvasWidth);
                 for (int x = 0; x < CanvasWidth; x++)
                 {
-                    float dx = (x + 0.5f - CanvasWidth * 0.5f) / (CanvasWidth * 0.6f), dy = (y + 0.5f - CanvasHeight * 1.08f) / (CanvasHeight * 0.45f);
+                    float dx = (x + 0.5f - CanvasWidth * 0.5f) / (CanvasWidth * 0.6f),
+                          dy = (y + 0.5f - CanvasHeight * 1.08f) / (CanvasHeight * 0.45f);
                     float t = std::min(std::sqrt(dx * dx + dy * dy), 1.0f);
                     const Stop& a = t < Stops[1].at ? Stops[0] : Stops[1];
                     const Stop& b = t < Stops[1].at ? Stops[1] : Stops[2];
@@ -2257,12 +2504,14 @@ namespace toybox
     {
         ImGuiIO& io = ImGui::GetIO();
         uint64_t now = SDL_GetTicksNS();
-        io.DeltaTime = g_frameTime != 0 && now > g_frameTime ? std::max(float(now - g_frameTime) / 1e9f, 1e-4f) : 1.0f / 30;
+        io.DeltaTime =
+            g_frameTime != 0 && now > g_frameTime ? std::max(float(now - g_frameTime) / 1e9f, 1e-4f) : 1.0f / 30;
         g_frameTime = now;
         ImGui::NewFrame();
         g_draw = ImGui::GetBackgroundDrawList();
         g_hits.clear();
-        bool overGame = !model.open || model.screen == Screen::Wheel || model.screen == Screen::WheelList || model.screen == Screen::Menu;
+        bool overGame = !model.open || model.screen == Screen::Wheel || model.screen == Screen::WheelList ||
+                        model.screen == Screen::Menu;
         if (!model.open)
             DrawToast(model, 36);
         else

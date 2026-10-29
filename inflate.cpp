@@ -119,12 +119,14 @@ namespace
         const uint32_t from = Crc32(first), to = Crc32(level);
         const uint8_t fromBytes[4] = { uint8_t(from >> 24), uint8_t(from >> 16), uint8_t(from >> 8), uint8_t(from) };
         int hashes = 0;
-        for (uint8_t* hash = out; (hash = std::search(hash, out + size, fromBytes, fromBytes + 4)) != out + size; hash += 4)
+        for (uint8_t* hash = out; (hash = std::search(hash, out + size, fromBytes, fromBytes + 4)) != out + size;
+            hash += 4)
         {
             hash[0] = uint8_t(to >> 24), hash[1] = uint8_t(to >> 16), hash[2] = uint8_t(to >> 8), hash[3] = uint8_t(to);
             ++hashes;
         }
-        fprintf(stderr, "[level] the opening movie's nextLevel is %s (SKY_NEXT_LEVEL, %d hashes)\n", level.c_str(), hashes);
+        fprintf(
+            stderr, "[level] the opening movie's nextLevel is %s (SKY_NEXT_LEVEL, %d hashes)\n", level.c_str(), hashes);
     }
 
 }

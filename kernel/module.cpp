@@ -66,10 +66,7 @@ PPC_FUNC(__imp__RtlImageXexHeaderField)
     ctx.r3.u64 = 0;
 }
 
-PPC_FUNC(__imp__XexCheckExecutablePrivilege)
-{
-    ctx.r3.u64 = (g_module.systemFlags >> ctx.r3.u32) & 1;
-}
+PPC_FUNC(__imp__XexCheckExecutablePrivilege) { ctx.r3.u64 = (g_module.systemFlags >> ctx.r3.u32) & 1; }
 
 PPC_FUNC(__imp__XexGetModuleHandle)
 {
@@ -82,16 +79,14 @@ PPC_FUNC(__imp__XexLoadImage)
 {
     uint32_t handle = ModuleHandleByName(ctx.r3.u32);
     if (handle == 0)
-        fprintf(stderr, "[kernel] XexLoadImage: cannot load %s\n", static_cast<const char*>(g_memory.Translate(ctx.r3.u32)));
+        fprintf(stderr, "[kernel] XexLoadImage: cannot load %s\n",
+            static_cast<const char*>(g_memory.Translate(ctx.r3.u32)));
 
     g_memory.Write<uint32_t>(ctx.r6.u32, handle);
     ctx.r3.u64 = handle != 0 ? StatusSuccess : StatusNoSuchFile;
 }
 
-PPC_FUNC(__imp__XexUnloadImage)
-{
-    ctx.r3.u64 = StatusSuccess;
-}
+PPC_FUNC(__imp__XexUnloadImage) { ctx.r3.u64 = StatusSuccess; }
 
 PPC_EXTERN_FUNC(__imp__XamInputNonControllerGetRaw);
 PPC_EXTERN_FUNC(__imp__XamInputNonControllerSetRaw);
@@ -100,8 +95,7 @@ PPC_EXTERN_FUNC(__imp__XamInputNonControllerSetRaw);
 // below are the ones the title looks up at run time and calls through the returned pointer.
 PPC_FUNC(__imp__XexGetProcedureAddress)
 {
-    static const std::pair<uint32_t, PPCFunc*> XamExports[] =
-    {
+    static const std::pair<uint32_t, PPCFunc*> XamExports[] = {
         { 0x4A1, __imp__XamInputNonControllerGetRaw }, // Skylanders portal (kernel/portal.cpp)
         { 0x4A2, __imp__XamInputNonControllerSetRaw },
     };

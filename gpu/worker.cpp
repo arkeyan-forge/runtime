@@ -86,7 +86,8 @@ namespace
             std::pair<std::function<void()>, std::shared_ptr<std::atomic<bool>>> job;
             {
                 std::unique_lock lock(g_textureWorkers->mutex);
-                g_textureWorkers->wake.wait(lock, [] { return !g_textureWorkers->jobs.empty() || g_textureWorkers->stop; });
+                g_textureWorkers->wake.wait(
+                    lock, [] { return !g_textureWorkers->jobs.empty() || g_textureWorkers->stop; });
                 if (g_textureWorkers->jobs.empty())
                     return;
                 job = std::move(g_textureWorkers->jobs.front());
@@ -161,10 +162,7 @@ namespace
     }
 }
 
-bool gpu::detail::WorkerRunning()
-{
-    return g_worker != nullptr;
-}
+bool gpu::detail::WorkerRunning() { return g_worker != nullptr; }
 
 void gpu::detail::StartWorker()
 {
@@ -263,12 +261,14 @@ void gpu::detail::RunAndWait(const std::function<void()>& command)
         return;
     }
     bool done = false;
-    Push([&] {
-        command();
-        std::lock_guard lock(g_worker->mutex);
-        done = true;
-        g_worker->progress.notify_all();
-    }, true);
+    Push(
+        [&] {
+            command();
+            std::lock_guard lock(g_worker->mutex);
+            done = true;
+            g_worker->progress.notify_all();
+        },
+        true);
     std::unique_lock lock(g_worker->mutex);
     WaitServicingPresents(lock, g_worker->progress, [&] { return done; });
 }
@@ -306,15 +306,9 @@ const void* gpu::detail::FrameCopy(const void* data, size_t bytes)
     return copy;
 }
 
-uint64_t gpu::detail::ProducerFrame()
-{
-    return g_producerFrame;
-}
+uint64_t gpu::detail::ProducerFrame() { return g_producerFrame; }
 
-uint64_t gpu::detail::CompletedFrame()
-{
-    return g_completedFrame.load();
-}
+uint64_t gpu::detail::CompletedFrame() { return g_completedFrame.load(); }
 
 void gpu::detail::ConsumerFrameDone(bool finished)
 {
@@ -354,8 +348,9 @@ uint64_t gpu::detail::AllocateUpload(uint64_t size, RenderBuffer*& buffer, uint6
     {
         UploadBlock block;
         block.capacity = std::max(size, MinUploadBlockSize);
-        block.buffer = g_context->device->createBuffer(RenderBufferDesc::UploadBuffer(block.capacity,
-            RenderBufferFlag::VERTEX | RenderBufferFlag::INDEX | RenderBufferFlag::CONSTANT | RenderBufferFlag::DEVICE_ADDRESSABLE));
+        block.buffer = g_context->device->createBuffer(RenderBufferDesc::UploadBuffer(
+            block.capacity, RenderBufferFlag::VERTEX | RenderBufferFlag::INDEX | RenderBufferFlag::CONSTANT |
+                                RenderBufferFlag::DEVICE_ADDRESSABLE));
         g_uploadBlocks.push_back(std::move(block));
         g_uploadCurrent = g_uploadBlocks.size() - 1;
     }
@@ -380,18 +375,20 @@ void gpu::detail::EndProducerFrame(std::function<void()> present)
             delete[] chunk;
         return;
     }
-    Push([present = std::move(present), chunks = std::move(chunks), frame] {
-        present();
-        g_consumerFrame = frame + 1;
-        {
-            std::lock_guard lock(g_freeChunksMutex);
-            for (uint8_t* chunk : chunks)
-                g_freeChunks.push_back(chunk);
-        }
-        std::lock_guard lock(g_worker->mutex);
-        g_worker->presentsDone = frame;
-        g_worker->progress.notify_all();
-    }, true);
+    Push(
+        [present = std::move(present), chunks = std::move(chunks), frame] {
+            present();
+            g_consumerFrame = frame + 1;
+            {
+                std::lock_guard lock(g_freeChunksMutex);
+                for (uint8_t* chunk : chunks)
+                    g_freeChunks.push_back(chunk);
+            }
+            std::lock_guard lock(g_worker->mutex);
+            g_worker->presentsDone = frame;
+            g_worker->progress.notify_all();
+        },
+        true);
     // At most one frame ahead: the next frame may be recorded while the GPU thread records this one.
     uint64_t start = SDL_GetTicksNS();
     std::unique_lock lock(g_worker->mutex);

@@ -75,7 +75,8 @@ namespace datadir
         int rewritten = 0; // launcher.ini values updated
         bool Changed() const { return moved + copied + kept + dropped + failed + rewritten > 0; }
     };
-    MigrationReport Migrate(const OldRoots& old, const std::filesystem::path& root, const MigrationOptions& options = {});
+    MigrationReport Migrate(
+        const OldRoots& old, const std::filesystem::path& root, const MigrationOptions& options = {});
 
     // The old folders of this machine.
     OldRoots RealOldRoots();

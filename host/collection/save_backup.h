@@ -70,8 +70,8 @@ namespace savebackup
     };
     // Keeps the current `file` in <saves>-backup/<time>/<path relative to saveDir>, then rotates. `stamp` empty means
     // now; `rotate` false leaves rotation to the caller (Restore, which may still be reading an old backup).
-    Backup BackupFile(const std::filesystem::path& saveDir, const std::filesystem::path& file, const std::string& stamp = {},
-        bool rotate = true);
+    Backup BackupFile(const std::filesystem::path& saveDir, const std::filesystem::path& file,
+        const std::string& stamp = {}, bool rotate = true);
     // Every file under `saveDir` into one backup folder (Restore's safety copy); returns how many were copied.
     int BackupAll(const std::filesystem::path& saveDir, const std::string& stamp = {}, bool rotate = true);
     // Keeps every file under `folder` (inside `saveDir`) that differs from its newest backup, in one new backup folder:
@@ -101,7 +101,8 @@ namespace savebackup
     };
     // Puts `temp` in place of `target`: syncs it, keeps the old target as a backup when its bytes differ, then renames.
     // An identical `temp` is dropped without a rename or a backup.
-    Commit CommitFile(const std::filesystem::path& temp, const std::filesystem::path& target, const std::filesystem::path& saveDir);
+    Commit CommitFile(
+        const std::filesystem::path& temp, const std::filesystem::path& target, const std::filesystem::path& saveDir);
 
     struct Restore
     {

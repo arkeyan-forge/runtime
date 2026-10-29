@@ -15,16 +15,10 @@ namespace
     constexpr uint64_t LocalXuid = 0xE000000000000001ull; // offline XUIDs live in the 0xE... range
     constexpr const char* ProfileName = "Player";
 
-    bool IsSignedIn(uint32_t userIndex)
-    {
-        return userIndex == 0;
-    }
+    bool IsSignedIn(uint32_t userIndex) { return userIndex == 0; }
 }
 
-PPC_FUNC(__imp__XamUserGetSigninState)
-{
-    ctx.r3.u64 = IsSignedIn(ctx.r3.u32) ? SignedInLocally : 0;
-}
+PPC_FUNC(__imp__XamUserGetSigninState) { ctx.r3.u64 = IsSignedIn(ctx.r3.u32) ? SignedInLocally : 0; }
 
 PPC_FUNC(__imp__XamUserGetXUID)
 {

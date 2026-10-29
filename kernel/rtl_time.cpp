@@ -71,9 +71,9 @@ PPC_FUNC(__imp__RtlTimeFieldsToTime)
 
     static constexpr int DaysInMonth[] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
     bool leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
-    bool valid = year >= 1601 && month >= 1 && month <= 12 && day >= 1
-        && day <= DaysInMonth[month - 1] + (month == 2 && leap) && hour >= 0 && hour < 24 && minute >= 0 && minute < 60
-        && second >= 0 && second < 60 && millisecond >= 0 && millisecond < 1000;
+    bool valid = year >= 1601 && month >= 1 && month <= 12 && day >= 1 &&
+                 day <= DaysInMonth[month - 1] + (month == 2 && leap) && hour >= 0 && hour < 24 && minute >= 0 &&
+                 minute < 60 && second >= 0 && second < 60 && millisecond >= 0 && millisecond < 1000;
     if (!valid)
     {
         ctx.r3.u64 = 0;
@@ -81,6 +81,7 @@ PPC_FUNC(__imp__RtlTimeFieldsToTime)
     }
 
     int64_t milliseconds = ((hour * 60 + minute) * 60 + second) * 1000 + millisecond;
-    g_memory.Write<int64_t>(ctx.r4.u32, DaysFromCivil(year, month, day) * TicksPerDay + milliseconds * TicksPerMillisecond);
+    g_memory.Write<int64_t>(
+        ctx.r4.u32, DaysFromCivil(year, month, day) * TicksPerDay + milliseconds * TicksPerMillisecond);
     ctx.r3.u64 = 1;
 }

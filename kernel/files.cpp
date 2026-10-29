@@ -60,7 +60,8 @@ namespace
     constexpr uint32_t FileNonDirectoryFile = 0x40;
     constexpr uint32_t FileDeleteOnClose = 0x1000;
 
-    constexpr uint32_t WriteAccess = 0x40000000 | 0x10000000 | 0x2 | 0x4; // GENERIC_WRITE | GENERIC_ALL | FILE_WRITE_DATA | FILE_APPEND_DATA
+    constexpr uint32_t WriteAccess =
+        0x40000000 | 0x10000000 | 0x2 | 0x4; // GENERIC_WRITE | GENERIC_ALL | FILE_WRITE_DATA | FILE_APPEND_DATA
 
     constexpr uint32_t FileStandardInformation = 5;
     constexpr uint32_t FileInternalInformation = 6;
@@ -101,10 +102,11 @@ namespace
         bool writable = false;
         bool deleteOnClose = false;
         std::fstream stream; // closed for directories
-        std::vector<std::pair<std::string, uint32_t>> listing; // NtQueryDirectoryFile: names left, then their attributes
+        std::vector<std::pair<std::string, uint32_t>>
+            listing; // NtQueryDirectoryFile: names left, then their attributes
         size_t listed = 0;
         bool listingStarted = false;
-        std::mutex lock;     // guards stream and hostPath
+        std::mutex lock; // guards stream and hostPath
 
         bool OnHost() const { return entry == nullptr; }
 
@@ -297,7 +299,8 @@ namespace
     std::string GuestString(uint32_t ansiString)
     {
         uint16_t length = g_memory.Read<uint16_t>(ansiString);
-        return std::string(static_cast<const char*>(g_memory.Translate(g_memory.Read<uint32_t>(ansiString + 4))), length);
+        return std::string(
+            static_cast<const char*>(g_memory.Translate(g_memory.Read<uint32_t>(ansiString + 4))), length);
     }
 
     // The full guest path named by an OBJECT_ATTRIBUTES (root directory handle + ANSI name).
@@ -428,9 +431,7 @@ namespace
                 return StatusObjectNameCollision;
             information = FileCreated;
             break;
-        case FileOpenIf:
-            information = exists ? FileOpened : FileCreated;
-            break;
+        case FileOpenIf: information = exists ? FileOpened : FileCreated; break;
         case FileOverwrite:
             if (!exists)
                 return StatusObjectNameNotFound;
@@ -442,8 +443,7 @@ namespace
             truncate = exists;
             information = !exists ? FileCreated : disposition == FileSupersede ? FileSuperseded : FileOverwritten;
             break;
-        default:
-            return StatusInvalidParameter;
+        default: return StatusInvalidParameter;
         }
 
         file.writable = (desiredAccess & WriteAccess) != 0;
@@ -473,7 +473,8 @@ namespace
                 return StatusAccessDenied;
         }
 
-        file.stream.open(openPath, std::ios::binary | std::ios::in | (file.writable ? std::ios::out : std::ios::openmode()));
+        file.stream.open(
+            openPath, std::ios::binary | std::ios::in | (file.writable ? std::ios::out : std::ios::openmode()));
         if (!file.stream.is_open() && !file.tempPath.empty())
         {
             std::error_code error;
@@ -495,8 +496,8 @@ namespace
         {
             file->path = path;
             status = location.valid
-                ? OpenHostFile(location.hostPath, desiredAccess, disposition, options, *file, information)
-                : StatusObjectNameInvalid;
+                         ? OpenHostFile(location.hostPath, desiredAccess, disposition, options, *file, information)
+                         : StatusObjectNameInvalid;
         }
         else
         {
@@ -519,9 +520,11 @@ namespace
         // A level or the frontend starts loading (Lux: levels\<name>\mission.str, the hub's mission_stage<n>.str; Giants:
         // level\<name>.arc; Swap Force: archives\common_ents_zone.pak, opened by every zone load, the menu background's
         // too): the loading screen waits here until the pipeline list is built, so the level's first frames build none of it.
-        if (!location.content && (IsGiants() ? (file->path.starts_with("\\level\\") && file->path.ends_with(".arc"))
-            : IsSwapForce() ? file->path == "\\archives\\common_ents_zone.pak"
-            : (file->path.starts_with("\\levels\\") && file->path.ends_with(".str") && file->path.find("\\mission", 8) != std::string::npos)))
+        if (!location.content &&
+            (IsGiants()         ? (file->path.starts_with("\\level\\") && file->path.ends_with(".arc"))
+                : IsSwapForce() ? file->path == "\\archives\\common_ents_zone.pak"
+                                : (file->path.starts_with("\\levels\\") && file->path.ends_with(".str") &&
+                                      file->path.find("\\mission", 8) != std::string::npos)))
             gpu::WaitForPipelineList(file->path.c_str());
         return status;
     }
@@ -579,17 +582,14 @@ fs::path HostFileName(std::string_view name)
     std::u8string result;
     for (char c : name)
     {
-        bool forbidden = static_cast<unsigned char>(c) < 0x20 || static_cast<unsigned char>(c) >= 0x7F
-            || std::string_view("<>:\"/\\|?*").find(c) != std::string_view::npos;
+        bool forbidden = static_cast<unsigned char>(c) < 0x20 || static_cast<unsigned char>(c) >= 0x7F ||
+                         std::string_view("<>:\"/\\|?*").find(c) != std::string_view::npos;
         result += forbidden ? u8'_' : char8_t(c);
     }
     return fs::path(result);
 }
 
-fs::path Utf8Path(std::string_view path)
-{
-    return fs::path(std::u8string(path.begin(), path.end()));
-}
+fs::path Utf8Path(std::string_view path) { return fs::path(std::u8string(path.begin(), path.end())); }
 
 PPC_FUNC(__imp__NtCreateFile)
 {
@@ -636,8 +636,9 @@ PPC_FUNC(__imp__NtReadFile)
             (unsigned long long)position, length, read, ctx.r4.u32, ctx.r5.u32);
     }
 
-    uint32_t status = file->directory ? StatusInvalidDeviceRequest
-        : read == 0 && length != 0 ? StatusEndOfFile : StatusSuccess;
+    uint32_t status = file->directory            ? StatusInvalidDeviceRequest
+                      : read == 0 && length != 0 ? StatusEndOfFile
+                                                 : StatusSuccess;
     CompleteTransfer(ctx, status, read);
 }
 
@@ -762,7 +763,7 @@ PPC_FUNC(__imp__NtQueryInformationFile)
         memset(g_memory.Translate(info), 0, 0x18);
         g_memory.Write<uint64_t>(info + 0x00, attributes->size); // AllocationSize
         g_memory.Write<uint64_t>(info + 0x08, attributes->size); // EndOfFile
-        g_memory.Write<uint32_t>(info + 0x10, 1);                // NumberOfLinks
+        g_memory.Write<uint32_t>(info + 0x10, 1); // NumberOfLinks
         g_memory.Write<uint8_t>(info + 0x14, file->deleteOnClose);
         g_memory.Write<uint8_t>(info + 0x15, attributes->directory);
         size = 0x18;
@@ -810,9 +811,7 @@ PPC_FUNC(__imp__NtSetInformationFile)
     std::lock_guard lock(file->lock);
     switch (infoClass)
     {
-    case FilePositionInformation:
-        file->position = g_memory.Read<uint64_t>(info);
-        break;
+    case FilePositionInformation: file->position = g_memory.Read<uint64_t>(info); break;
     case FileEndOfFileInformation:
         if (!file->writable)
         {
@@ -973,10 +972,7 @@ PPC_FUNC(__imp__ObCreateSymbolicLink)
     ctx.r3.u64 = StatusSuccess;
 }
 
-PPC_FUNC(__imp__ObDeleteSymbolicLink)
-{
-    ctx.r3.u64 = StatusSuccess;
-}
+PPC_FUNC(__imp__ObDeleteSymbolicLink) { ctx.r3.u64 = StatusSuccess; }
 
 namespace
 {
@@ -987,7 +983,7 @@ namespace
         if (*mask == '*')
             return MatchesMask(name, mask + 1) || (*name != '\0' && MatchesMask(name + 1, mask));
         return *name != '\0' && (*mask == '?' || tolower((unsigned char)*mask) == tolower((unsigned char)*name)) &&
-            MatchesMask(name + 1, mask + 1);
+               MatchesMask(name + 1, mask + 1);
     }
 }
 
@@ -1084,10 +1080,7 @@ PPC_FUNC(__imp__NtQueryDirectoryFile)
 // detaching: dismounting succeeds. XAPI calls these when it unmounts a package or the utility drive.
 
 // IoDismountVolume(device object)
-PPC_FUNC(__imp__IoDismountVolume)
-{
-    ctx.r3.u64 = StatusSuccess;
-}
+PPC_FUNC(__imp__IoDismountVolume) { ctx.r3.u64 = StatusSuccess; }
 
 // IoDismountVolumeByFileHandle(handle)
 PPC_FUNC(__imp__IoDismountVolumeByFileHandle)
@@ -1096,10 +1089,7 @@ PPC_FUNC(__imp__IoDismountVolumeByFileHandle)
 }
 
 // FscSetCacheElementCount(0, count): the size of the console's file system cache, in 4 KB elements. The host caches.
-PPC_FUNC(__imp__FscSetCacheElementCount)
-{
-    ctx.r3.u64 = StatusSuccess;
-}
+PPC_FUNC(__imp__FscSetCacheElementCount) { ctx.r3.u64 = StatusSuccess; }
 
 // NtDeviceIoControlFile(handle, event, apc routine, apc context, io status, control code, input, input length, output
 // and output length on the stack): no device here takes I/O controls. Swap Force's only codes are XAPI's

@@ -35,10 +35,7 @@ namespace
 {
     namespace fs = std::filesystem;
 
-    fs::path FromUtf8(const char* text)
-    {
-        return fs::path(std::u8string(reinterpret_cast<const char8_t*>(text)));
-    }
+    fs::path FromUtf8(const char* text) { return fs::path(std::u8string(reinterpret_cast<const char8_t*>(text))); }
 
     std::string ToUtf8(const fs::path& path)
     {
@@ -89,7 +86,8 @@ bool DiscFileSystem::Open(const char* isoPath)
     for (uint64_t offset : PartitionOffsets)
     {
         char magic[20];
-        if (PlatformReadFile(m_file, magic, sizeof(magic), offset + 32 * SectorSize) == sizeof(magic) && memcmp(magic, Magic, sizeof(magic)) == 0)
+        if (PlatformReadFile(m_file, magic, sizeof(magic), offset + 32 * SectorSize) == sizeof(magic) &&
+            memcmp(magic, Magic, sizeof(magic)) == 0)
         {
             uint32_t root[2]; // sector, size (little-endian on disc)
             PlatformReadFile(m_file, root, sizeof(root), offset + 32 * SectorSize + 20);

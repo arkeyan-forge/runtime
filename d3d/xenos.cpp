@@ -28,38 +28,60 @@ namespace d3d::xenos
             /* 8 k_8_A */ { RenderFormat::R8_UNORM, 1, 1, false },
             /* 9 k_8_B */ Unsupported,
             /* 10 k_8_8 */ { RenderFormat::R8G8_UNORM, 2, 1, false },
-            /* 11 */ Unsupported, /* 12 */ Unsupported, /* 13 */ Unsupported,
+            /* 11 */ Unsupported,
+            /* 12 */ Unsupported,
+            /* 13 */ Unsupported,
             /* 14 k_8_8_8_8_A */ { RenderFormat::R8G8B8A8_UNORM, 4, 1, false },
             /* 15 k_4_4_4_4 */ { RenderFormat::R8G8B8A8_UNORM, 2, 1, true },
-            /* 16 k_10_11_11 */ Unsupported, /* 17 k_11_11_10 */ Unsupported,
+            /* 16 k_10_11_11 */ Unsupported,
+            /* 17 k_11_11_10 */ Unsupported,
             /* 18 k_DXT1 */ { RenderFormat::BC1_UNORM, 8, 4, false },
             /* 19 k_DXT2_3 */ { RenderFormat::BC2_UNORM, 16, 4, false },
             /* 20 k_DXT4_5 */ { RenderFormat::BC3_UNORM, 16, 4, false },
             /* 21 */ Unsupported,
-            /* 22 k_24_8 */ Unsupported, /* 23 k_24_8_FLOAT */ Unsupported,
+            /* 22 k_24_8 */ Unsupported,
+            /* 23 k_24_8_FLOAT */ Unsupported,
             /* 24 k_16 */ { RenderFormat::R16_UNORM, 2, 1, false },
             /* 25 k_16_16 */ { RenderFormat::R16G16_UNORM, 4, 1, false },
             /* 26 k_16_16_16_16 */ { RenderFormat::R16G16B16A16_UNORM, 8, 1, false },
-            /* 27 */ Unsupported, /* 28 */ Unsupported, /* 29 */ Unsupported,
+            /* 27 */ Unsupported,
+            /* 28 */ Unsupported,
+            /* 29 */ Unsupported,
             /* 30 k_16_FLOAT */ { RenderFormat::R16_FLOAT, 2, 1, false },
             /* 31 k_16_16_FLOAT */ { RenderFormat::R16G16_FLOAT, 4, 1, false },
             /* 32 k_16_16_16_16_FLOAT */ { RenderFormat::R16G16B16A16_FLOAT, 8, 1, false },
-            /* 33 k_32 */ Unsupported, /* 34 k_32_32 */ Unsupported, /* 35 k_32_32_32_32 */ Unsupported,
+            /* 33 k_32 */ Unsupported,
+            /* 34 k_32_32 */ Unsupported,
+            /* 35 k_32_32_32_32 */ Unsupported,
             /* 36 k_32_FLOAT */ { RenderFormat::R32_FLOAT, 4, 1, false },
             /* 37 k_32_32_FLOAT */ { RenderFormat::R32G32_FLOAT, 8, 1, false },
             /* 38 k_32_32_32_32_FLOAT */ { RenderFormat::R32G32B32A32_FLOAT, 16, 1, false },
-            /* 39-48 */ Unsupported, Unsupported, Unsupported, Unsupported, Unsupported, Unsupported, Unsupported,
-            Unsupported, Unsupported, Unsupported,
+            /* 39-48 */ Unsupported,
+            Unsupported,
+            Unsupported,
+            Unsupported,
+            Unsupported,
+            Unsupported,
+            Unsupported,
+            Unsupported,
+            Unsupported,
+            Unsupported,
             /* 49 k_DXN */ { RenderFormat::BC5_UNORM, 16, 4, false },
             /* 50 k_8_8_8_8_AS_16_16_16_16 */ { RenderFormat::R8G8B8A8_UNORM, 4, 1, false },
             /* 51 k_DXT1_AS_16_16_16_16 */ { RenderFormat::BC1_UNORM, 8, 4, false },
             /* 52 k_DXT2_3_AS_16_16_16_16 */ { RenderFormat::BC2_UNORM, 16, 4, false },
             /* 53 k_DXT4_5_AS_16_16_16_16 */ { RenderFormat::BC3_UNORM, 16, 4, false },
-            /* 54 k_2_10_10_10_AS_16_16_16_16 */ { RenderFormat::R16G16B16A16_UNORM, 4, 1, false }, // resolve targets only
-            /* 55-58 */ Unsupported, Unsupported, Unsupported, Unsupported,
+            /* 54 k_2_10_10_10_AS_16_16_16_16 */
+            { RenderFormat::R16G16B16A16_UNORM, 4, 1, false }, // resolve targets only
+            /* 55-58 */ Unsupported,
+            Unsupported,
+            Unsupported,
+            Unsupported,
             /* 59 k_DXT5A */ { RenderFormat::BC4_UNORM, 8, 4, false },
             /* 60 k_CTX1 */ Unsupported,
-            /* 61-63 */ Unsupported, Unsupported, Unsupported,
+            /* 61-63 */ Unsupported,
+            Unsupported,
+            Unsupported,
         };
         return Table[format & 63];
     }
@@ -151,7 +173,8 @@ namespace d3d::xenos
             // The base takes its pitch from the fetch constant (linear rows are 256-byte aligned).
             out.address = fetch.BaseAddress();
             uint32_t pitchBlocks = std::max(fetch.Pitch(), width) / info.blockWidth;
-            out.pitchBlocks = fetch.Tiled() ? AlignUp(pitchBlocks, 32) : AlignUp(pitchBlocks * info.blockBytes, 256) / info.blockBytes;
+            out.pitchBlocks = fetch.Tiled() ? AlignUp(pitchBlocks, 32)
+                                            : AlignUp(pitchBlocks * info.blockBytes, 256) / info.blockBytes;
             uint32_t rows = (packedLevel == 0 ? 1u << Log2Ceil(height) : height) + info.blockWidth - 1;
             out.sliceBytes = AlignUp(out.pitchBlocks * info.blockBytes * AlignUp(rows / info.blockWidth, 32), 4096);
             return out;
@@ -180,7 +203,7 @@ namespace d3d::xenos
         uint32_t bank = (y >> 4) & 1;
         uint32_t pipe = ((x >> 3) & 3) ^ (((y >> 3) & 1) << 1);
         return ((y & 1) << 4) | (pipe << 6) | (bank << 11) | (bytes & 15) | (((bytes >> 4) & 1) << 5) |
-            (((bytes >> 5) & 7) << 8) | ((bytes >> 8) << 12);
+               (((bytes >> 5) & 7) << 8) | ((bytes >> 8) << 12);
     }
 
     void SwapEndian(void* data, uint64_t size, uint32_t endian)
@@ -247,19 +270,19 @@ namespace d3d::xenos
         case 0x2C23A5: return { RenderFormat::R32G32_FLOAT, 8, false };       // FLOAT2
         case 0x2A23B9: return { RenderFormat::R32G32B32_FLOAT, 12, false };   // FLOAT3
         case 0x1A23A6: return { RenderFormat::R32G32B32A32_FLOAT, 16, false }; // FLOAT4
-        case 0x182886: return { RenderFormat::B8G8R8A8_UNORM, 4, false };     // D3DCOLOR (stored ARGB, swizzled to RGBA)
-        case 0x1A2286: return { RenderFormat::R8G8B8A8_UINT, 4, false };      // UBYTE4
-        case 0x1A2086: return { RenderFormat::R8G8B8A8_UNORM, 4, false };     // UBYTE4N
-        case 0x2C2359: return { RenderFormat::R16G16_SINT, 4, false };        // SHORT2
-        case 0x1A235A: return { RenderFormat::R16G16B16A16_SINT, 8, false };  // SHORT4
-        case 0x2C2159: return { RenderFormat::R16G16_SNORM, 4, false };       // SHORT2N
+        case 0x182886: return { RenderFormat::B8G8R8A8_UNORM, 4, false }; // D3DCOLOR (stored ARGB, swizzled to RGBA)
+        case 0x1A2286: return { RenderFormat::R8G8B8A8_UINT, 4, false }; // UBYTE4
+        case 0x1A2086: return { RenderFormat::R8G8B8A8_UNORM, 4, false }; // UBYTE4N
+        case 0x2C2359: return { RenderFormat::R16G16_SINT, 4, false }; // SHORT2
+        case 0x1A235A: return { RenderFormat::R16G16B16A16_SINT, 8, false }; // SHORT4
+        case 0x2C2159: return { RenderFormat::R16G16_SNORM, 4, false }; // SHORT2N
         case 0x1A215A: return { RenderFormat::R16G16B16A16_SNORM, 8, false }; // SHORT4N
-        case 0x2C2059: return { RenderFormat::R16G16_UNORM, 4, false };       // USHORT2N
+        case 0x2C2059: return { RenderFormat::R16G16_UNORM, 4, false }; // USHORT2N
         case 0x1A205A: return { RenderFormat::R16G16B16A16_UNORM, 8, false }; // USHORT4N
-        case 0x2C235F: return { RenderFormat::R16G16_FLOAT, 4, false };       // FLOAT16_2
+        case 0x2C235F: return { RenderFormat::R16G16_FLOAT, 4, false }; // FLOAT16_2
         case 0x1A2360: return { RenderFormat::R16G16B16A16_FLOAT, 8, false }; // FLOAT16_4
-        case 0x2A2187: return { RenderFormat::R32_UINT, 4, true };            // DEC3N
-        case 0x2A2287: return { RenderFormat::R32_UINT, 4, true };            // UDEC3
+        case 0x2A2187: return { RenderFormat::R32_UINT, 4, true }; // DEC3N
+        case 0x2A2287: return { RenderFormat::R32_UINT, 4, true }; // UDEC3
         default: return { RenderFormat::UNKNOWN, 0, false };
         }
     }
@@ -278,8 +301,10 @@ namespace d3d::xenos
         case 9: return RenderBlend::INV_DEST_COLOR;
         case 10: return RenderBlend::DEST_ALPHA;
         case 11: return RenderBlend::INV_DEST_ALPHA;
-        case 12: case 14: return RenderBlend::BLEND_FACTOR;
-        case 13: case 15: return RenderBlend::INV_BLEND_FACTOR;
+        case 12:
+        case 14: return RenderBlend::BLEND_FACTOR;
+        case 13:
+        case 15: return RenderBlend::INV_BLEND_FACTOR;
         case 16: return RenderBlend::SRC_ALPHA_SAT;
         default: return RenderBlend::ONE;
         }
@@ -299,17 +324,18 @@ namespace d3d::xenos
 
     RenderComparisonFunction Compare(uint32_t function)
     {
-        static const RenderComparisonFunction Table[8] = { RenderComparisonFunction::NEVER, RenderComparisonFunction::LESS,
-            RenderComparisonFunction::EQUAL, RenderComparisonFunction::LESS_EQUAL, RenderComparisonFunction::GREATER,
-            RenderComparisonFunction::NOT_EQUAL, RenderComparisonFunction::GREATER_EQUAL, RenderComparisonFunction::ALWAYS };
+        static const RenderComparisonFunction Table[8] = { RenderComparisonFunction::NEVER,
+            RenderComparisonFunction::LESS, RenderComparisonFunction::EQUAL, RenderComparisonFunction::LESS_EQUAL,
+            RenderComparisonFunction::GREATER, RenderComparisonFunction::NOT_EQUAL,
+            RenderComparisonFunction::GREATER_EQUAL, RenderComparisonFunction::ALWAYS };
         return Table[function & 7];
     }
 
     RenderStencilOp StencilOp(uint32_t op)
     {
-        static const RenderStencilOp Table[8] = { RenderStencilOp::KEEP, RenderStencilOp::ZERO, RenderStencilOp::REPLACE,
-            RenderStencilOp::INCREMENT_AND_CLAMP, RenderStencilOp::DECREMENT_AND_CLAMP, RenderStencilOp::INVERT,
-            RenderStencilOp::INCREMENT_AND_WRAP, RenderStencilOp::DECREMENT_AND_WRAP };
+        static const RenderStencilOp Table[8] = { RenderStencilOp::KEEP, RenderStencilOp::ZERO,
+            RenderStencilOp::REPLACE, RenderStencilOp::INCREMENT_AND_CLAMP, RenderStencilOp::DECREMENT_AND_CLAMP,
+            RenderStencilOp::INVERT, RenderStencilOp::INCREMENT_AND_WRAP, RenderStencilOp::DECREMENT_AND_WRAP };
         return Table[op & 7];
     }
 
@@ -319,7 +345,9 @@ namespace d3d::xenos
         {
         case 0: return RenderTextureAddressMode::WRAP;
         case 1: return RenderTextureAddressMode::MIRROR;
-        case 3: case 5: case 7: return RenderTextureAddressMode::MIRROR_ONCE;
+        case 3:
+        case 5:
+        case 7: return RenderTextureAddressMode::MIRROR_ONCE;
         case 6: return RenderTextureAddressMode::BORDER;
         default: return RenderTextureAddressMode::CLAMP;
         }

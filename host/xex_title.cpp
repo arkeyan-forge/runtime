@@ -69,7 +69,8 @@ TitleMetadata ReadTitleMetadata(const std::vector<uint8_t>& xex)
         uint32_t address = ReadBE32(resource + 8);
         uint32_t size = ReadBE32(resource + 12);
         Image image = Image::ParseImage(xex.data(), xex.size());
-        if (image.data == nullptr || address < image.base || address - image.base > image.size || size > image.size - (address - image.base))
+        if (image.data == nullptr || address < image.base || address - image.base > image.size ||
+            size > image.size - (address - image.base))
             break;
 
         XDBFWrapper xdbf(image.data.get() + (address - image.base), size);

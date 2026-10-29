@@ -55,7 +55,8 @@ namespace
 #else
     int OpenFile(const std::string& path, bool write)
     {
-        return write ? open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644) : open(path.c_str(), O_RDONLY | O_CLOEXEC);
+        return write ? open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644)
+                     : open(path.c_str(), O_RDONLY | O_CLOEXEC);
     }
 #endif
 
@@ -65,7 +66,8 @@ namespace
     void Mirror(int terminal, int file)
     {
 #ifdef _WIN32
-        HANDLE input = reinterpret_cast<HANDLE>(_get_osfhandle(file)), output = reinterpret_cast<HANDLE>(_get_osfhandle(terminal));
+        HANDLE input = reinterpret_cast<HANDLE>(_get_osfhandle(file)),
+               output = reinterpret_cast<HANDLE>(_get_osfhandle(terminal));
 #endif
         char buffer[4096];
         while (true)
@@ -90,15 +92,17 @@ namespace
         std::string name = "Windows";
         HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
         using RtlGetVersion = LONG(WINAPI*)(OSVERSIONINFOW*);
-        if (auto get = ntdll != nullptr ? reinterpret_cast<RtlGetVersion>(GetProcAddress(ntdll, "RtlGetVersion")) : nullptr)
+        if (auto get =
+                ntdll != nullptr ? reinterpret_cast<RtlGetVersion>(GetProcAddress(ntdll, "RtlGetVersion")) : nullptr)
         {
             OSVERSIONINFOW info{ sizeof(info) };
             if (get(&info) == 0)
-                name += " " + std::to_string(info.dwMajorVersion) + "." + std::to_string(info.dwMinorVersion) + " build " +
-                    std::to_string(info.dwBuildNumber);
+                name += " " + std::to_string(info.dwMajorVersion) + "." + std::to_string(info.dwMinorVersion) +
+                        " build " + std::to_string(info.dwBuildNumber);
         }
         using WineGetVersion = const char*(CDECL*)();
-        if (auto wine = ntdll != nullptr ? reinterpret_cast<WineGetVersion>(GetProcAddress(ntdll, "wine_get_version")) : nullptr)
+        if (auto wine = ntdll != nullptr ? reinterpret_cast<WineGetVersion>(GetProcAddress(ntdll, "wine_get_version"))
+                                         : nullptr)
             name += std::string(" (Wine ") + wine() + ")";
         return name;
 #else
@@ -123,7 +127,8 @@ namespace
         unsigned int registers[12] = {};
         unsigned int highest = __get_cpuid_max(0x80000000, nullptr);
         for (unsigned int i = 0; i < 3 && highest >= 0x80000004; i++)
-            __get_cpuid(0x80000002 + i, &registers[i * 4], &registers[i * 4 + 1], &registers[i * 4 + 2], &registers[i * 4 + 3]);
+            __get_cpuid(
+                0x80000002 + i, &registers[i * 4], &registers[i * 4 + 1], &registers[i * 4 + 2], &registers[i * 4 + 3]);
         name.assign(reinterpret_cast<const char*>(registers), sizeof(registers));
         name = name.c_str();
 #elif defined(__APPLE__)
@@ -137,16 +142,15 @@ namespace
     }
 }
 
-std::string LogPath()
-{
-    return g_path;
-}
+std::string LogPath() { return g_path; }
 
 std::string PreviousLogPath()
 {
     if (g_path.empty())
         return {};
-    return g_path.size() > 4 && g_path.substr(g_path.size() - 4) == ".log" ? g_path.substr(0, g_path.size() - 4) + ".prev.log" : g_path + ".prev";
+    return g_path.size() > 4 && g_path.substr(g_path.size() - 4) == ".log"
+               ? g_path.substr(0, g_path.size() - 4) + ".prev.log"
+               : g_path + ".prev";
 }
 
 void LogInit()
@@ -163,7 +167,8 @@ void LogInit()
         return;
 
     std::string previous = g_path.size() > 4 && g_path.substr(g_path.size() - 4) == ".log"
-        ? g_path.substr(0, g_path.size() - 4) + ".prev.log" : g_path + ".prev";
+                               ? g_path.substr(0, g_path.size() - 4) + ".prev.log"
+                               : g_path + ".prev";
     SDL_PathInfo info;
     if (SDL_GetPathInfo(g_path.c_str(), &info))
         SDL_RenamePath(g_path.c_str(), previous.c_str());

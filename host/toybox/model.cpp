@@ -23,18 +23,34 @@ namespace toybox
         constexpr uint64_t PinHoldTime = 600'000'000; // wheel: X held on a place
 
         // The Figure page's actions: the main ones, then More (the others) and Details (the file, the toy's numbers).
-        enum class Action { PutOn, TakeOff, Unlock, EditStats, ChangeHalf, Rename, Favourite, Wheel, Pin, Duplicate, BackUp, Restore, Reset, Delete, More, Details };
-
-        std::string FileName(const std::string& path)
+        enum class Action
         {
-            return path.substr(path.find_last_of("/\\") + 1);
-        }
+            PutOn,
+            TakeOff,
+            Unlock,
+            EditStats,
+            ChangeHalf,
+            Rename,
+            Favourite,
+            Wheel,
+            Pin,
+            Duplicate,
+            BackUp,
+            Restore,
+            Reset,
+            Delete,
+            More,
+            Details
+        };
+
+        std::string FileName(const std::string& path) { return path.substr(path.find_last_of("/\\") + 1); }
 
         bool PlayerSeat(const SeatState& s) { return s.seat.player > 0 && s.seat.id.rfind("p", 0) == 0; }
 
         bool KeepsProgress(const Figure& f)
         {
-            return f.toy == nullptr || f.toy->category <= Category::Mini || f.toy->category == Category::CreationCrystal;
+            return f.toy == nullptr || f.toy->category <= Category::Mini ||
+                   f.toy->category == Category::CreationCrystal;
         }
 
         std::string LockOwner(const LockInfo& lock)
@@ -105,16 +121,18 @@ namespace toybox
 
     std::string ElementLabel(Element element)
     {
-        static const char* const English[] = { "Air", "Earth", "Fire", "Water", "Magic", "Tech", "Life", "Undead", "Light", "Dark", "None" };
-        static const char* const France[] = { "Air", "Terre", "Feu", "Eau", "Magie", "Tech", "Vie", "Mort-vivant", "Lumière", "Ténèbres", "Aucun" };
+        static const char* const English[] = { "Air", "Earth", "Fire", "Water", "Magic", "Tech", "Life", "Undead",
+            "Light", "Dark", "None" };
+        static const char* const France[] = { "Air", "Terre", "Feu", "Eau", "Magie", "Tech", "Vie", "Mort-vivant",
+            "Lumière", "Ténèbres", "Aucun" };
         return element < Element::Count ? (French() ? France : English)[size_t(element)] : "";
     }
 
     std::string CategoryLabel(Category category)
     {
-        static const char* const France[] = { "Skylanders", "Géants", "Swap Force (haut)", "Swap Force (bas)", "Maîtres des pièges",
-            "SuperChargers", "Senseis", "Minis et acolytes", "Pièges", "Méchants", "Véhicules", "Cristaux de création",
-            "Objets magiques", "Packs d'aventure", "Trophées" };
+        static const char* const France[] = { "Skylanders", "Géants", "Swap Force (haut)", "Swap Force (bas)",
+            "Maîtres des pièges", "SuperChargers", "Senseis", "Minis et acolytes", "Pièges", "Méchants", "Véhicules",
+            "Cristaux de création", "Objets magiques", "Packs d'aventure", "Trophées" };
         static_assert(std::size(France) == size_t(Category::Count));
         if (category >= Category::Count)
             return "";
@@ -125,8 +143,9 @@ namespace toybox
 
     std::string VariantLabel(VariantKind kind)
     {
-        static const char* const France[] = { "Standard", "Légendaire", "Sombre", "Cristal", "Phosphorescent", "Métallisé", "Or",
-            "Argent", "Chrome", "Floqué", "Séries", "LightCore", "Élite d'Eon", "Autre déco", "Événement", "Forme de piège", "Autre" };
+        static const char* const France[] = { "Standard", "Légendaire", "Sombre", "Cristal", "Phosphorescent",
+            "Métallisé", "Or", "Argent", "Chrome", "Floqué", "Séries", "LightCore", "Élite d'Eon", "Autre déco",
+            "Événement", "Forme de piège", "Autre" };
         static_assert(std::size(France) == size_t(VariantKind::Count));
         return kind < VariantKind::Count ? (French() ? France[size_t(kind)] : VariantKindName(kind)) : "";
     }
@@ -205,24 +224,27 @@ namespace toybox
             int moved = tidied;
             tidied = 0;
             char text[256];
-            snprintf(text, sizeof(text), L("%d blank figures moved to the trash.", "%d figurines vierges mises à la corbeille."), moved);
-            Ask({ L("After the update", "Après la mise à jour"), text, { "OK", L("Put them back", "Les remettre") }, 0, false, [this](int choice) {
-                if (choice != 1)
-                    return;
-                int back = 0;
-                for (const TrashEntry& entry : Trash())
-                {
-                    if (entry.reason == "tidy" && !Undelete(entry.id).empty())
-                        back++;
-                }
-                Reload();
-                BuildList();
-                char done[96];
-                snprintf(done, sizeof(done), L("%d figures put back", "%d figurines remises"), back);
-                Toast(done);
-            } });
+            snprintf(text, sizeof(text),
+                L("%d blank figures moved to the trash.", "%d figurines vierges mises à la corbeille."), moved);
+            Ask({ L("After the update", "Après la mise à jour"), text, { "OK", L("Put them back", "Les remettre") }, 0,
+                false, [this](int choice) {
+                    if (choice != 1)
+                        return;
+                    int back = 0;
+                    for (const TrashEntry& entry : Trash())
+                    {
+                        if (entry.reason == "tidy" && !Undelete(entry.id).empty())
+                            back++;
+                    }
+                    Reload();
+                    BuildList();
+                    char done[96];
+                    snprintf(done, sizeof(done), L("%d figures put back", "%d figurines remises"), back);
+                    Toast(done);
+                } });
         }
-        fprintf(stderr, "[toybox] open (%d figures, %s)\n", int(figures.size()), realPortal ? "real portal" : "emulated portal");
+        fprintf(stderr, "[toybox] open (%d figures, %s)\n", int(figures.size()),
+            realPortal ? "real portal" : "emulated portal");
         fprintf(stderr, "[toybox] %d cards (a swapper is one)\n", int(collection::Cards(figures).size()));
         m_dirty = true;
     }
@@ -331,7 +353,8 @@ namespace toybox
             {
                 paths[i] = "physical";
                 const Toy* toy = s.physicalKnown ? Catalogue::Get().Find(s.physicalType) : nullptr;
-                names[i] = s.physicalKnown ? Catalogue::Get().Describe(toy, s.physicalVariant).name : L("reading...", "lecture...");
+                names[i] = s.physicalKnown ? Catalogue::Get().Describe(toy, s.physicalVariant).name
+                                           : L("reading...", "lecture...");
             }
             else if (!s.path.empty())
             {
@@ -349,17 +372,15 @@ namespace toybox
         return index >= 0 ? collection::CardOf(figures, size_t(index)) : Card{ &f, nullptr };
     }
 
-    bool Model::CardBusy(const Figure& f) const
-    {
-        return CardFor(f).Busy();
-    }
+    bool Model::CardBusy(const Figure& f) const { return CardFor(f).Busy(); }
 
     // The game asked for this seat while the figure it had taken was still on it (or said the Skylander died): that figure
     // is out of health and cannot play again before the next level. A figure placed a moment ago (`waiting`: the title has
     // not read it yet) is not the one the game gave up on.
     bool Model::MarkOutOfHealth(int seatIndex, bool certain)
     {
-        if (seatIndex < 0 || seatIndex >= int(seats.size()) || seats[seatIndex].path.empty() || seats[seatIndex].physical)
+        if (seatIndex < 0 || seatIndex >= int(seats.size()) || seats[seatIndex].path.empty() ||
+            seats[seatIndex].physical)
             return false;
         const SeatState& s = seats[seatIndex];
         if (s.waiting && !certain)
@@ -369,7 +390,8 @@ namespace toybox
         if (!s.path2.empty())
             outOfHealth.insert(s.path2);
         char text[160];
-        snprintf(text, sizeof(text), L("%s is out of health: pick another one.", "%s n'a plus de vie : choisis-en un autre."),
+        snprintf(text, sizeof(text),
+            L("%s is out of health: pick another one.", "%s n'a plus de vie : choisis-en un autre."),
             f != nullptr ? FigureName(*f).c_str() : s.path.c_str());
         Toast(text, 5);
         Touch();
@@ -391,7 +413,8 @@ namespace toybox
         if (f.toy == nullptr && f.label.empty())
         {
             char text[64];
-            snprintf(text, sizeof(text), L("Unknown toy %u (variant %04X)", "Jouet inconnu %u (variante %04X)"), f.type, f.variant);
+            snprintf(text, sizeof(text), L("Unknown toy %u (variant %04X)", "Jouet inconnu %u (variante %04X)"), f.type,
+                f.variant);
             return text;
         }
         std::string name = collection::NameIn(f, game);
@@ -442,7 +465,8 @@ namespace toybox
                 for (SeatState& s : seats)
                 {
                     bool fits = toy == nullptr ? PlayerSeat(s)
-                        : std::find(s.seat.accepts.begin(), s.seat.accepts.end(), toy->category) != s.seat.accepts.end();
+                                               : std::find(s.seat.accepts.begin(), s.seat.accepts.end(),
+                                                     toy->category) != s.seat.accepts.end();
                     if (s.physical || !fits)
                         continue;
                     s.physical = true;
@@ -451,8 +475,11 @@ namespace toybox
                     s.physicalType = type;
                     s.physicalVariant = known ? figures::Variant(seen.data) : 0;
                     figures::FigureStats st;
-                    bool progress = (seen.blocks & 0x1FF00) == 0x1FF00 || (seen.blocks & (uint64_t(0x1FF) << 36)) == (uint64_t(0x1FF) << 36);
-                    s.physicalLevel = progress && figures::ReadStats(seen.data, st) == figures::AreaState::Valid ? figures::LevelForExperience(figures::TotalExperience(st), LevelCap()) : 0;
+                    bool progress = (seen.blocks & 0x1FF00) == 0x1FF00 ||
+                                    (seen.blocks & (uint64_t(0x1FF) << 36)) == (uint64_t(0x1FF) << 36);
+                    s.physicalLevel = progress && figures::ReadStats(seen.data, st) == figures::AreaState::Valid
+                                          ? figures::LevelForExperience(figures::TotalExperience(st), LevelCap())
+                                          : 0;
                     s.physicalGold = s.physicalLevel > 0 ? st.gold : 0;
                     break;
                 }
@@ -543,8 +570,9 @@ namespace toybox
                 s.waiting = false;
                 s.late = false;
                 const Figure* f = SeatFigure(int(i));
-                fprintf(stderr, "[toybox] %s: the game took %s (slot %d, %.1f s after the change)\n", SeatTag(int(i)).c_str(),
-                    f != nullptr ? FigureName(*f).c_str() : FileName(s.path).c_str(), s.slot, double(seen.lastRead - s.placedAt) / 1e9);
+                fprintf(stderr, "[toybox] %s: the game took %s (slot %d, %.1f s after the change)\n",
+                    SeatTag(int(i)).c_str(), f != nullptr ? FigureName(*f).c_str() : FileName(s.path).c_str(), s.slot,
+                    double(seen.lastRead - s.placedAt) / 1e9);
                 m_dirty = true;
             }
             else if (!s.late && now - s.placedAt > LateAfter)
@@ -555,7 +583,8 @@ namespace toybox
                 snprintf(text, sizeof(text), L("The game has not taken %s yet", "Le jeu n'a pas encore pris %s"),
                     f != nullptr ? FigureName(*f).c_str() : "?");
                 Toast(text, 5);
-                fprintf(stderr, "[toybox] %s: not read by the game after 20 s (slot %d)\n", SeatTag(int(i)).c_str(), s.slot);
+                fprintf(stderr, "[toybox] %s: not read by the game after 20 s (slot %d)\n", SeatTag(int(i)).c_str(),
+                    s.slot);
             }
         }
     }
@@ -576,7 +605,8 @@ namespace toybox
         // players in slot order, finds player 1 below player 2 whichever was put on first. A game with swappers gives a
         // player two places (top, bottom): P1 0-1, P2 2-3, then one for each shared seat; the others one per seat.
         bool swappers = std::any_of(seats.begin(), seats.end(), [](const SeatState& s) {
-            return std::find(s.seat.accepts.begin(), s.seat.accepts.end(), Category::SwapTop) != s.seat.accepts.end(); });
+            return std::find(s.seat.accepts.begin(), s.seat.accepts.end(), Category::SwapTop) != s.seat.accepts.end();
+        });
         int preferred = seatIndex;
         if (swappers)
         {
@@ -642,7 +672,9 @@ namespace toybox
     {
         if (realPortal)
         {
-            Toast(L("Real portal: use the virtual portal to play it", "Portail réel : utilise le portail virtuel pour la jouer"), 5);
+            Toast(L("Real portal: use the virtual portal to play it",
+                      "Portail réel : utilise le portail virtuel pour la jouer"),
+                5);
             return false;
         }
         int index = FindFigure(path);
@@ -683,8 +715,12 @@ namespace toybox
                 }
                 std::string question = FigureName(f) + L(" plays as ", " joue en ") + SeatLabel(other) + ".";
                 Ask({ L("Swap players?", "Échanger les joueurs ?"), question,
-                    { L("Swap ", "Échanger ") + SeatTag(other) + L(" and ", " et ") + SeatTag(seatIndex), L("Cancel", "Annuler") }, 0, false,
-                    [this](int choice) { if (choice == 0) SwapPlayers(); } });
+                    { L("Swap ", "Échanger ") + SeatTag(other) + L(" and ", " et ") + SeatTag(seatIndex),
+                        L("Cancel", "Annuler") },
+                    0, false, [this](int choice) {
+                        if (choice == 0)
+                            SwapPlayers();
+                    } });
                 return false;
             }
             RemoveFromPortal(other);
@@ -709,12 +745,14 @@ namespace toybox
         target.late = false;
 
         int was = FindFigure(before);
-        std::string text = SeatTag(seatIndex) + ": " + (was >= 0 ? FigureName(figures[was]) + " → " : "") + FigureName(f);
+        std::string text =
+            SeatTag(seatIndex) + ": " + (was >= 0 ? FigureName(figures[was]) + " → " : "") + FigureName(f);
         Toast(text);
-        fprintf(stderr, "[toybox] %s: %s on slot %d%s\n", SeatTag(seatIndex).c_str(), FigureName(f).c_str(), target.slot,
-            target.slot2 >= 0 ? (" and slot " + std::to_string(target.slot2) + " (bottom)").c_str() : "");
-        std::string keep = list.cells.empty() || list.cells[list.cursor].kind != Cell::Kind::Figure ? cardPath
-            : figures[list.cells[list.cursor].figure].path;
+        fprintf(stderr, "[toybox] %s: %s on slot %d%s\n", SeatTag(seatIndex).c_str(), FigureName(f).c_str(),
+            target.slot, target.slot2 >= 0 ? (" and slot " + std::to_string(target.slot2) + " (bottom)").c_str() : "");
+        std::string keep = list.cells.empty() || list.cells[list.cursor].kind != Cell::Kind::Figure
+                               ? cardPath
+                               : figures[list.cells[list.cursor].figure].path;
         Reload();
         BuildList();
         Refocus(keep);
@@ -828,22 +866,26 @@ namespace toybox
         buttons.push_back(L("Manage the collection", "Gérer la collection"));
         ids.push_back(6);
         Ask({ SeatLabel(seatIndex), {}, buttons, 0, false, [this, ids, seatIndex](int choice) {
-            if (choice < 0)
-                return;
-            switch (ids[choice])
-            {
-            case 0: TakeOff(seatIndex); break;
-            case 1: SwapPlayers(); break;
-            case 2: OpenFigure(FindFigure(seats[seatIndex].path)); break;
-            case 3: PutOn(seatIndex, seats[seatIndex].previous); break;
-            case 4:
-                Ask({ L("Clear the portal", "Vider le portail"), L("Take every figure off the portal?", "Retirer toutes les figurines du portail ?"),
-                    { L("Clear", "Vider"), L("Cancel", "Annuler") }, 1, false, [this](int c) { if (c == 0) ClearPortal(); } });
-                break;
-            case 5: SaveCopy(seatIndex); break;
-            case 6: OpenManage(); break;
-            }
-        } });
+                 if (choice < 0)
+                     return;
+                 switch (ids[choice])
+                 {
+                 case 0: TakeOff(seatIndex); break;
+                 case 1: SwapPlayers(); break;
+                 case 2: OpenFigure(FindFigure(seats[seatIndex].path)); break;
+                 case 3: PutOn(seatIndex, seats[seatIndex].previous); break;
+                 case 4:
+                     Ask({ L("Clear the portal", "Vider le portail"),
+                         L("Take every figure off the portal?", "Retirer toutes les figurines du portail ?"),
+                         { L("Clear", "Vider"), L("Cancel", "Annuler") }, 1, false, [this](int c) {
+                             if (c == 0)
+                                 ClearPortal();
+                         } });
+                     break;
+                 case 5: SaveCopy(seatIndex); break;
+                 case 6: OpenManage(); break;
+                 }
+             } });
     }
 
     void Model::SaveCopy(int seatIndex)
@@ -863,7 +905,8 @@ namespace toybox
         for (size_t block = 0; block < FigureBlockCount; block++)
         {
             if (block % 4 != 3 && (seen.blocks >> block & 1) != 0)
-                memcpy(tag.data() + block * FigureBlockSize, seen.data.data() + block * FigureBlockSize, FigureBlockSize);
+                memcpy(
+                    tag.data() + block * FigureBlockSize, seen.data.data() + block * FigureBlockSize, FigureBlockSize);
         }
         figures::WriteSectorKeys(tag);
         std::string error;
@@ -891,7 +934,8 @@ namespace toybox
             RefreshSeats(now);
             for (size_t i = 0; i < seats.size(); i++)
             {
-                if (before[i] != seats[i].path + (seats[i].waiting ? "*" : "") + (seats[i].physical ? std::to_string(seats[i].physicalType) : ""))
+                if (before[i] != seats[i].path + (seats[i].waiting ? "*" : "") +
+                                     (seats[i].physical ? std::to_string(seats[i].physicalType) : ""))
                     m_dirty = true;
             }
         }
@@ -958,8 +1002,8 @@ namespace toybox
         auto passes = [&](const Figure& f) {
             const Toy* toy = f.toy;
             return (filterElement < 0 || (toy != nullptr && int(toy->element) == filterElement)) &&
-                (filterCategory < 0 || (toy != nullptr && int(toy->category) == filterCategory)) &&
-                (filterGame.empty() || (toy != nullptr && toy->game == filterGame));
+                   (filterCategory < 0 || (toy != nullptr && int(toy->category) == filterCategory)) &&
+                   (filterGame.empty() || (toy != nullptr && toy->game == filterGame));
         };
         for (size_t i = 0; i < figures.size(); i++)
         {
@@ -982,11 +1026,15 @@ namespace toybox
         for (const Section& section : sections)
             shownCount += int(section.items.size());
         if (FiltersActive())
-            fprintf(stderr, "[toybox] shelf: %d found for \"%s\" (element %d, game %s, type %d, sort %s)\n", shownCount, search.c_str(),
-                filterElement, filterGame.c_str(), filterCategory, SortId(sort));
+            fprintf(stderr, "[toybox] shelf: %d found for \"%s\" (element %d, game %s, type %d, sort %s)\n", shownCount,
+                search.c_str(), filterElement, filterGame.c_str(), filterCategory, SortId(sort));
 
-        std::string keep = !list.cells.empty() && list.cursor < int(list.cells.size()) && list.cells[list.cursor].kind == Cell::Kind::Figure
-            ? figures.size() > size_t(list.cells[list.cursor].figure) ? figures[list.cells[list.cursor].figure].path : "" : "";
+        std::string keep = !list.cells.empty() && list.cursor < int(list.cells.size()) &&
+                                   list.cells[list.cursor].kind == Cell::Kind::Figure
+                               ? figures.size() > size_t(list.cells[list.cursor].figure)
+                                     ? figures[list.cells[list.cursor].figure].path
+                                     : ""
+                               : "";
         int oldCursor = list.cursor;
 
         Grid grid;
@@ -1126,7 +1174,8 @@ namespace toybox
             int best = -1;
             for (size_t i = 0; i < grid.cells.size(); i++)
             {
-                if (grid.cells[i].row == row && (best < 0 || std::abs(grid.cells[i].column - current.column) < std::abs(grid.cells[best].column - current.column)))
+                if (grid.cells[i].row == row && (best < 0 || std::abs(grid.cells[i].column - current.column) <
+                                                                 std::abs(grid.cells[best].column - current.column)))
                     best = int(i);
             }
             return best;
@@ -1197,11 +1246,15 @@ namespace toybox
             const Game* g = Catalogue::Get().FindGame(section.game);
             return g != nullptr ? g->name : section.game;
         }
-        case Section::Kind::Series: return VariantKind(section.value) == VariantKind::Base ? L("Series 1 and standard", "Série 1 et standard") : VariantLabel(VariantKind(section.value));
+        case Section::Kind::Series:
+            return VariantKind(section.value) == VariantKind::Base ? L("Series 1 and standard", "Série 1 et standard")
+                                                                   : VariantLabel(VariantKind(section.value));
         case Section::Kind::Level: snprintf(text, sizeof(text), L("Level %d", "Niveau %d"), section.value); return text;
         case Section::Kind::Letter: return std::string(1, char(section.value));
         case Section::Kind::Unknown: return L("Unknown toys", "Jouets inconnus");
-        case Section::Kind::Foreign: snprintf(text, sizeof(text), L("Not for this game (%d)", "Pas pour ce jeu (%d)"), section.count); return text;
+        case Section::Kind::Foreign:
+            snprintf(text, sizeof(text), L("Not for this game (%d)", "Pas pour ce jeu (%d)"), section.count);
+            return text;
         }
         return {};
     }
@@ -1369,7 +1422,8 @@ namespace toybox
                     Reload();
                     BuildList();
                     inList = true;
-                    Toast(L("Spyro, Gill Grunt and Trigger Happy are in My Skylanders", "Spyro, Gill Grunt et Trigger Happy sont dans Mes Skylanders"));
+                    Toast(L("Spyro, Gill Grunt and Trigger Happy are in My Skylanders",
+                        "Spyro, Gill Grunt et Trigger Happy sont dans Mes Skylanders"));
                 }
                 return;
             default: return;
@@ -1437,9 +1491,7 @@ namespace toybox
             break;
         case Command::Down:
         case Command::Left:
-        case Command::Right:
-            MoveGrid(grid, command);
-            break;
+        case Command::Right: MoveGrid(grid, command); break;
         case Command::PreviousSection:
         case Command::NextSection:
             // LB / RB: the seat before or after, still in the grid (the wheel's list keeps its seat).
@@ -1486,7 +1538,8 @@ namespace toybox
             break;
         case Command::Delete:
             // Delete on a figure that sits on a seat takes it off (the seat column's Delete does the same).
-            if (!wheelList && cell != nullptr && cell->kind == Cell::Kind::Figure && SeatOf(figures[cell->figure].path) >= 0)
+            if (!wheelList && cell != nullptr && cell->kind == Cell::Kind::Figure &&
+                SeatOf(figures[cell->figure].path) >= 0)
             {
                 std::string path = figures[cell->figure].path;
                 TakeOff(SeatOf(path));
@@ -1596,8 +1649,8 @@ namespace toybox
     namespace
     {
         // The elements in the order the games' menus show them.
-        constexpr Element MenuElements[] = { Element::Magic, Element::Earth, Element::Water, Element::Air, Element::Fire, Element::Life,
-            Element::Undead, Element::Tech, Element::Light, Element::Dark };
+        constexpr Element MenuElements[] = { Element::Magic, Element::Earth, Element::Water, Element::Air,
+            Element::Fire, Element::Life, Element::Undead, Element::Tech, Element::Light, Element::Dark };
 
         std::string ShortGame(const std::string& id)
         {
@@ -1623,7 +1676,8 @@ namespace toybox
     {
         switch (row)
         {
-        case 0: return filterElement < 0 ? L("All elements", "Tous les éléments") : ElementLabel(Element(filterElement));
+        case 0:
+            return filterElement < 0 ? L("All elements", "Tous les éléments") : ElementLabel(Element(filterElement));
         case 1: return filterGame.empty() ? L("All games", "Tous les jeux") : ShortGame(filterGame);
         case 2: return filterCategory < 0 ? L("All types", "Tous les types") : CategoryLabel(Category(filterCategory));
         case 3: return SortLabel(sort, French());
@@ -1657,7 +1711,9 @@ namespace toybox
         {
             values.push_back(-1);
             for (int category = 0; category < int(Category::Count); category++)
-                if (category == filterCategory || std::any_of(figures.begin(), figures.end(), [&](const Figure& f) { return f.toy != nullptr && int(f.toy->category) == category; }))
+                if (category == filterCategory || std::any_of(figures.begin(), figures.end(), [&](const Figure& f) {
+                        return f.toy != nullptr && int(f.toy->category) == category;
+                    }))
                     values.push_back(category);
             current = filterCategory;
         }
@@ -1689,7 +1745,8 @@ namespace toybox
 
     bool Model::FiltersActive() const
     {
-        return !search.empty() || filterElement >= 0 || !filterGame.empty() || filterCategory >= 0 || sort != Sort::Recent;
+        return !search.empty() || filterElement >= 0 || !filterGame.empty() || filterCategory >= 0 ||
+               sort != Sort::Recent;
     }
 
     std::vector<Model::Tag> Model::Tags() const
@@ -1824,7 +1881,8 @@ namespace toybox
             {
                 if (KeepsProgress(f))
                     actions.push_back(Action::Rename);
-                for (Action a : { Action::Pin, Action::Duplicate, Action::BackUp, Action::Restore, Action::Reset, Action::Delete })
+                for (Action a :
+                    { Action::Pin, Action::Duplicate, Action::BackUp, Action::Restore, Action::Reset, Action::Delete })
                     actions.push_back(a);
                 if (!KeepsProgress(f))
                     std::erase(actions, Action::Reset);
@@ -1864,7 +1922,8 @@ namespace toybox
         if (figure < 0 || figure >= int(figures.size()))
             return lines;
         const Figure& f = figures[figure];
-        std::string busy = f.lock.Busy() ? std::string(L("in use by ", "utilisée par ")) + LockOwner(f.lock) : std::string();
+        std::string busy =
+            f.lock.Busy() ? std::string(L("in use by ", "utilisée par ")) + LockOwner(f.lock) : std::string();
         for (Action a : ActionsFor(*this, f))
         {
             switch (a)
@@ -1878,30 +1937,59 @@ namespace toybox
                 lines.push_back(line);
                 break;
             }
-            case Action::TakeOff: lines.push_back(std::string(L("Take off ", "Retirer de ")) + SeatLabel(SeatOf(f.path))); break;
-            case Action::Unlock: lines.push_back(std::string(L("It is not in use any more", "Elle n'est plus utilisée")) + "\t" + busy); break;
-            case Action::EditStats: lines.push_back(std::string(L("Edit", "Modifier")) + "\t" + (busy.empty() ? L("level, gold, nickname", "niveau, or, surnom") : busy)); break;
-            case Action::ChangeHalf:
-                lines.push_back(std::string(f.IsSwapTop() ? L("Change the bottom", "Changer le bas") : L("Change the top", "Changer le haut")) + "\t" +
-                    (busy.empty() ? (f.partner.empty() ? L("none yet", "aucun pour l'instant") : L("mix halves", "mélanger les moitiés")) : busy));
+            case Action::TakeOff:
+                lines.push_back(std::string(L("Take off ", "Retirer de ")) + SeatLabel(SeatOf(f.path)));
                 break;
-            case Action::Rename: lines.push_back(std::string(L("Rename", "Renommer")) + "\t" + (busy.empty() ? L("the name in the lists", "le nom dans les listes") : busy)); break;
+            case Action::Unlock:
+                lines.push_back(std::string(L("It is not in use any more", "Elle n'est plus utilisée")) + "\t" + busy);
+                break;
+            case Action::EditStats:
+                lines.push_back(std::string(L("Edit", "Modifier")) + "\t" +
+                                (busy.empty() ? L("level, gold, nickname", "niveau, or, surnom") : busy));
+                break;
+            case Action::ChangeHalf:
+                lines.push_back(std::string(f.IsSwapTop() ? L("Change the bottom", "Changer le bas")
+                                                          : L("Change the top", "Changer le haut")) +
+                                "\t" +
+                                (busy.empty() ? (f.partner.empty() ? L("none yet", "aucun pour l'instant")
+                                                                   : L("mix halves", "mélanger les moitiés"))
+                                              : busy));
+                break;
+            case Action::Rename:
+                lines.push_back(std::string(L("Rename", "Renommer")) + "\t" +
+                                (busy.empty() ? L("the name in the lists", "le nom dans les listes") : busy));
+                break;
             case Action::Favourite:
-                lines.push_back(f.favourite ? std::string(L("Favourite", "Favori")) + "\t" + L("on: shown first", "oui : en premier")
+                lines.push_back(f.favourite ? std::string(L("Favourite", "Favori")) + "\t" +
+                                                  L("on: shown first", "oui : en premier")
                                             : std::string(L("Add to favourites", "Ajouter aux favoris")));
                 break;
             case Action::Wheel:
-                lines.push_back(collection::OnWheel(game, f.file) ? std::string(L("On the wheel", "Sur la roue")) + "\t" + L("on: A takes it off", "oui : A la retire")
-                                                                  : std::string(L("Add to the wheel", "Ajouter à la roue")));
+                lines.push_back(collection::OnWheel(game, f.file)
+                                    ? std::string(L("On the wheel", "Sur la roue")) + "\t" +
+                                          L("on: A takes it off", "oui : A la retire")
+                                    : std::string(L("Add to the wheel", "Ajouter à la roue")));
                 break;
-            case Action::More: lines.push_back(std::string(L("More…", "Plus…")) + "\t" + L("other actions", "autres actions")); break;
-            case Action::Details: lines.push_back(figureDetails ? L("Hide the details", "Masquer les détails") : L("Details", "Détails")); break;
+            case Action::More:
+                lines.push_back(std::string(L("More…", "Plus…")) + "\t" + L("other actions", "autres actions"));
+                break;
+            case Action::Details:
+                lines.push_back(figureDetails ? L("Hide the details", "Masquer les détails") : L("Details", "Détails"));
+                break;
             case Action::Pin: lines.push_back(L("Pin to the wheel…", "Épingler sur la roue…")); break;
             case Action::Duplicate: lines.push_back(L("Duplicate", "Dupliquer")); break;
             case Action::BackUp: lines.push_back(L("Back up now", "Sauvegarder maintenant")); break;
-            case Action::Restore: lines.push_back(std::string(L("Restore a backup…", "Restaurer une sauvegarde…")) + "\t" + busy); break;
-            case Action::Reset: lines.push_back(std::string(L("Reset to new", "Remettre à neuf")) + "\t" + (busy.empty() ? L("hold A", "maintenir A") : busy)); break;
-            case Action::Delete: lines.push_back(std::string(L("Delete", "Supprimer")) + "\t" + (busy.empty() ? L("to the trash", "à la corbeille") : busy)); break;
+            case Action::Restore:
+                lines.push_back(std::string(L("Restore a backup…", "Restaurer une sauvegarde…")) + "\t" + busy);
+                break;
+            case Action::Reset:
+                lines.push_back(std::string(L("Reset to new", "Remettre à neuf")) + "\t" +
+                                (busy.empty() ? L("hold A", "maintenir A") : busy));
+                break;
+            case Action::Delete:
+                lines.push_back(std::string(L("Delete", "Supprimer")) + "\t" +
+                                (busy.empty() ? L("to the trash", "à la corbeille") : busy));
+                break;
             }
         }
         return lines;
@@ -1928,7 +2016,8 @@ namespace toybox
             std::vector<int> order;
             for (const Cell& cell : list.cells)
             {
-                if (cell.kind == Cell::Kind::Figure && std::find(order.begin(), order.end(), cell.figure) == order.end())
+                if (cell.kind == Cell::Kind::Figure &&
+                    std::find(order.begin(), order.end(), cell.figure) == order.end())
                     order.push_back(cell.figure);
             }
             auto at = std::find(order.begin(), order.end(), figure);
@@ -1963,8 +2052,8 @@ namespace toybox
         if (index < 0 || index >= int(actions.size()))
             return;
         Action action = actions[index];
-        bool writes = action == Action::EditStats || action == Action::Rename || action == Action::Restore || action == Action::Reset
-            || action == Action::Delete || action == Action::ChangeHalf;
+        bool writes = action == Action::EditStats || action == Action::Rename || action == Action::Restore ||
+                      action == Action::Reset || action == Action::Delete || action == Action::ChangeHalf;
         if (writes && CardBusy(f))
         {
             for (const Figure* half : CardFor(f).Halves())
@@ -2047,9 +2136,12 @@ namespace toybox
         {
             bool on = !collection::OnWheel(game, f.file);
             if (collection::SetOnWheel(game, f.file, on))
-                Toast(FigureName(f) + (on ? L(" is on the wheel", " est sur la roue") : L(" is off the wheel", " n'est plus sur la roue")));
+                Toast(FigureName(f) + (on ? L(" is on the wheel", " est sur la roue")
+                                          : L(" is off the wheel", " n'est plus sur la roue")));
             else
-                Toast(L("The wheel is full: take a figure off it first", "La roue est pleine : retire d'abord une figurine"), 4);
+                Toast(L("The wheel is full: take a figure off it first",
+                          "La roue est pleine : retire d'abord une figurine"),
+                    4);
             break;
         }
         case Action::Pin:
@@ -2072,7 +2164,8 @@ namespace toybox
             break;
         }
         case Action::BackUp:
-            Toast(Backup(path).empty() ? L("Could not back up", "Sauvegarde impossible") : L("Backed up", "Sauvegardée"));
+            Toast(
+                Backup(path).empty() ? L("Could not back up", "Sauvegarde impossible") : L("Backed up", "Sauvegardée"));
             PruneBackups(path);
             break;
         case Action::Restore:
@@ -2085,8 +2178,10 @@ namespace toybox
             break;
         case Action::Reset:
             Ask({ L("Reset to new", "Remettre à neuf"),
-                FigureName(f) + L(" loses its level, gold and upgrades.", " perd son niveau, son or et ses améliorations."),
-                { L("Hold A to reset", "Maintiens A pour remettre à neuf"), L("Cancel", "Annuler") }, 0, true, [this, path](int c) {
+                FigureName(f) +
+                    L(" loses its level, gold and upgrades.", " perd son niveau, son or et ses améliorations."),
+                { L("Hold A to reset", "Maintiens A pour remettre à neuf"), L("Cancel", "Annuler") }, 0, true,
+                [this, path](int c) {
                     if (c != 0)
                         return;
                     int s = SeatOf(path);
@@ -2100,16 +2195,19 @@ namespace toybox
                     Reload();
                     figure = FindFigure(path);
                     BuildList();
-                    Toast(done ? L("Figure reset to new", "Figurine remise à neuf") : L("Could not reset: ", "Remise à neuf impossible : ") + error);
+                    Toast(done ? L("Figure reset to new", "Figurine remise à neuf")
+                               : L("Could not reset: ", "Remise à neuf impossible : ") + error);
                 } });
             break;
         case Action::Delete:
             for (const Figure* half : CardFor(f).Halves())
                 halves.push_back(half->path);
             Ask({ L("Delete", "Supprimer"),
-                FigureName(f) + (halves.size() > 1 ? L(" goes to the trash, both halves.", " part à la corbeille, les deux moitiés.")
+                FigureName(f) + (halves.size() > 1 ? L(" goes to the trash, both halves.",
+                                                         " part à la corbeille, les deux moitiés.")
                                                    : L(" goes to the trash.", " part à la corbeille.")),
-                { L("Hold A to delete", "Maintiens A pour supprimer"), L("Cancel", "Annuler") }, 0, true, [this, path, halves](int c) {
+                { L("Hold A to delete", "Maintiens A pour supprimer"), L("Cancel", "Annuler") }, 0, true,
+                [this, path, halves](int c) {
                     if (c != 0)
                         return;
                     int s = SeatOf(path);
@@ -2127,7 +2225,8 @@ namespace toybox
                     BuildList();
                     screen = Screen::Home;
                     figure = -1;
-                    Toast(done ? L("Moved to the trash", "Mise à la corbeille") : L("Could not delete: ", "Suppression impossible : ") + error);
+                    Toast(done ? L("Moved to the trash", "Mise à la corbeille")
+                               : L("Could not delete: ", "Suppression impossible : ") + error);
                 } });
             break;
         }
@@ -2148,7 +2247,8 @@ namespace toybox
         for (size_t i = 0; i < figures.size(); i++)
         {
             const Figure& f = figures[i];
-            if ((wantBottom ? !f.IsSwapBottom() : !f.IsSwapTop()) || f.file == keep.partner || f.lock.Busy() || SeatOf(f.path) >= 0)
+            if ((wantBottom ? !f.IsSwapBottom() : !f.IsSwapTop()) || f.file == keep.partner || f.lock.Busy() ||
+                SeatOf(f.path) >= 0)
                 continue;
             if (column == ListColumns)
             {
@@ -2209,7 +2309,9 @@ namespace toybox
         BuildList();
         if (on >= 0 && !played.empty())
             PutOn(on, played);
-        Toast(done ? L("Halves changed", "Moitiés changées") : L("Could not change: ", "Changement impossible : ") + error, 4);
+        Toast(done ? L("Halves changed", "Moitiés changées")
+                   : L("Could not change: ", "Changement impossible : ") + error,
+            4);
         if (figure < 0)
             screen = Screen::Home;
     }
@@ -2235,7 +2337,8 @@ namespace toybox
             places[pinPlace] = { file, true };
             SetWheel(game, seats[playerSeat].seat.id, places);
             char text[96];
-            snprintf(text, sizeof(text), L("Pinned to place %d of %s's wheel", "Épinglée à la place %d de la roue du %s"), pinPlace + 1,
+            snprintf(text, sizeof(text),
+                L("Pinned to place %d of %s's wheel", "Épinglée à la place %d de la roue du %s"), pinPlace + 1,
                 SeatLabel(playerSeat).c_str());
             Toast(text);
             screen = Screen::Figure;
@@ -2272,7 +2375,8 @@ namespace toybox
                     figure = FindFigure(path);
                     BuildList();
                     screen = figure >= 0 ? Screen::Figure : Screen::Home;
-                    Toast(done ? L("Backup restored", "Sauvegarde restaurée") : L("Could not restore: ", "Restauration impossible : ") + error);
+                    Toast(done ? L("Backup restored", "Sauvegarde restaurée")
+                               : L("Could not restore: ", "Restauration impossible : ") + error);
                 } });
             break;
         }
@@ -2322,8 +2426,14 @@ namespace toybox
             switch (upgrades.table.upgrades[i].path)
             {
             case UpgradePath::Basic: item.row = basic++; break;
-            case UpgradePath::First: item.column = 1; item.row = first++; break;
-            case UpgradePath::Second: item.column = 2; item.row = second++; break;
+            case UpgradePath::First:
+                item.column = 1;
+                item.row = first++;
+                break;
+            case UpgradePath::Second:
+                item.column = 2;
+                item.row = second++;
+                break;
             default: item.row = 4 + soul++; break; // Soul Gem, then the Wow Pow, under the basic ones
             }
             upgrades.items.push_back(item);
@@ -2460,7 +2570,9 @@ namespace toybox
         // 9 cancel, 10 save.
         constexpr int Rows = 11;
         figures::FigureStats& s = stats.stats;
-        int step = command == Command::Left || command == Command::PreviousSection ? -1 : command == Command::Right || command == Command::NextSection ? 1 : 0;
+        int step = command == Command::Left || command == Command::PreviousSection ? -1
+                   : command == Command::Right || command == Command::NextSection  ? 1
+                                                                                   : 0;
         bool big = command == Command::PreviousSection || command == Command::NextSection;
         auto clamp = [](int64_t value, int64_t high) { return uint32_t(std::clamp<int64_t>(value, 0, high)); };
         switch (command)
@@ -2546,7 +2658,9 @@ namespace toybox
             figures::SetExperienceFor(s, cap, figures::LevelExperience[level - 1]);
             break;
         }
-        case 3: figures::SetExperienceFor(s, cap, clamp(int64_t(total) + step * (big ? 1000 : 100), maxExperience)); break;
+        case 3:
+            figures::SetExperienceFor(s, cap, clamp(int64_t(total) + step * (big ? 1000 : 100), maxExperience));
+            break;
         case 4: s.gold = uint16_t(clamp(int64_t(s.gold) + step * (big ? 1000 : 100), figures::MaxGold)); break;
         case 5: s.playSeconds = clamp(int64_t(s.playSeconds) + step * (big ? 3600 : 60), 0xFFFFFFFFll); break;
         case 6: s.heroPoints = uint16_t(clamp(int64_t(s.heroPoints) + step * (big ? 10 : 1), 0xFFFF)); break;
@@ -2605,13 +2719,14 @@ namespace toybox
             Group group{ Section::Kind::Element, int(e) };
             for (const Toy* toy : toys)
             {
-                if (toy->element == e && toy->category != Category::Mini && toy->category <= Category::Sensei && !HalfMadeWithTop(*toy))
+                if (toy->element == e && toy->category != Category::Mini && toy->category <= Category::Sensei &&
+                    !HalfMadeWithTop(*toy))
                     group.toys.push_back(toy);
             }
             groups.push_back(group);
         }
-        for (Category c : { Category::Mini, Category::Trap, Category::Vehicle, Category::CreationCrystal, Category::MagicItem,
-                 Category::Adventure, Category::Trophy })
+        for (Category c : { Category::Mini, Category::Trap, Category::Vehicle, Category::CreationCrystal,
+                 Category::MagicItem, Category::Adventure, Category::Trophy })
         {
             Group group{ Section::Kind::Category, int(c) };
             for (const Toy* toy : toys)
@@ -2645,9 +2760,11 @@ namespace toybox
             }
             grid.rows++;
             bool wanted = element == Element::Count ? false
-                : element == Element::None ? group.kind == Section::Kind::Category
-                    && std::find(seats[seat].seat.accepts.begin(), seats[seat].seat.accepts.end(), Category(group.value)) != seats[seat].seat.accepts.end()
-                : group.kind == Section::Kind::Element && Element(group.value) == element;
+                          : element == Element::None
+                              ? group.kind == Section::Kind::Category &&
+                                    std::find(seats[seat].seat.accepts.begin(), seats[seat].seat.accepts.end(),
+                                        Category(group.value)) != seats[seat].seat.accepts.end()
+                              : group.kind == Section::Kind::Element && Element(group.value) == element;
             if (wanted && jump < 0)
                 jump = int(grid.cells.size()) - section.count;
         }
@@ -2678,7 +2795,8 @@ namespace toybox
         versions.push_back(plain);
         for (const Variant* v : Catalogue::Get().VersionsFor(game, *toy))
         {
-            Version version{ toy->type, uint16_t(v->sameTag ? sold : v->id), v->name, v->sameTag ? v->name : std::string(), v->kind };
+            Version version{ toy->type, uint16_t(v->sameTag ? sold : v->id), v->name,
+                v->sameTag ? v->name : std::string(), v->kind };
             version.owned = OwnedCount(version.type, version.variant, version.edition);
             versions.push_back(version);
         }
@@ -2775,8 +2893,8 @@ namespace toybox
         // A swapper: both halves, linked (docs/runtime/host/collection.md).
         const Toy* made = Catalogue::Get().Find(version.type);
         std::string path = made != nullptr && made->category == Category::SwapTop && MatchingHalf(version.type) != 0
-            ? CreateSwapper(version.type, MatchingHalf(version.type), version.variant).top
-            : Create(version.type, version.variant);
+                               ? CreateSwapper(version.type, MatchingHalf(version.type), version.variant).top
+                               : Create(version.type, version.variant);
         if (path.empty())
         {
             Toast(L("Could not create the figure", "Création impossible"));
@@ -2785,16 +2903,18 @@ namespace toybox
         if (!version.edition.empty())
             SetEdition(path, version.edition, version.kind);
         const Toy* toy = Catalogue::Get().Find(version.type);
-        std::string base = version.edition.empty() ? Catalogue::Get().Describe(toy, version.variant).name : version.edition;
-        if (made != nullptr && made->category == Category::SwapTop && base.size() > 6 && base.compare(base.size() - 6, 6, " (top)") == 0)
+        std::string base =
+            version.edition.empty() ? Catalogue::Get().Describe(toy, version.variant).name : version.edition;
+        if (made != nullptr && made->category == Category::SwapTop && base.size() > 6 &&
+            base.compare(base.size() - 6, 6, " (top)") == 0)
             base.erase(base.size() - 6); // a swapper's name, not its top's
         int owned = OwnedCount(version.type, version.variant, version.edition);
         NameEntry entry;
         entry.purpose = NameEntry::Purpose::NewFigure;
         entry.title = std::string(L("NAME THIS FIGURE", "NOMME CETTE FIGURINE"));
         entry.text = {};
-        entry.suggestions = { base, L("Player 1's ", "") + base + L("", " du Joueur 1"), L("Player 2's ", "") + base + L("", " du Joueur 2"),
-            L("(no name)", "(sans nom)") };
+        entry.suggestions = { base, L("Player 1's ", "") + base + L("", " du Joueur 1"),
+            L("Player 2's ", "") + base + L("", " du Joueur 2"), L("(no name)", "(sans nom)") };
         if (owned > 0)
             entry.suggestions.insert(entry.suggestions.begin() + 1, base + " " + std::to_string(owned + 1));
         entry.done = [this, path, base](bool keep, const std::string& text) {
@@ -2818,8 +2938,9 @@ namespace toybox
             if (target < 0 || !Catalogue::Get().Accepts(game, figures[index].type))
                 return;
             Ask({ FigureName(figures[index]), {},
-                { L("Put it on ", "La poser en ") + SeatLabel(target) + L(" now", " maintenant"), L("Not now", "Pas maintenant") }, 0, false,
-                [this, path, target](int c) {
+                { L("Put it on ", "La poser en ") + SeatLabel(target) + L(" now", " maintenant"),
+                    L("Not now", "Pas maintenant") },
+                0, false, [this, path, target](int c) {
                     if (c != 0)
                         return;
                     seat = target;
@@ -2859,7 +2980,16 @@ namespace toybox
                 }
                 keys.push_back(line);
             }
-            keys.push_back({ "\x01" "shift", "\x01" "symbols", "\x01" "space", "\x01" "delete", "\x01" "done" });
+            keys.push_back({ "\x01"
+                             "shift",
+                "\x01"
+                "symbols",
+                "\x01"
+                "space",
+                "\x01"
+                "delete",
+                "\x01"
+                "done" });
             return keys;
         };
         static const auto EnglishLower = make({ "qwertyuiop", "asdfghjkl'", "zxcvbnm-.!" }, false);
@@ -2973,15 +3103,20 @@ namespace toybox
             name.keyColumn = std::min(name.keyColumn, int(keys[name.keyRow].size()) - 1);
             {
                 const std::string& key = keys[name.keyRow][name.keyColumn];
-                if (key == "\x01" "shift")
+                if (key == "\x01"
+                           "shift")
                     name.shift = !name.shift;
-                else if (key == "\x01" "symbols")
+                else if (key == "\x01"
+                                "symbols")
                     name.symbols = !name.symbols;
-                else if (key == "\x01" "space")
+                else if (key == "\x01"
+                                "space")
                     Type(" ");
-                else if (key == "\x01" "delete")
+                else if (key == "\x01"
+                                "delete")
                     Backspace();
-                else if (key == "\x01" "done")
+                else if (key == "\x01"
+                                "done")
                     finish(true);
                 else
                 {
@@ -3050,11 +3185,23 @@ namespace toybox
         {
             switch (command)
             {
-            case Command::Up: manage.section = (manage.section + 5) % 6; manage.item = 0; break;
-            case Command::Down: manage.section = (manage.section + 1) % 6; manage.item = 0; break;
+            case Command::Up:
+                manage.section = (manage.section + 5) % 6;
+                manage.item = 0;
+                break;
+            case Command::Down:
+                manage.section = (manage.section + 1) % 6;
+                manage.item = 0;
+                break;
             case Command::Right:
-            case Command::Accept: manage.inPanel = true; manage.item = 0; break;
-            case Command::Back: screen = Screen::Home; BuildList(); break;
+            case Command::Accept:
+                manage.inPanel = true;
+                manage.item = 0;
+                break;
+            case Command::Back:
+                screen = Screen::Home;
+                BuildList();
+                break;
             default: break;
             }
             return;
@@ -3070,8 +3217,10 @@ namespace toybox
             if (manage.section == 0 && manage.item < int(manage.trash.size()))
             {
                 TrashEntry entry = manage.trash[manage.item];
-                Ask({ L("Delete for good", "Supprimer pour de bon"), entry.file + L(" cannot be brought back after this.", " ne pourra plus être récupérée."),
-                    { L("Hold A to delete for good", "Maintiens A pour supprimer"), L("Cancel", "Annuler") }, 0, true, [this, entry](int c) {
+                Ask({ L("Delete for good", "Supprimer pour de bon"),
+                    entry.file + L(" cannot be brought back after this.", " ne pourra plus être récupérée."),
+                    { L("Hold A to delete for good", "Maintiens A pour supprimer"), L("Cancel", "Annuler") }, 0, true,
+                    [this, entry](int c) {
                         if (c != 0)
                             return;
                         DeleteForGood(entry.id);
@@ -3096,7 +3245,8 @@ namespace toybox
                 std::string back = Undelete(manage.trash[manage.item].id);
                 RefreshManage();
                 manage.item = std::min(manage.item, std::max(int(manage.trash.size()) - 1, 0));
-                Toast(back.empty() ? L("Could not put it back", "Impossible de la remettre") : L("Put back: ", "Remise : ") + FileName(back));
+                Toast(back.empty() ? L("Could not put it back", "Impossible de la remettre")
+                                   : L("Put back: ", "Remise : ") + FileName(back));
                 BuildList();
             }
             break;
@@ -3113,8 +3263,9 @@ namespace toybox
         {
             SDL_CreateDirectory(manage.importFolder.c_str());
             ImportReport report = Import({ manage.importFolder });
-            snprintf(text, sizeof(text), L("Import: %d added, %d already there, %d not figure files, %d unknown toys",
-                "Import : %d ajoutées, %d déjà là, %d fichiers non valides, %d jouets inconnus"),
+            snprintf(text, sizeof(text),
+                L("Import: %d added, %d already there, %d not figure files, %d unknown toys",
+                    "Import : %d ajoutées, %d déjà là, %d fichiers non valides, %d jouets inconnus"),
                 report.added, report.duplicates, report.invalid, int(report.unknown.size()));
             Toast(text, 5);
             RefreshManage();
@@ -3132,7 +3283,8 @@ namespace toybox
             std::string folder = manage.exportFolder + "/" + stamp;
             SDL_CreateDirectory(manage.exportFolder.c_str());
             int copied = Export(paths, folder);
-            snprintf(text, sizeof(text), L("%d figures copied to %s", "%d figurines copiées dans %s"), copied, folder.c_str());
+            snprintf(text, sizeof(text), L("%d figures copied to %s", "%d figurines copiées dans %s"), copied,
+                folder.c_str());
             Toast(text, 6);
             break;
         }
@@ -3176,7 +3328,8 @@ namespace toybox
                     std::string dump = root.Dump();
                     bool saved = SDL_SaveFile(path.c_str(), dump.data(), dump.size());
                     Toast(saved ? L("Named: shown at the next start", "Nommé : affiché au prochain lancement")
-                                : L("Couldn't save the name", "Nom non enregistré"), 5);
+                                : L("Couldn't save the name", "Nom non enregistré"),
+                        5);
                 };
                 OpenName(entry);
             }
@@ -3184,7 +3337,8 @@ namespace toybox
         case 5: // tidy
         {
             int moved = collection::Tidy();
-            snprintf(text, sizeof(text), L("%d blank figures moved to the trash", "%d figurines vierges mises à la corbeille"), moved);
+            snprintf(text, sizeof(text),
+                L("%d blank figures moved to the trash", "%d figurines vierges mises à la corbeille"), moved);
             Toast(text);
             RefreshManage();
             BuildList();
@@ -3223,9 +3377,11 @@ namespace toybox
             if (index < 0 || !Accepts(s, figures[index]) || figures[index].path == s.path ||
                 std::find(skipped.begin(), skipped.end(), figures[index].file) != skipped.end())
                 continue;
-            if (std::any_of(wheel.places.begin(), wheel.places.end(), [&](const WheelPlace& p) { return p.file == figures[index].file; }))
+            if (std::any_of(wheel.places.begin(), wheel.places.end(),
+                    [&](const WheelPlace& p) { return p.file == figures[index].file; }))
                 continue;
-            auto empty = std::find_if(wheel.places.begin(), wheel.places.end(), [](const WheelPlace& p) { return p.file.empty(); });
+            auto empty = std::find_if(
+                wheel.places.begin(), wheel.places.end(), [](const WheelPlace& p) { return p.file.empty(); });
             if (empty == wheel.places.end())
                 break;
             empty->file = figures[index].file;
@@ -3247,7 +3403,8 @@ namespace toybox
     {
         if (f.toy == nullptr || !Catalogue::Get().Accepts(game, f.type))
             return false;
-        return std::any_of(seats.begin(), seats.end(), [&](const SeatState& s) { return PlayerSeat(s) && Accepts(s, f); });
+        return std::any_of(
+            seats.begin(), seats.end(), [&](const SeatState& s) { return PlayerSeat(s) && Accepts(s, f); });
     }
 
     void Model::AimWheel(int place)
@@ -3317,7 +3474,8 @@ namespace toybox
         for (size_t i = 0; i < wheel.places.size(); i++)
             wheel.figures[i] = wheel.places[i].file.empty() ? -1 : FindFigure(collection::PathOf(wheel.places[i].file));
         char text[96];
-        snprintf(text, sizeof(text), L("%s pinned to place %d", "%s épinglé à la place %d"), FigureName(figures[current]).c_str(), wheel.aimed + 1);
+        snprintf(text, sizeof(text), L("%s pinned to place %d", "%s épinglé à la place %d"),
+            FigureName(figures[current]).c_str(), wheel.aimed + 1);
         Toast(text);
     }
 

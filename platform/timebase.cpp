@@ -20,8 +20,7 @@ uint64_t PlatformTimeBaseFrequency()
 #elif defined(__x86_64__) || defined(_M_X64)
     // mftb reads the TSC (invariant on Haswell, Zen and later CPUs), whose rate no instruction reports:
     // measure it once against the OS monotonic clock.
-    static const uint64_t frequency = []
-    {
+    static const uint64_t frequency = [] {
         auto clockStart = std::chrono::steady_clock::now();
         uint64_t counterStart = __rdtsc();
         std::this_thread::sleep_for(std::chrono::milliseconds(100));

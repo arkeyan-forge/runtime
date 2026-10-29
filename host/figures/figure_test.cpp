@@ -64,7 +64,8 @@ namespace
         CHECK(Md5Hex("") == "d41d8cd98f00b204e9800998ecf8427e");
         CHECK(Md5Hex("abc") == "900150983cd24fb0d6963f7d28e17f72");
         CHECK(Md5Hex("message digest") == "f96b697d7cb7938d525a2f31aaf161d0");
-        CHECK(Md5Hex("12345678901234567890123456789012345678901234567890123456789012345678901234567890") == "57edf4a22be3c955ac49da2e2107b67a");
+        CHECK(Md5Hex("12345678901234567890123456789012345678901234567890123456789012345678901234567890") ==
+              "57edf4a22be3c955ac49da2e2107b67a");
 
         // FIPS-197, appendix C.1.
         uint8_t key[16], plain[16], cipher[16], back[16];
@@ -160,7 +161,8 @@ namespace
         figures::WriteStats(tag, read);
         plain = figures::Decrypt(tag);
         CHECK(plain[0x100] == 0x5A && plain[0x2C0] == 0x5A && plain[0x89] == 3 && plain[0x249] == 4);
-        CHECK(figures::ReadStats(tag, read) == figures::AreaState::Valid && read.gold == 500 && read.experience == 33000);
+        CHECK(
+            figures::ReadStats(tag, read) == figures::AreaState::Valid && read.gold == 500 && read.experience == 33000);
 
         // The game's limits hold whatever is passed: experience at level 10's, gold at 65000, real date fields.
         read.experience = 0xFFFFFF;
@@ -169,7 +171,8 @@ namespace
         figures::WriteStats(tag, read);
         CHECK(figures::ReadStats(tag, read) == figures::AreaState::Valid);
         CHECK(read.experience == 33000 && figures::LevelForExperience(read.experience) == 10 && read.gold == 65000);
-        CHECK(read.lastPlaced.minute == 59 && read.lastPlaced.hour == 23 && read.lastPlaced.day == 31 && read.lastPlaced.month == 12);
+        CHECK(read.lastPlaced.minute == 59 && read.lastPlaced.hour == 23 && read.lastPlaced.day == 31 &&
+              read.lastPlaced.month == 12);
         read.gold = 500;
         read.experience = 33000;
 
@@ -181,10 +184,11 @@ namespace
         CHECK(figures::ReadStats(tag, read) == figures::AreaState::Valid && read.sequence == 0x00);
 
         // Levels.
-        CHECK(figures::LevelForExperience(0) == 1 && figures::LevelForExperience(999) == 1 && figures::LevelForExperience(1000) == 2);
-        CHECK(figures::LevelForExperience(32999) == 9 && figures::LevelForExperience(33000) == 10 && figures::LevelForExperience(99999) == 10);
+        CHECK(figures::LevelForExperience(0) == 1 && figures::LevelForExperience(999) == 1 &&
+              figures::LevelForExperience(1000) == 2);
+        CHECK(figures::LevelForExperience(32999) == 9 && figures::LevelForExperience(33000) == 10 &&
+              figures::LevelForExperience(99999) == 10);
     }
-
 
     // Raw blocks of the extra areas (17-21 and 45-49), as stored.
     bool ExtraBlocksZero(const FigureData& tag)
@@ -212,7 +216,8 @@ namespace
         figures::WriteStats(ssa, stats);
         CHECK(ExtraBlocksZero(ssa) && figures::ReadExtraState(ssa) == figures::AreaState::Blank);
         figures::FigureStats read;
-        CHECK(figures::ReadStats(ssa, read) == figures::AreaState::Valid && read.giantsExperience == 0 && read.hat == 0);
+        CHECK(
+            figures::ReadStats(ssa, read) == figures::AreaState::Valid && read.giantsExperience == 0 && read.hat == 0);
         CHECK(figures::LevelForExperience(figures::TotalExperience(read)) == 10);
         FigureData plain = figures::Decrypt(ssa);
         CHECK((plain[0x8 * 16 + 0x16] & 1) == 0 && (plain[0x24 * 16 + 0x16] & 1) == 0);
@@ -222,11 +227,18 @@ namespace
         {
             uint64_t hash = 1469598103934665603ull;
             uint32_t seed = 12345;
-            auto next = [&] { seed = seed * 1664525u + 1013904223u; return seed >> 8; };
+            auto next = [&] {
+                seed = seed * 1664525u + 1013904223u;
+                return seed >> 8;
+            };
             for (int i = 0; i < 400; i++)
             {
                 FigureData tag = CreateBlankFigure(uint16_t(next() % 33), 0);
-                tag[0] = uint8_t(i); tag[1] = uint8_t(i >> 8); tag[2] = 0x5A; tag[3] = 0xC3; tag[4] = tag[0] ^ tag[1] ^ tag[2] ^ tag[3];
+                tag[0] = uint8_t(i);
+                tag[1] = uint8_t(i >> 8);
+                tag[2] = 0x5A;
+                tag[3] = 0xC3;
+                tag[4] = tag[0] ^ tag[1] ^ tag[2] ^ tag[3];
                 uint16_t crc = FigureChecksum(tag.data(), 0x1E);
                 tag[0x1E] = uint8_t(crc);
                 tag[0x1F] = uint8_t(crc >> 8);
@@ -282,14 +294,16 @@ namespace
         // for the same payload [V: the title accepted this figure and played it at level 15 with the hat].
         CHECK(plain[17 * 16 + 2] == 1 && plain[45 * 16 + 2] == 2);
         CHECK(memcmp(&plain[17 * 16 + 3], &plain[45 * 16 + 3], 3) == 0 && plain[17 * 16 + 5] == 5);
-        CHECK(plain[17 * 16] == 0xD7 && plain[17 * 16 + 1] == 0x6E && plain[45 * 16] == 0xB3 && plain[45 * 16 + 1] == 0xE2);
+        CHECK(plain[17 * 16] == 0xD7 && plain[17 * 16 + 1] == 0x6E && plain[45 * 16] == 0xB3 &&
+              plain[45 * 16 + 1] == 0xE2);
         CHECK(figures::Encrypt(plain) == giant);
 
         // Writing again keeps the extra area's other bytes and moves its sequence on.
         back.gold = 100;
         figures::WriteStats(giant, back);
         figures::FigureStats again;
-        CHECK(figures::ReadStats(giant, again) == figures::AreaState::Valid && again.giantsExperience == 63500 && again.hat == 5);
+        CHECK(figures::ReadStats(giant, again) == figures::AreaState::Valid && again.giantsExperience == 63500 &&
+              again.hat == 5);
         CHECK(again.extraSequence == 4 && again.sequence == 4);
 
         // The title's own blank extra area (what it writes on first use) is valid, with its checksum.
@@ -311,22 +325,27 @@ namespace
         bad = figures::Encrypt(bp);
         CHECK(figures::ReadExtraState(bad) == figures::AreaState::Damaged);
         figures::FigureStats damaged;
-        CHECK(figures::ReadStats(bad, damaged) == figures::AreaState::Valid && damaged.giantsExperience == 0 && damaged.hat == 0); // Giants' hat was in the extra area only: the first area's is 0
+        CHECK(figures::ReadStats(bad, damaged) == figures::AreaState::Valid && damaged.giantsExperience == 0 &&
+              damaged.hat == 0); // Giants' hat was in the extra area only: the first area's is 0
         figures::WriteStats(bad, back);
         CHECK(figures::ReadExtraState(bad) == figures::AreaState::Valid);
 
         // The cap per game, and the figure kinds: a LightCore is the same toy type with its own variant.
-        CHECK(figures::LevelCap("ssa") == 10 && figures::LevelCap("giants") == 15 && figures::LevelCap("swapforce") == 20);
+        CHECK(figures::LevelCap("ssa") == 10 && figures::LevelCap("giants") == 15 &&
+              figures::LevelCap("swapforce") == 20);
         CHECK(figures::LevelExperience[14] == 96500 && figures::LevelForExperience(96499, 15) == 14);
         // Swap Force's table (every hero's character data on its disc [V]): level 20 = 197500 = 96500 + 101000.
-        CHECK(figures::LevelExperience[15] == 113700 && figures::LevelExperience[16] == 132400 && figures::LevelExperience[17] == 152600 &&
-              figures::LevelExperience[18] == 174300 && figures::LevelExperience[19] == 197500);
+        CHECK(figures::LevelExperience[15] == 113700 && figures::LevelExperience[16] == 132400 &&
+              figures::LevelExperience[17] == 152600 && figures::LevelExperience[18] == 174300 &&
+              figures::LevelExperience[19] == 197500);
         CHECK(figures::LevelForExperience(197499, 20) == 19 && figures::LevelForExperience(197500, 20) == 20 &&
-              figures::LevelForExperience(999999, 20) == 20 && figures::LevelForExperience(999999, 15) == 15 && figures::LevelForExperience(113700, 20) == 16);
+              figures::LevelForExperience(999999, 20) == 20 && figures::LevelForExperience(999999, 15) == 15 &&
+              figures::LevelForExperience(113700, 20) == 16);
         FigureData lightcore = figures::CreateFigure(100, 0x1206);
         CHECK(figures::ToyType(lightcore) == 100 && figures::Variant(lightcore) == 0x1206);
         figures::WriteStats(lightcore, high);
-        CHECK(figures::ToyType(lightcore) == 100 && figures::Variant(lightcore) == 0x1206 && figures::ReadStats(lightcore, back) == figures::AreaState::Valid);
+        CHECK(figures::ToyType(lightcore) == 100 && figures::Variant(lightcore) == 0x1206 &&
+              figures::ReadStats(lightcore, back) == figures::AreaState::Valid);
         // The header checksum of sector 0 stays valid after any of it.
         CHECK((lightcore[0x1E] | lightcore[0x1F] << 8) == FigureChecksum(lightcore.data(), 0x1E));
 
@@ -337,7 +356,8 @@ namespace
             CHECK(figures::FindToy(type, "giants") != nullptr);
         CHECK(figures::FindToy(200, "giants") != nullptr && figures::FindToy(300, "giants") != nullptr);
         CHECK(figures::Catalog("giants").size() > figures::Catalog().size());
-        CHECK(figures::FindToy(101, "giants")->kind == figures::ToyKind::Character && figures::FindToy(208, "giants")->kind == figures::ToyKind::MagicItem);
+        CHECK(figures::FindToy(101, "giants")->kind == figures::ToyKind::Character &&
+              figures::FindToy(208, "giants")->kind == figures::ToyKind::MagicItem);
         CHECK(figures::FindToy(505, "giants")->kind == figures::ToyKind::Sidekick);
     }
 
@@ -375,7 +395,8 @@ namespace
         std::vector<uint8_t> out;
         for (const auto& copy : ExtraData)
             for (size_t block : copy)
-                out.insert(out.end(), plain.begin() + ptrdiff_t(block * FigureBlockSize), plain.begin() + ptrdiff_t((block + 1) * FigureBlockSize));
+                out.insert(out.end(), plain.begin() + ptrdiff_t(block * FigureBlockSize),
+                    plain.begin() + ptrdiff_t((block + 1) * FigureBlockSize));
         return out;
     }
 
@@ -430,7 +451,8 @@ namespace
         stats.gold = 1000;
         figures::WriteStats(tag, stats);
         SsaTitleWrite(tag, 30000, 1200);
-        CHECK(figures::ReadStats(tag, stats) == figures::AreaState::Valid && stats.experience == 30000 && stats.gold == 1200);
+        CHECK(figures::ReadStats(tag, stats) == figures::AreaState::Valid && stats.experience == 30000 &&
+              stats.gold == 1200);
         CHECK(figures::ReadExtraState(tag) == figures::AreaState::Blank);
         uint8_t ssaSequence = stats.sequence;
 
@@ -440,7 +462,8 @@ namespace
         stats.gold = 2000;
         figures::WriteStats(tag, stats);
         CHECK(figures::ReadExtraState(tag) == figures::AreaState::Valid);
-        CHECK(figures::ReadStats(tag, stats) == figures::AreaState::Valid && stats.sequence == uint8_t(ssaSequence + 2));
+        CHECK(
+            figures::ReadStats(tag, stats) == figures::AreaState::Valid && stats.sequence == uint8_t(ssaSequence + 2));
         CHECK(stats.experience == 33000 && stats.giantsExperience == 63500 && stats.hat == 23 && stats.ssaHat == 0);
         std::vector<uint8_t> extra = ExtraBytes(tag);
 
@@ -449,9 +472,12 @@ namespace
         CHECK(ExtraBytes(tag) == extra); // the extra areas, byte for byte
         CHECK(figures::ReadExtraState(tag) == figures::AreaState::Valid);
         figures::FigureStats back;
-        CHECK(figures::ReadStats(tag, back) == figures::AreaState::Valid && back.gold == 2500 && back.sequence == uint8_t(ssaSequence + 3));
-        CHECK(figures::LevelForExperience(figures::ExperienceFor(back, figures::LevelCap("ssa")), figures::LevelCap("ssa")) == 10);
-        CHECK(figures::LevelForExperience(figures::ExperienceFor(back, figures::LevelCap("giants")), figures::LevelCap("giants")) == 15);
+        CHECK(figures::ReadStats(tag, back) == figures::AreaState::Valid && back.gold == 2500 &&
+              back.sequence == uint8_t(ssaSequence + 3));
+        CHECK(figures::LevelForExperience(
+                  figures::ExperienceFor(back, figures::LevelCap("ssa")), figures::LevelCap("ssa")) == 10);
+        CHECK(figures::LevelForExperience(
+                  figures::ExperienceFor(back, figures::LevelCap("giants")), figures::LevelCap("giants")) == 15);
         CHECK(back.hat == 23 && back.ssaHat == 0);
         CHECK((tag[0x1E] | tag[0x1F] << 8) == FigureChecksum(tag.data(), 0x1E) && figures::ToyType(tag) == 14);
 
@@ -460,8 +486,10 @@ namespace
         CHECK(back.experience == 13000 && back.giantsExperience == 63500);
         figures::SetExperienceFor(back, figures::LevelCap("ssa"), 999999);
         CHECK(back.experience == 33000 && back.giantsExperience == 63500);
-        figures::WriteStats(tag, back); // the library rewrites the extra areas too (next sequence), with the same values
-        CHECK(figures::ReadStats(tag, back) == figures::AreaState::Valid && back.giantsExperience == 63500 && back.hat == 23);
+        figures::WriteStats(
+            tag, back); // the library rewrites the extra areas too (next sequence), with the same values
+        CHECK(figures::ReadStats(tag, back) == figures::AreaState::Valid && back.giantsExperience == 63500 &&
+              back.hat == 23);
 
         // 5. Spyro's Adventure's own hat (first area) and Giants' (extra area) are separate: setting one keeps the other.
         back.ssaHat = 4;
@@ -473,7 +501,8 @@ namespace
         plain.ssaHat = 4;
         plain.hat = 4;
         figures::WriteStats(ssaOnly, plain);
-        CHECK(figures::ReadExtraState(ssaOnly) == figures::AreaState::Blank); // a Spyro's Adventure hat needs no extra area
+        CHECK(figures::ReadExtraState(ssaOnly) ==
+              figures::AreaState::Blank); // a Spyro's Adventure hat needs no extra area
         CHECK(figures::ReadStats(ssaOnly, plain) == figures::AreaState::Valid && plain.hat == 4 && plain.ssaHat == 4);
 
         // 6. Swap Force's part (extra +0x08, 101000 = level 20 [V]) is kept through both games' writes.
@@ -482,17 +511,20 @@ namespace
         figures::SetTotalExperience(high, 96500);
         high.hat = 5;
         high.swapForceExperience = 101000;
-        CHECK(figures::TotalExperience(high) == 197500 && figures::ExperienceFor(high, 15) == 96500 && figures::ExperienceFor(high, 10) == 33000 &&
-              figures::ExperienceFor(high, 20) == 197500);
+        CHECK(figures::TotalExperience(high) == 197500 && figures::ExperienceFor(high, 15) == 96500 &&
+              figures::ExperienceFor(high, 10) == 33000 && figures::ExperienceFor(high, 20) == 197500);
         figures::WriteStats(twenty, high);
         std::vector<uint8_t> extra20 = ExtraBytes(twenty);
         SsaTitleWrite(twenty, 33000, 3000);
         CHECK(ExtraBytes(twenty) == extra20);
-        CHECK(figures::ReadStats(twenty, high) == figures::AreaState::Valid && high.swapForceExperience == 101000 && high.giantsExperience == 63500);
+        CHECK(figures::ReadStats(twenty, high) == figures::AreaState::Valid && high.swapForceExperience == 101000 &&
+              high.giantsExperience == 63500);
         high.gold = 10;
         figures::WriteStats(twenty, high); // Giants (the library) writes it: Swap Force's part stays
-        CHECK(figures::ReadStats(twenty, high) == figures::AreaState::Valid && high.swapForceExperience == 101000 && high.gold == 10);
-        CHECK(figures::LevelForExperience(figures::ExperienceFor(high, 20), 20) == 20 && figures::LevelForExperience(figures::ExperienceFor(high, 15), 15) == 15);
+        CHECK(figures::ReadStats(twenty, high) == figures::AreaState::Valid && high.swapForceExperience == 101000 &&
+              high.gold == 10);
+        CHECK(figures::LevelForExperience(figures::ExperienceFor(high, 20), 20) == 20 &&
+              figures::LevelForExperience(figures::ExperienceFor(high, 15), 15) == 15);
         // Edited in Giants' Toy Box (cap 15): the first two parts only; Swap Force's stays. In Swap Force's (cap 20): all three.
         figures::SetExperienceFor(high, figures::LevelCap("giants"), 40000);
         CHECK(high.experience == 33000 && high.giantsExperience == 7000 && high.swapForceExperience == 101000);
@@ -513,18 +545,21 @@ namespace
         glow.experience = 6000;
         figures::WriteStats(lightcore, glow);
         SsaTitleWrite(lightcore, 9000, 100);
-        CHECK(figures::ReadStats(lightcore, glow) == figures::AreaState::Valid); // a writer starts from what the figure holds
+        CHECK(figures::ReadStats(lightcore, glow) ==
+              figures::AreaState::Valid); // a writer starts from what the figure holds
         figures::SetTotalExperience(glow, 50000);
         figures::WriteStats(lightcore, glow);
         SsaTitleWrite(lightcore, 33000, 200);
-        CHECK(figures::Variant(lightcore) == 0x1206 && figures::ReadStats(lightcore, glow) == figures::AreaState::Valid && glow.giantsExperience == 17000);
+        CHECK(figures::Variant(lightcore) == 0x1206 &&
+              figures::ReadStats(lightcore, glow) == figures::AreaState::Valid && glow.giantsExperience == 17000);
 
         // Upgrades (block 8 +0x10, figures.md "Upgrades"): the first area's field as both games read it; Giants' Wow Pow
         // in the extra area (+0x06 bit 0, where the game wrote it when Persephone sold it [V]), kept through SSA's writes,
         // and a plain figure gets no extra area.
         FigureData series2 = figures::CreateFigure(16, 0x1801);
         figures::FigureStats bought;
-        bought.upgrades = 0x0E7F; // a path, the second one, upgrades 1-4, the path's first, the Soul Gem; bits 10-11 kept
+        bought.upgrades =
+            0x0E7F; // a path, the second one, upgrades 1-4, the path's first, the Soul Gem; bits 10-11 kept
         figures::WriteStats(series2, bought);
         CHECK(figures::ReadExtraState(series2) == figures::AreaState::Blank);
         bought.wowPow = 1;
@@ -533,7 +568,8 @@ namespace
         CHECK(extraWow.size() > 6 && extraWow[6] == 0x01); // the extra area's +0x06 bit 0, nothing else there
         SsaTitleWrite(series2, 9000, 100);
         CHECK(ExtraBytes(series2) == extraWow);
-        CHECK(figures::ReadStats(series2, bought) == figures::AreaState::Valid && bought.wowPow == 1 && bought.upgrades == 0x0E7F);
+        CHECK(figures::ReadStats(series2, bought) == figures::AreaState::Valid && bought.wowPow == 1 &&
+              bought.upgrades == 0x0E7F);
         bought.wowPow = 0;
         figures::WriteStats(series2, bought);
         CHECK(figures::ReadStats(series2, bought) == figures::AreaState::Valid && bought.wowPow == 0);
@@ -548,16 +584,25 @@ namespace
         CHECK(state != figures::AreaState::Damaged);
         const figures::ToyInfo* toy = figures::FindToy(figures::ToyType(tag));
         printf("%s: %s, %s, level %d (%u XP), %u gold, %u s played, upgrades %04X, owner %s, seq %u\n", path,
-            toy != nullptr ? toy->name : "unknown toy", state == figures::AreaState::Valid ? "valid" : state == figures::AreaState::Blank ? "blank" : "DAMAGED",
-            figures::LevelForExperience(stats.experience), stats.experience, stats.gold, stats.playSeconds, stats.upgrades,
-            Hex(stats.owner.data(), stats.owner.size()).c_str(), stats.sequence);
+            toy != nullptr ? toy->name : "unknown toy",
+            state == figures::AreaState::Valid   ? "valid"
+            : state == figures::AreaState::Blank ? "blank"
+                                                 : "DAMAGED",
+            figures::LevelForExperience(stats.experience), stats.experience, stats.gold, stats.playSeconds,
+            stats.upgrades, Hex(stats.owner.data(), stats.owner.size()).c_str(), stats.sequence);
         figures::AreaState extra = figures::ReadExtraState(tag);
         printf("  toy type %u, variant %04X\n", figures::ToyType(tag), figures::Variant(tag));
-        printf("  giants: level %d (%u XP in all, %u in the extra area), hat %u (first area %u), swap force XP %u (level %d), extra %s seq %u\n",
-            figures::LevelForExperience(figures::ExperienceFor(stats, figures::MaxLevelGiants), figures::MaxLevelGiants), figures::ExperienceFor(stats, figures::MaxLevelGiants),
-            stats.giantsExperience, stats.hat, stats.ssaHat, stats.swapForceExperience,
+        printf("  giants: level %d (%u XP in all, %u in the extra area), hat %u (first area %u), swap force XP %u "
+               "(level %d), extra %s seq %u\n",
+            figures::LevelForExperience(
+                figures::ExperienceFor(stats, figures::MaxLevelGiants), figures::MaxLevelGiants),
+            figures::ExperienceFor(stats, figures::MaxLevelGiants), stats.giantsExperience, stats.hat, stats.ssaHat,
+            stats.swapForceExperience,
             figures::LevelForExperience(figures::TotalExperience(stats), figures::MaxLevelSwapForce),
-            extra == figures::AreaState::Valid ? "valid" : extra == figures::AreaState::Blank ? "blank" : "DAMAGED", stats.extraSequence);
+            extra == figures::AreaState::Valid   ? "valid"
+            : extra == figures::AreaState::Blank ? "blank"
+                                                 : "DAMAGED",
+            stats.extraSequence);
 
         // Rewriting what was read gives back a valid tag with the same values.
         if (state == figures::AreaState::Valid)
@@ -565,7 +610,7 @@ namespace
             figures::WriteStats(tag, stats);
             figures::FigureStats again;
             CHECK(figures::ReadStats(tag, again) == figures::AreaState::Valid && again.gold == stats.gold &&
-                again.experience == stats.experience && again.owner == stats.owner);
+                  again.experience == stats.experience && again.owner == stats.owner);
         }
     }
 }
@@ -580,7 +625,8 @@ namespace
         // --edit <dump> -: the dump itself (its stats, unknown bytes kept) instead of a new figure.
         bool edit = strcmp(argv[1], "--edit") == 0;
         char* end = nullptr;
-        uint16_t type = uint16_t(strtoul(argv[3], &end, 10)), variant = end != nullptr && *end == ':' ? uint16_t(strtoul(end + 1, nullptr, 16)) : 0;
+        uint16_t type = uint16_t(strtoul(argv[3], &end, 10)),
+                 variant = end != nullptr && *end == ':' ? uint16_t(strtoul(end + 1, nullptr, 16)) : 0;
         FigureData tag;
         figures::FigureStats stats;
         if (edit)
@@ -596,14 +642,22 @@ namespace
             size_t eq = arg.find('=');
             uint32_t value = eq == std::string::npos ? 0 : uint32_t(strtoul(arg.c_str() + eq + 1, nullptr, 10));
             std::string key = arg.substr(0, eq);
-            if (key == "xp") figures::SetTotalExperience(stats, value);
-            else if (key == "gold") stats.gold = uint16_t(value);
-            else if (key == "hat") stats.hat = uint16_t(value);
-            else if (key == "ssahat") stats.ssaHat = uint16_t(value);
-            else if (key == "sfxp") stats.swapForceExperience = value;
-            else if (key == "upgrades") stats.upgrades = uint16_t(strtoul(arg.c_str() + eq + 1, nullptr, 16));
-            else if (key == "wowpow") stats.wowPow = uint8_t(value);
-            else return fprintf(stderr, "unknown field %s\n", arg.c_str()), 2;
+            if (key == "xp")
+                figures::SetTotalExperience(stats, value);
+            else if (key == "gold")
+                stats.gold = uint16_t(value);
+            else if (key == "hat")
+                stats.hat = uint16_t(value);
+            else if (key == "ssahat")
+                stats.ssaHat = uint16_t(value);
+            else if (key == "sfxp")
+                stats.swapForceExperience = value;
+            else if (key == "upgrades")
+                stats.upgrades = uint16_t(strtoul(arg.c_str() + eq + 1, nullptr, 16));
+            else if (key == "wowpow")
+                stats.wowPow = uint8_t(value);
+            else
+                return fprintf(stderr, "unknown field %s\n", arg.c_str()), 2;
         }
         if (argc > 4)
             figures::WriteStats(tag, stats);
@@ -624,14 +678,15 @@ namespace
         TestDump(after);
         bool same = ExtraBytes(a) == ExtraBytes(b);
         figures::FigureStats first, second;
-        bool wrote = figures::ReadStats(a, first) == figures::AreaState::Valid && figures::ReadStats(b, second) == figures::AreaState::Valid &&
-            first.sequence != second.sequence;
+        bool wrote = figures::ReadStats(a, first) == figures::AreaState::Valid &&
+                     figures::ReadStats(b, second) == figures::AreaState::Valid && first.sequence != second.sequence;
         printf("extra areas: %s; before %s, after %s; the first pair was %s\n", same ? "byte-identical" : "DIFFERENT",
-            figures::ReadExtraState(a) == figures::AreaState::Valid ? "valid" : "not valid", figures::ReadExtraState(b) == figures::AreaState::Valid ? "valid" : "not valid",
+            figures::ReadExtraState(a) == figures::AreaState::Valid ? "valid" : "not valid",
+            figures::ReadExtraState(b) == figures::AreaState::Valid ? "valid" : "not valid",
             wrote ? "written in between" : "NOT written in between");
         CHECK(same && wrote && figures::ReadExtraState(b) == figures::AreaState::Valid);
         CHECK(figures::TotalExperience(second) == figures::TotalExperience(first) && second.hat == first.hat &&
-            second.swapForceExperience == first.swapForceExperience);
+              second.swapForceExperience == first.swapForceExperience);
         return g_failures == 0 ? 0 : 1;
     }
 
@@ -648,12 +703,14 @@ namespace
         auto inFirstPair = [](size_t block) { return (block >= 8 && block <= 16) || (block >= 36 && block <= 44); };
         size_t outside = 0;
         for (size_t block = 0; block < 64; block++)
-            if (!inFirstPair(block) && memcmp(a.data() + block * FigureBlockSize, b.data() + block * FigureBlockSize, FigureBlockSize) != 0)
+            if (!inFirstPair(block) &&
+                memcmp(a.data() + block * FigureBlockSize, b.data() + block * FigureBlockSize, FigureBlockSize) != 0)
                 outside++;
         CHECK(outside == 0);
         CHECK(ExtraBytes(a) == ExtraBytes(b) && figures::ReadExtraState(a) == figures::ReadExtraState(b));
         CHECK(figures::ToyType(a) == figures::ToyType(b) && figures::Variant(a) == figures::Variant(b));
-        bool written = stateB == figures::AreaState::Valid && (stateA != figures::AreaState::Valid || first.sequence != second.sequence);
+        bool written = stateB == figures::AreaState::Valid &&
+                       (stateA != figures::AreaState::Valid || first.sequence != second.sequence);
         std::string changed;
         bool unexpected = false;
         if (written && stateA == figures::AreaState::Valid)
@@ -672,13 +729,16 @@ namespace
                     snprintf(text, sizeof(text), " %02zX", i);
                     changed += text;
                     // known fields: experience, gold, play time, sequence, checksums, platforms, owner, last placed, last reset; 0x5F (set on a figure's first use)
-                    bool known = i <= 0x0F || i == 0x13 || i == 0x16 || i == 0x5F || (i >= 0x18 && i <= 0x1F) || (i >= 0x50 && i <= 0x55) || (i >= 0x60 && i <= 0x65);
+                    bool known = i <= 0x0F || i == 0x13 || i == 0x16 || i == 0x5F || (i >= 0x18 && i <= 0x1F) ||
+                                 (i >= 0x50 && i <= 0x55) || (i >= 0x60 && i <= 0x65);
                     unexpected = unexpected || !known;
                 }
         }
-        printf("round trip: toy %u:%04X; first pair %s (seq %u -> %u); XP %u -> %u, gold %u -> %u; changed offsets:%s%s; outside the first pair: %s; extra areas: %s\n",
-            figures::ToyType(b), figures::Variant(b), written ? "written" : "not written", first.sequence, second.sequence, first.experience,
-            second.experience, first.gold, second.gold, changed.empty() ? " none" : changed.c_str(), unexpected ? " (UNEXPECTED)" : "",
+        printf("round trip: toy %u:%04X; first pair %s (seq %u -> %u); XP %u -> %u, gold %u -> %u; changed "
+               "offsets:%s%s; outside the first pair: %s; extra areas: %s\n",
+            figures::ToyType(b), figures::Variant(b), written ? "written" : "not written", first.sequence,
+            second.sequence, first.experience, second.experience, first.gold, second.gold,
+            changed.empty() ? " none" : changed.c_str(), unexpected ? " (UNEXPECTED)" : "",
             outside == 0 ? "identical" : "CHANGED", ExtraBytes(a) == ExtraBytes(b) ? "identical" : "CHANGED");
         CHECK(stateB != figures::AreaState::Valid || written || stateA == figures::AreaState::Valid);
         CHECK(!unexpected);

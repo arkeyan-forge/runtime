@@ -28,10 +28,7 @@ namespace
 
     constexpr uint16_t SsaMinimumVersion = 0x011F; // the title's own check (docs/runtime/host/portal.md)
 
-    uint16_t Version(const uint8_t* id, size_t length)
-    {
-        return length >= 2 ? uint16_t(id[0] << 8 | id[1]) : 0;
-    }
+    uint16_t Version(const uint8_t* id, size_t length) { return length >= 2 ? uint16_t(id[0] << 8 | id[1]) : 0; }
 
     const char* GameName(const char* game)
     {
@@ -69,7 +66,10 @@ std::string PortalIdText(const uint8_t* id, size_t length)
 
 PortalVerdict PortalVerdictFor(const char* game, const uint8_t* id, size_t length, std::string* reason)
 {
-    auto say = [&](const char* text) { if (reason != nullptr) *reason = text; };
+    auto say = [&](const char* text) {
+        if (reason != nullptr)
+            *reason = text;
+    };
     if (length < 2)
     {
         say("the portal sent no id");
@@ -165,6 +165,8 @@ void NameProbe(PortalProbe& probe, const uint8_t* report, size_t size)
     probe.id = PortalIdText(id, length);
     probe.model = model != nullptr ? model->name : "unknown portal";
     PortalVerdict verdict = PortalVerdictFor("ssa", id, length, &probe.verdictReason);
-    probe.verdict = verdict == PortalVerdict::Works ? "works" : verdict == PortalVerdict::Warns ? "warns"
-        : verdict == PortalVerdict::Rejected ? "rejected" : "unknown";
+    probe.verdict = verdict == PortalVerdict::Works      ? "works"
+                    : verdict == PortalVerdict::Warns    ? "warns"
+                    : verdict == PortalVerdict::Rejected ? "rejected"
+                                                         : "unknown";
 }

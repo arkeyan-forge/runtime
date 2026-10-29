@@ -15,7 +15,8 @@ namespace figures
         constexpr size_t ExtraBlocks[2] = { 0x11, 0x2D };
         constexpr size_t ExtraSpan = 5 * FigureBlockSize;
         constexpr size_t ExtraSize = 4 * FigureBlockSize;
-        constexpr uint8_t ExtraMarker[2] = { 0x06, 0x01 }; // stands for the checksum while it is computed (05 00 in the first areas)
+        constexpr uint8_t ExtraMarker[2] = { 0x06,
+            0x01 }; // stands for the checksum while it is computed (05 00 in the first areas)
         constexpr uint8_t AccessReadOnly[4] = { 0x0F, 0x0F, 0x0F, 0x69 };
         constexpr uint8_t AccessReadWrite[4] = { 0x7F, 0x0F, 0x08, 0x69 };
 
@@ -42,8 +43,16 @@ namespace figures
 
         uint16_t Le16(const uint8_t* p) { return uint16_t(p[0] | p[1] << 8); }
         uint32_t Le32(const uint8_t* p) { return p[0] | p[1] << 8 | p[2] << 16 | uint32_t(p[3]) << 24; }
-        void Put16(uint8_t* p, uint32_t v) { p[0] = uint8_t(v); p[1] = uint8_t(v >> 8); }
-        void Put32(uint8_t* p, uint32_t v) { Put16(p, v); Put16(p + 2, v >> 16); }
+        void Put16(uint8_t* p, uint32_t v)
+        {
+            p[0] = uint8_t(v);
+            p[1] = uint8_t(v >> 8);
+        }
+        void Put32(uint8_t* p, uint32_t v)
+        {
+            Put16(p, v);
+            Put16(p + 2, v >> 16);
+        }
 
         Date ReadDate(const uint8_t* p) { return { p[0], p[1], p[2], p[3], Le16(p + 4) }; }
         void WriteDate(uint8_t* p, const Date& date)
@@ -86,7 +95,8 @@ namespace figures
 
         bool AreaValid(const uint8_t* a)
         {
-            return Le16(a + 0x0E) == HeaderChecksum(a) && Le16(a + 0x0C) == FirstChecksum(a) && Le16(a + 0x0A) == SecondChecksum(a);
+            return Le16(a + 0x0E) == HeaderChecksum(a) && Le16(a + 0x0C) == FirstChecksum(a) &&
+                   Le16(a + 0x0A) == SecondChecksum(a);
         }
 
         void SealArea(uint8_t* a)
@@ -112,7 +122,8 @@ namespace figures
             for (size_t i = 0, packed = 0; i < ExtraSpan / FigureBlockSize; i++)
             {
                 if (!IsTrailer(start + i))
-                    memcpy(out + packed++ * FigureBlockSize, plain.data() + (start + i) * FigureBlockSize, FigureBlockSize);
+                    memcpy(out + packed++ * FigureBlockSize, plain.data() + (start + i) * FigureBlockSize,
+                        FigureBlockSize);
             }
         }
 
@@ -121,7 +132,8 @@ namespace figures
             for (size_t i = 0, packed = 0; i < ExtraSpan / FigureBlockSize; i++)
             {
                 if (!IsTrailer(start + i))
-                    memcpy(plain.data() + (start + i) * FigureBlockSize, in + packed++ * FigureBlockSize, FigureBlockSize);
+                    memcpy(
+                        plain.data() + (start + i) * FigureBlockSize, in + packed++ * FigureBlockSize, FigureBlockSize);
             }
         }
 
@@ -165,8 +177,8 @@ namespace figures
 
     // The game's own table (every hero's character data on Swap Force's disc carries these 20 entries): levels 11-15 are
     // Giants' (96500 = 33000 + 63500), levels 16-20 Swap Force's (197500 = 96500 + 101000).
-    const uint32_t LevelExperience[MaxLevelSwapForce] = { 0, 1000, 2200, 3800, 6000, 9000, 13000, 18200, 24800, 33000, 42700, 53900, 66600, 80800, 96500,
-                                                          113700, 132400, 152600, 174300, 197500 };
+    const uint32_t LevelExperience[MaxLevelSwapForce] = { 0, 1000, 2200, 3800, 6000, 9000, 13000, 18200, 24800, 33000,
+        42700, 53900, 66600, 80800, 96500, 113700, 132400, 152600, 174300, 197500 };
 
     int LevelForExperience(uint32_t experience, int maxLevel)
     {
@@ -177,13 +189,21 @@ namespace figures
         return level;
     }
 
-    int LevelCap(const std::string& game) { return game == "ssa" ? MaxLevel : game == "swapforce" ? MaxLevelSwapForce : MaxLevelGiants; }
+    int LevelCap(const std::string& game)
+    {
+        return game == "ssa" ? MaxLevel : game == "swapforce" ? MaxLevelSwapForce : MaxLevelGiants;
+    }
 
-    uint32_t TotalExperience(const FigureStats& stats) { return stats.experience + stats.giantsExperience + stats.swapForceExperience; }
+    uint32_t TotalExperience(const FigureStats& stats)
+    {
+        return stats.experience + stats.giantsExperience + stats.swapForceExperience;
+    }
 
     uint32_t ExperienceFor(const FigureStats& stats, int cap)
     {
-        return cap <= MaxLevel ? stats.experience : cap <= MaxLevelGiants ? stats.experience + stats.giantsExperience : TotalExperience(stats);
+        return cap <= MaxLevel         ? stats.experience
+               : cap <= MaxLevelGiants ? stats.experience + stats.giantsExperience
+                                       : TotalExperience(stats);
     }
 
     void SetExperienceFor(FigureStats& stats, int cap, uint32_t experience)
@@ -243,8 +263,10 @@ namespace figures
             bool inUsedArea = false;
             for (int i = 0; i < 2; i++)
             {
-                inUsedArea |= areaUsed[i] && block >= AreaBlocks[i] && block < AreaBlocks[i] + AreaSpan / FigureBlockSize;
-                inUsedArea |= extraUsed[i] && block >= ExtraBlocks[i] && block < ExtraBlocks[i] + ExtraSpan / FigureBlockSize;
+                inUsedArea |=
+                    areaUsed[i] && block >= AreaBlocks[i] && block < AreaBlocks[i] + AreaSpan / FigureBlockSize;
+                inUsedArea |=
+                    extraUsed[i] && block >= ExtraBlocks[i] && block < ExtraBlocks[i] + ExtraSpan / FigureBlockSize;
             }
             if (inUsedArea || !IsZero(data, FigureBlockSize))
                 BlockCipher(plain, block).Encrypt(data, data);
@@ -280,7 +302,8 @@ namespace figures
         stats = {};
         if (area < 0)
         {
-            bool blank = AreaBlank(plain.data() + AreaBlocks[0] * FigureBlockSize) && AreaBlank(plain.data() + AreaBlocks[1] * FigureBlockSize);
+            bool blank = AreaBlank(plain.data() + AreaBlocks[0] * FigureBlockSize) &&
+                         AreaBlank(plain.data() + AreaBlocks[1] * FigureBlockSize);
             return blank ? AreaState::Blank : AreaState::Damaged;
         }
 
@@ -371,8 +394,9 @@ namespace figures
         PackExtra(plain, ExtraBlocks[0], extraA);
         PackExtra(plain, ExtraBlocks[1], extraB);
         // A hat only Giants shows (not the first area's own) needs the extra area too.
-        bool writeExtra = newestExtra >= 0 || !ExtraBlank(extraA) || !ExtraBlank(extraB) || stats.giantsExperience != 0 ||
-            (stats.hat != 0 && stats.hat != stats.ssaHat) || stats.swapForceExperience != 0 || stats.wowPow != 0;
+        bool writeExtra = newestExtra >= 0 || !ExtraBlank(extraA) || !ExtraBlank(extraB) ||
+                          stats.giantsExperience != 0 || (stats.hat != 0 && stats.hat != stats.ssaHat) ||
+                          stats.swapForceExperience != 0 || stats.wowPow != 0;
 
         uint8_t* a = area;
         a[0] = uint8_t(stats.experience);
@@ -459,10 +483,26 @@ namespace figures
             uint8_t lead = uint8_t(text[i]);
             uint32_t c;
             size_t length;
-            if (lead < 0x80) { c = lead; length = 1; }
-            else if ((lead & 0xE0) == 0xC0) { c = lead & 0x1F; length = 2; }
-            else if ((lead & 0xF0) == 0xE0) { c = lead & 0x0F; length = 3; }
-            else { c = '?'; length = (lead & 0xF8) == 0xF0 ? 4 : 1; }
+            if (lead < 0x80)
+            {
+                c = lead;
+                length = 1;
+            }
+            else if ((lead & 0xE0) == 0xC0)
+            {
+                c = lead & 0x1F;
+                length = 2;
+            }
+            else if ((lead & 0xF0) == 0xE0)
+            {
+                c = lead & 0x0F;
+                length = 3;
+            }
+            else
+            {
+                c = '?';
+                length = (lead & 0xF8) == 0xF0 ? 4 : 1;
+            }
             if (i + length > text.size())
                 break;
             for (size_t k = 1; k < length && length < 4; k++)

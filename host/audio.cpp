@@ -48,10 +48,7 @@ void HostAudioSubmit(const float* planarFrame)
         fwrite(stereo, sizeof(stereo), 1, dump);
 }
 
-bool HostAudioActive()
-{
-    return g_stream != nullptr;
-}
+bool HostAudioActive() { return g_stream != nullptr; }
 
 uint32_t HostAudioQueuedFrames()
 {
@@ -61,12 +58,6 @@ uint32_t HostAudioQueuedFrames()
     return uint32_t(SDL_GetAudioStreamQueued(stream)) / (AudioFrameSamples * 2 * sizeof(float));
 }
 
-void HostAudioSetVolume(uint32_t percent)
-{
-    g_volume = std::min<uint32_t>(percent, 100);
-}
+void HostAudioSetVolume(uint32_t percent) { g_volume = std::min<uint32_t>(percent, 100); }
 
-uint32_t HostAudioVolume()
-{
-    return g_volume;
-}
+uint32_t HostAudioVolume() { return g_volume; }

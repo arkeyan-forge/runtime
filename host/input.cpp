@@ -37,9 +37,16 @@ namespace
     uint16_t ButtonByName(const std::string& name)
     {
         static const std::pair<const char*, uint16_t> names[] = {
-            { "start", Button::Start }, { "back", Button::Back }, { "a", Button::A }, { "b", Button::B },
-            { "x", Button::X }, { "y", Button::Y }, { "up", Button::DpadUp }, { "down", Button::DpadDown },
-            { "left", Button::DpadLeft }, { "right", Button::DpadRight },
+            { "start", Button::Start },
+            { "back", Button::Back },
+            { "a", Button::A },
+            { "b", Button::B },
+            { "x", Button::X },
+            { "y", Button::Y },
+            { "up", Button::DpadUp },
+            { "down", Button::DpadDown },
+            { "left", Button::DpadLeft },
+            { "right", Button::DpadRight },
         };
         for (const auto& [text, button] : names)
         {
@@ -90,7 +97,8 @@ bool GamepadConnected(int user)
     std::lock_guard lock(g_mutex);
     // SKY_PRESS_FILE: the first controller is there from the start (a game that saw no pad at its title may wait for one)
     static const bool pressFile = skyenv::Get("SKY_PRESS_FILE") != nullptr;
-    return user >= 0 && user < MaxUsers && (g_users[user].connected || !g_users[user].script.empty() || (user == 0 && pressFile));
+    return user >= 0 && user < MaxUsers &&
+           (g_users[user].connected || !g_users[user].script.empty() || (user == 0 && pressFile));
 }
 
 // SKY_PRESS_FILE=<file>: lines appended to it while the game runs are presses made at once, "<button>[:<hold seconds>]"
@@ -134,7 +142,8 @@ static void ReadPressFile()
         std::string name = line.substr(0, line.find(':'));
         size_t hold = line.find(':');
         auto length = hold != std::string::npos ? std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-            std::chrono::duration<double>(atof(line.c_str() + hold + 1))) : std::chrono::steady_clock::duration(PressLength);
+                                                      std::chrono::duration<double>(atof(line.c_str() + hold + 1)))
+                                                : std::chrono::steady_clock::duration(PressLength);
         int16_t x = name == "lleft" ? -32767 : name == "lright" ? 32767 : 0;
         int16_t y = name == "ldown" ? -32767 : name == "lup" ? 32767 : 0;
         g_users[user].script.push_back({ now - g_launch, length, ButtonByName(name), x, y });
@@ -181,8 +190,10 @@ void LoadInputScript(const char* script, int user)
             using Duration = std::chrono::steady_clock::duration;
             auto at = std::chrono::duration<double>(atof(item.c_str() + colon + 1));
             size_t hold = item.find(':', colon + 1);
-            Duration length = hold != std::string::npos
-                ? duration_cast<Duration>(std::chrono::duration<double>(atof(item.c_str() + hold + 1))) : PressLength;
+            Duration length =
+                hold != std::string::npos
+                    ? duration_cast<Duration>(std::chrono::duration<double>(atof(item.c_str() + hold + 1)))
+                    : PressLength;
             std::string name = item.substr(0, colon);
             int16_t x = name == "lleft" ? -32767 : name == "lright" ? 32767 : 0;
             int16_t y = name == "ldown" ? -32767 : name == "lup" ? 32767 : 0;

@@ -13,7 +13,15 @@
 
 namespace dds
 {
-    enum class Format : uint8_t { BC1, BC2, BC3, BC4, BC5, RGBA8 };
+    enum class Format : uint8_t
+    {
+        BC1,
+        BC2,
+        BC3,
+        BC4,
+        BC5,
+        RGBA8
+    };
 
     // 8 bytes per 4x4 block for BC1 and BC4, 16 for BC2, BC3 and BC5, 4 per texel for RGBA8.
     uint32_t BlockBytes(Format format);
@@ -56,5 +64,6 @@ namespace dds
     void ConvertTexels(const Info& info, uint8_t* texels, size_t size);
 
     // The file: header, then each level's rows packed (`levels[0]` is the top level, `rowBytes` per row as SizeOfLevel).
-    std::vector<uint8_t> Write(Format format, uint32_t width, uint32_t height, std::span<const std::span<const uint8_t>> levels);
+    std::vector<uint8_t> Write(
+        Format format, uint32_t width, uint32_t height, std::span<const std::span<const uint8_t>> levels);
 }

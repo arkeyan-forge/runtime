@@ -79,8 +79,8 @@ namespace LauncherAssets
                 return false;
 
             size_t size = 0;
-            void* data = tinfl_decompress_mem_to_heap(file.data() + 0x14, file.size() - 0x14, &size,
-                TINFL_FLAG_PARSE_ZLIB_HEADER);
+            void* data = tinfl_decompress_mem_to_heap(
+                file.data() + 0x14, file.size() - 0x14, &size, TINFL_FLAG_PARSE_ZLIB_HEADER);
             if (data == nullptr || size == 0)
                 return false;
             out.assign(static_cast<uint8_t*>(data), static_cast<uint8_t*>(data) + size);
@@ -97,19 +97,13 @@ namespace LauncherAssets
             uint32_t bytes = (outerBlocks | innerBlocks) << bytesPerBlockLog2;
             uint32_t bank = (y >> 4) & 1;
             uint32_t pipe = ((x >> 3) & 3) ^ (((y >> 3) & 1) << 1);
-            return ((y & 1) << 4) | (pipe << 6) | (bank << 11) | (bytes & 15) |
-                (((bytes >> 4) & 1) << 5) | (((bytes >> 5) & 7) << 8) | ((bytes >> 8) << 12);
+            return ((y & 1) << 4) | (pipe << 6) | (bank << 11) | (bytes & 15) | (((bytes >> 4) & 1) << 5) |
+                   (((bytes >> 5) & 7) << 8) | ((bytes >> 8) << 12);
         }
 
-        uint8_t Expand5(uint32_t value)
-        {
-            return uint8_t((value << 3) | (value >> 2));
-        }
+        uint8_t Expand5(uint32_t value) { return uint8_t((value << 3) | (value >> 2)); }
 
-        uint8_t Expand6(uint32_t value)
-        {
-            return uint8_t((value << 2) | (value >> 4));
-        }
+        uint8_t Expand6(uint32_t value) { return uint8_t((value << 2) | (value >> 4)); }
 
         // Decode one BC3 block to 16 RGBA texels.
         void DecodeBc3Block(const uint8_t* block, uint8_t* pixels)
@@ -136,8 +130,8 @@ namespace LauncherAssets
 
             uint16_t color0 = uint16_t(block[8] | block[9] << 8);
             uint16_t color1 = uint16_t(block[10] | block[11] << 8);
-            uint32_t colorBits = uint32_t(block[12]) | uint32_t(block[13]) << 8 |
-                uint32_t(block[14]) << 16 | uint32_t(block[15]) << 24;
+            uint32_t colorBits =
+                uint32_t(block[12]) | uint32_t(block[13]) << 8 | uint32_t(block[14]) << 16 | uint32_t(block[15]) << 24;
 
             uint8_t colors[4][3] = {
                 { Expand5((color0 >> 11) & 31), Expand6((color0 >> 5) & 63), Expand5(color0 & 31) },
@@ -174,8 +168,7 @@ namespace LauncherAssets
             }
         }
 
-        bool DecodeDxt5(std::span<const uint8_t> data, uint32_t width, uint32_t height,
-            std::vector<uint8_t>& rgba)
+        bool DecodeDxt5(std::span<const uint8_t> data, uint32_t width, uint32_t height, std::vector<uint8_t>& rgba)
         {
             if ((width & 3) != 0 || (height & 3) != 0)
                 return false;
@@ -202,8 +195,7 @@ namespace LauncherAssets
             return true;
         }
 
-        bool WritePng(const std::string& path, uint32_t width, uint32_t height,
-            const std::vector<uint8_t>& rgba)
+        bool WritePng(const std::string& path, uint32_t width, uint32_t height, const std::vector<uint8_t>& rgba)
         {
             return stbi_write_png(path.c_str(), int(width), int(height), 4, rgba.data(), int(width * 4)) != 0;
         }
@@ -221,7 +213,7 @@ namespace LauncherAssets
             {
                 size_t magic = 0;
                 while (magic + 4 <= startMenu.size() - position &&
-                    ReadBE32(startMenu.data() + position + magic) != ApkfMagic)
+                       ReadBE32(startMenu.data() + position + magic) != ApkfMagic)
                     magic++;
                 if (magic + 4 > startMenu.size() - position)
                     break;
@@ -253,8 +245,8 @@ namespace LauncherAssets
 
                 if (assetPathOut != nullptr)
                     *assetPathOut = assetPath;
-                return DecodeDxt5(std::span<const uint8_t>(startMenu.data() + entry + 0x1000, dataSize),
-                    source.width, source.height, rgba);
+                return DecodeDxt5(std::span<const uint8_t>(startMenu.data() + entry + 0x1000, dataSize), source.width,
+                    source.height, rgba);
             }
             return false;
         }
@@ -328,8 +320,7 @@ namespace LauncherAssets
             {
                 std::ofstream out(path, std::ios::binary);
                 if (out.good())
-                    out.write(reinterpret_cast<const char*>(meta.iconPng.data()),
-                        std::streamsize(meta.iconPng.size()));
+                    out.write(reinterpret_cast<const char*>(meta.iconPng.data()), std::streamsize(meta.iconPng.size()));
             }
         }
 
@@ -357,7 +348,8 @@ namespace LauncherAssets
             out << fmt::format("id={:08X}\n", titleId);
             out << "name=" << meta.name << "\n\n";
             out << "[sources]\n";
-            out << "startmenu=" << (startMenuPath.empty() ? "not found" : startMenuPath) << " (STRM container, zlib at +0x14)\n";
+            out << "startmenu=" << (startMenuPath.empty() ? "not found" : startMenuPath)
+                << " (STRM container, zlib at +0x14)\n";
             out << "title_icon=default.xex XDBF image resource\n";
             out << "\n[roles]\n";
         }
@@ -374,8 +366,8 @@ namespace LauncherAssets
                 if (cachePath.empty() || !WritePng(cachePath, source.width, source.height, rgba))
                     continue;
                 if (out.good())
-                    out << fmt::format("{}={} ({}x{}, DXT5/BC3, tiled) -> {}.png\n",
-                        RoleKey(source.role), assetPath, source.width, source.height, RoleKey(source.role));
+                    out << fmt::format("{}={} ({}x{}, DXT5/BC3, tiled) -> {}.png\n", RoleKey(source.role), assetPath,
+                        source.width, source.height, RoleKey(source.role));
             }
         }
         if (out.good())

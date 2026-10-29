@@ -31,7 +31,8 @@ namespace art
             },
             [&disc](const std::string& path, uint64_t offset, size_t size, uint8_t* out) {
                 auto entry = disc.Find(path);
-                return entry != nullptr && offset + size <= entry->size && disc.Read(*entry, offset, out, uint32_t(size)) == size;
+                return entry != nullptr && offset + size <= entry->size &&
+                       disc.Read(*entry, offset, out, uint32_t(size)) == size;
             },
         };
     }
@@ -68,20 +69,21 @@ namespace art
     {
         Pictures = 1,  // logo, background, title icon
         Portraits = 2, // the toy portraits (the in-game Toy Box asks for these only)
-        Artworks = 4,  // the large toy pictures of the games that have them (Giants: about 8 s and 60 MB the first time)
-        Upgrades = 8,  // the toys' upgrade names, descriptions and prices (<data>/<Game>/upgrades.json; game_text.h)
+        Artworks = 4, // the large toy pictures of the games that have them (Giants: about 8 s and 60 MB the first time)
+        Upgrades = 8, // the toys' upgrade names, descriptions and prices (<data>/<Game>/upgrades.json; game_text.h)
         All = 15,
     };
 
     struct Extraction
     {
         bool logo = false, background = false, titleIcon = false; // present in the cache afterwards
-        int portraits = 0;                                          // portrait files in the folder afterwards
-        int artworks = 0;                                           // artwork files in its folder afterwards
-        bool upgrades = false;                                      // upgrades.json present afterwards
+        int portraits = 0; // portrait files in the folder afterwards
+        int artworks = 0; // artwork files in its folder afterwards
+        bool upgrades = false; // upgrades.json present afterwards
     };
 
     // Reads `game`'s pictures from the player's disc into its caches; what is already cached (by this version of the
     // reader) is kept. `titleIconPng`: the XDBF icon of default.xex, written as title_icon.png when given.
-    Extraction Extract(std::string_view game, const Disc& disc, const std::vector<uint8_t>& titleIconPng = {}, int parts = All);
+    Extraction Extract(
+        std::string_view game, const Disc& disc, const std::vector<uint8_t>& titleIconPng = {}, int parts = All);
 }

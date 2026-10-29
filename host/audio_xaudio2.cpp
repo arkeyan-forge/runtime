@@ -31,7 +31,8 @@ namespace
 void HostAudioInit()
 {
     IXAudio2MasteringVoice* master = nullptr;
-    if (FAILED(XAudio2Create(&g_xaudio, 0, XAUDIO2_DEFAULT_PROCESSOR)) || FAILED(g_xaudio->CreateMasteringVoice(&master)))
+    if (FAILED(XAudio2Create(&g_xaudio, 0, XAUDIO2_DEFAULT_PROCESSOR)) ||
+        FAILED(g_xaudio->CreateMasteringVoice(&master)))
     {
         fprintf(stderr, "[audio] XAudio2 unavailable: no sound\n");
         return;
@@ -86,10 +87,7 @@ void HostAudioSubmit(const float* planarFrame)
     }
 }
 
-bool HostAudioActive()
-{
-    return g_voice != nullptr;
-}
+bool HostAudioActive() { return g_voice != nullptr; }
 
 uint32_t HostAudioQueuedFrames()
 {
@@ -97,12 +95,6 @@ uint32_t HostAudioQueuedFrames()
     return voice != nullptr ? QueuedBuffers(voice) : 0;
 }
 
-void HostAudioSetVolume(uint32_t percent)
-{
-    g_volume = percent < 100 ? percent : 100;
-}
+void HostAudioSetVolume(uint32_t percent) { g_volume = percent < 100 ? percent : 100; }
 
-uint32_t HostAudioVolume()
-{
-    return g_volume;
-}
+uint32_t HostAudioVolume() { return g_volume; }

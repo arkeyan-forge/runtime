@@ -31,7 +31,10 @@ namespace achievements
         constexpr uint32_t ShownWhileLocked = 0x8;
 
         uint16_t Be16(const uint8_t* p) { return uint16_t(p[0] << 8 | p[1]); }
-        uint32_t Be32(const uint8_t* p) { return uint32_t(p[0]) << 24 | uint32_t(p[1]) << 16 | uint32_t(p[2]) << 8 | p[3]; }
+        uint32_t Be32(const uint8_t* p)
+        {
+            return uint32_t(p[0]) << 24 | uint32_t(p[1]) << 16 | uint32_t(p[2]) << 8 | p[3];
+        }
         uint64_t Be64(const uint8_t* p) { return uint64_t(Be32(p)) << 32 | Be32(p + 4); }
 
         struct Block
@@ -143,11 +146,16 @@ namespace achievements
 
     int XdbfLanguage(std::string_view code)
     {
-        if (code == "fr") return 4;
-        if (code == "de") return 3;
-        if (code == "es" || code == "es-419") return 5;
-        if (code == "it") return 6;
-        if (code == "pt") return 9;
+        if (code == "fr")
+            return 4;
+        if (code == "de")
+            return 3;
+        if (code == "es" || code == "es-419")
+            return 5;
+        if (code == "it")
+            return 6;
+        if (code == "pt")
+            return 9;
         return 1;
     }
 
@@ -218,7 +226,8 @@ namespace achievements
         if (!xex.empty() && xex.size() >= 0x18)
         {
             uint32_t execution = 0;
-            if (FindXexHeader(xex, XexHeaderExecutionInfo, execution) && execution <= xex.size() && xex.size() - execution >= 0x18)
+            if (FindXexHeader(xex, XexHeaderExecutionInfo, execution) && execution <= xex.size() &&
+                xex.size() - execution >= 0x18)
                 list.titleId = Be32(&xex[execution + 12]);
         }
         return list;
@@ -261,7 +270,8 @@ namespace achievements
     {
         std::ifstream in(folder / "list.tsv", std::ios::binary);
         std::string header, line;
-        return std::getline(in, header) && header == CacheHeader && std::getline(in, line) && line == "key\t" + std::string(key);
+        return std::getline(in, header) && header == CacheHeader && std::getline(in, line) &&
+               line == "key\t" + std::string(key);
     }
 
     bool WriteCache(const std::filesystem::path& folder, std::string_view key, const std::vector<uint8_t>& xex)
@@ -276,13 +286,14 @@ namespace achievements
         std::ostringstream list;
         list << CacheHeader << "\nkey\t" << key << "\n";
         for (const Info& info : english.items)
-            list << "A\t" << info.id << "\t" << info.gamerscore << "\t" << info.imageId << "\t" << (info.hidden ? 1 : 0) << "\n";
+            list << "A\t" << info.id << "\t" << info.gamerscore << "\t" << info.imageId << "\t" << (info.hidden ? 1 : 0)
+                 << "\n";
         for (const char* code : CacheLanguages)
         {
             List texts = Parse(xdbf.data(), xdbf.size(), XdbfLanguage(code), false);
             for (const Info& info : texts.items)
-                list << "T\t" << code << "\t" << info.id << "\t" << OneLine(info.name) << "\t" << OneLine(info.unlockedDescription) << "\t"
-                     << OneLine(info.lockedDescription) << "\n";
+                list << "T\t" << code << "\t" << info.id << "\t" << OneLine(info.name) << "\t"
+                     << OneLine(info.unlockedDescription) << "\t" << OneLine(info.lockedDescription) << "\n";
         }
         for (const Info& info : english.items)
         {
@@ -314,7 +325,10 @@ namespace achievements
             return list;
         std::string code(languageCode);
         // Texts by language: the wanted one over English.
-        struct Texts { std::string name, unlocked, locked; };
+        struct Texts
+        {
+            std::string name, unlocked, locked;
+        };
         std::vector<std::pair<uint32_t, Texts>> english, wanted;
         while (std::getline(in, line))
         {
@@ -343,9 +357,12 @@ namespace achievements
                 for (const auto& [id, texts] : *source)
                     if (id == info.id)
                     {
-                        if (!texts.name.empty()) info.name = texts.name;
-                        if (!texts.unlocked.empty()) info.unlockedDescription = texts.unlocked;
-                        if (!texts.locked.empty()) info.lockedDescription = texts.locked;
+                        if (!texts.name.empty())
+                            info.name = texts.name;
+                        if (!texts.unlocked.empty())
+                            info.unlockedDescription = texts.unlocked;
+                        if (!texts.locked.empty())
+                            info.lockedDescription = texts.locked;
                     }
         }
         return list;

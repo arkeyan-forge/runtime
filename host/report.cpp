@@ -19,17 +19,15 @@ namespace fs = std::filesystem;
 
 namespace
 {
-    bool WordChar(char c)
-    {
-        return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_';
-    }
+    bool WordChar(char c) { return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_'; }
 
     bool MatchesAt(const std::string& text, size_t at, const std::string& needle)
     {
         if (at + needle.size() > text.size())
             return false;
         for (size_t i = 0; i < needle.size(); i++)
-            if (std::tolower(static_cast<unsigned char>(text[at + i])) != std::tolower(static_cast<unsigned char>(needle[i])))
+            if (std::tolower(static_cast<unsigned char>(text[at + i])) !=
+                std::tolower(static_cast<unsigned char>(needle[i])))
                 return false;
         return true;
     }
@@ -154,7 +152,8 @@ std::string report::Redact(const std::string& text, const Identity& who)
     }
     AddRule(rules, who.user, "<user>", true);
     // The longest first: a whole path before the name it ends with.
-    std::stable_sort(rules.begin(), rules.end(), [](const Rule& a, const Rule& b) { return a.needle.size() > b.needle.size(); });
+    std::stable_sort(
+        rules.begin(), rules.end(), [](const Rule& a, const Rule& b) { return a.needle.size() > b.needle.size(); });
 
     std::string out;
     out.reserve(text.size());
@@ -166,7 +165,7 @@ std::string report::Redact(const std::string& text, const Identity& who)
             if (!MatchesAt(text, at, rule.needle))
                 continue;
             if (rule.word && ((at > 0 && WordChar(text[at - 1])) ||
-                    (at + rule.needle.size() < text.size() && WordChar(text[at + rule.needle.size()]))))
+                                 (at + rule.needle.size() < text.size() && WordChar(text[at + rule.needle.size()]))))
                 continue;
             match = &rule;
             break;
@@ -248,7 +247,8 @@ std::string report::Build(const Sources& sources, const Identity& who, size_t ma
     out += crash.empty() ? "Last crash: none in the logs\n" : "Last crash: yes (" + crashFrom + "), see below\n";
     out += "\n";
 
-    Section(out, crash.empty() ? "last crash" : "last crash (" + crashFrom + ")", crash.empty() ? "(no crash in the logs)" : crash);
+    Section(out, crash.empty() ? "last crash" : "last crash (" + crashFrom + ")",
+        crash.empty() ? "(no crash in the logs)" : crash);
     Section(out, "launcher.ini", ReadWhole(sources.settingsFile));
     Section(out, "SSARecomp.log", log, cut);
     Section(out, "SSARecomp.prev.log", previous, cutPrevious);

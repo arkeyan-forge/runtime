@@ -12,7 +12,15 @@ namespace collection
     class Json
     {
     public:
-        enum class Type { Null, Bool, Number, String, Array, Object };
+        enum class Type
+        {
+            Null,
+            Bool,
+            Number,
+            String,
+            Array,
+            Object
+        };
 
         Json() = default;
         Json(bool value) : m_type(Type::Bool), m_bool(value) {}
@@ -21,8 +29,18 @@ namespace collection
         Json(int64_t value) : Json(double(value)) {}
         Json(const char* value) : m_type(Type::String), m_string(value) {}
         Json(std::string value) : m_type(Type::String), m_string(std::move(value)) {}
-        static Json Array() { Json json; json.m_type = Type::Array; return json; }
-        static Json Object() { Json json; json.m_type = Type::Object; return json; }
+        static Json Array()
+        {
+            Json json;
+            json.m_type = Type::Array;
+            return json;
+        }
+        static Json Object()
+        {
+            Json json;
+            json.m_type = Type::Object;
+            return json;
+        }
 
         // False (and `error` set to "line N: ...") if `text` is not one JSON value.
         static bool Parse(const std::string& text, Json& out, std::string& error);

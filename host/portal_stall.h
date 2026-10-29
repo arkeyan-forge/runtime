@@ -12,9 +12,10 @@
 class StallingPortal final : public PortalBackend
 {
 public:
-    explicit StallingPortal(std::chrono::milliseconds writeDelay = std::chrono::milliseconds(1000), bool writesFail = true,
-        std::chrono::milliseconds rescan = std::chrono::milliseconds(2000))
-        : m_writeDelay(writeDelay), m_rescan(rescan), m_writesFail(writesFail) {}
+    explicit StallingPortal(std::chrono::milliseconds writeDelay = std::chrono::milliseconds(1000),
+        bool writesFail = true, std::chrono::milliseconds rescan = std::chrono::milliseconds(2000))
+        : m_writeDelay(writeDelay), m_rescan(rescan), m_writesFail(writesFail)
+    {}
 
     const char* Name() const override { return "stalling test"; }
 

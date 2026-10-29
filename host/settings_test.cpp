@@ -13,8 +13,16 @@ namespace
     int g_checks = 0;
     int g_failures = 0;
 
-#define CHECK(condition) \
-    do { g_checks++; if (!(condition)) { fprintf(stderr, "FAIL line %d: %s\n", __LINE__, #condition); g_failures++; } } while (0)
+#define CHECK(condition)                                                                                               \
+    do                                                                                                                 \
+    {                                                                                                                  \
+        g_checks++;                                                                                                    \
+        if (!(condition))                                                                                              \
+        {                                                                                                              \
+            fprintf(stderr, "FAIL line %d: %s\n", __LINE__, #condition);                                               \
+            g_failures++;                                                                                              \
+        }                                                                                                              \
+    } while (0)
 
     struct Run
     {
@@ -24,18 +32,19 @@ namespace
         bool ok;
     };
 
-    Run Parse(const LauncherConfig& config, const std::map<std::string, std::string>& env, std::vector<std::string> args)
+    Run Parse(
+        const LauncherConfig& config, const std::map<std::string, std::string>& env, std::vector<std::string> args)
     {
         Run run;
         std::vector<char*> argv{ const_cast<char*>("SSARecomp") };
         for (std::string& arg : args)
             argv.push_back(arg.data());
-        auto getEnv = [&](const char* name) -> const char*
-        {
+        auto getEnv = [&](const char* name) -> const char* {
             auto it = env.find(name);
             return it != env.end() ? it->second.c_str() : nullptr;
         };
-        run.ok = ParseSettings(config, "ssa", getEnv, int(argv.size()), argv.data(), run.settings, run.warnings, run.error);
+        run.ok =
+            ParseSettings(config, "ssa", getEnv, int(argv.size()), argv.data(), run.settings, run.warnings, run.error);
         return run;
     }
 
@@ -52,8 +61,7 @@ int main()
 {
     // The helper on the real environment: the current name, then SSA_*, and for the launcher SKYLAUNCHER_*.
     {
-        auto put = [](const char* name, const char* value)
-        {
+        auto put = [](const char* name, const char* value) {
 #if defined(_WIN32)
             _putenv_s(name, value);
 #else
@@ -90,14 +98,16 @@ int main()
     LauncherConfig config;
     config["video"] = { { "resolution_scale", "3" }, { "vsync", "0" }, { "fullscreen", "1" }, { "anisotropy", "8" },
         { "fps_limit", "30" }, { "skip_intro_movies", "1" }, { "unknown_key", "kept" } };
-    config["input"] = { { "device", "keyboard" }, { "gamepad", "0300abcd" }, { "key_a", "Return" }, { "key_left_up", "Up" },
-        { "glyphs", "nintendo" } };
+    config["input"] = { { "device", "keyboard" }, { "gamepad", "0300abcd" }, { "key_a", "Return" },
+        { "key_left_up", "Up" }, { "glyphs", "nintendo" } };
     config["ssa"] = { { "language", "fr" }, { "voice_language", "de" }, { "iso", "/a.iso" } };
     run = Parse(config, {}, {});
     CHECK(run.ok && run.warnings.empty());
-    CHECK(run.settings.resolutionScale == 3 && !run.settings.vsync && run.settings.fullscreen && run.settings.anisotropy == 8);
+    CHECK(run.settings.resolutionScale == 3 && !run.settings.vsync && run.settings.fullscreen &&
+          run.settings.anisotropy == 8);
     CHECK(run.settings.skipIntroMovies);
-    CHECK(run.settings.inputDevice == "keyboard" && run.settings.gamepad == "0300abcd" && run.settings.glyphs == "nintendo");
+    CHECK(run.settings.inputDevice == "keyboard" && run.settings.gamepad == "0300abcd" &&
+          run.settings.glyphs == "nintendo");
     CHECK(SkipIntroMovies());
     CHECK(run.settings.keys[KeyIndex("a")] == "Return" && run.settings.keys[KeyIndex("left_up")] == "Up");
     CHECK(run.settings.keys[KeyIndex("b")] == "X");
@@ -110,13 +120,15 @@ int main()
     CHECK(run.settings.language == "pt");
     run = Parse(config, { { "SKY_LANGUAGE", "it" }, { "SKY_VOICE_LANGUAGE", "es" } }, {});
     CHECK(run.settings.language == "it" && run.settings.voiceLanguage == "es");
-    run = Parse(config, { { "SKY_LANGUAGE", "it" } }, { "--language", "en", "--scale", "2", "--vsync=1", "--windowed",
-        "--anisotropy", "16", "--input", "gamepad", "--gamepad", "ffff", "--key", "a=Space", "--glyphs=playstation", "game.iso",
-        "--select-iso" });
+    run = Parse(config, { { "SKY_LANGUAGE", "it" } },
+        { "--language", "en", "--scale", "2", "--vsync=1", "--windowed", "--anisotropy", "16", "--input", "gamepad",
+            "--gamepad", "ffff", "--key", "a=Space", "--glyphs=playstation", "game.iso", "--select-iso" });
     CHECK(run.ok && run.warnings.empty());
     CHECK(run.settings.language == "en" && run.settings.voiceLanguage == "de");
-    CHECK(run.settings.resolutionScale == 2 && run.settings.vsync && !run.settings.fullscreen && run.settings.anisotropy == 16);
-    CHECK(run.settings.inputDevice == "gamepad" && run.settings.gamepad == "ffff" && run.settings.keys[KeyIndex("a")] == "Space");
+    CHECK(run.settings.resolutionScale == 2 && run.settings.vsync && !run.settings.fullscreen &&
+          run.settings.anisotropy == 16);
+    CHECK(run.settings.inputDevice == "gamepad" && run.settings.gamepad == "ffff" &&
+          run.settings.keys[KeyIndex("a")] == "Space");
     CHECK(run.settings.glyphs == "playstation");
     CHECK(run.settings.arguments == (std::vector<std::string>{ "game.iso", "--select-iso" }));
 
@@ -126,7 +138,8 @@ int main()
 
     // Bad values warn and keep the previous source's value.
     config["video"] = { { "resolution_scale", "11" }, { "anisotropy", "3" }, { "vsync", "yes" } };
-    config["input"] = { { "device", "mouse" }, { "key_a", "NoSuchKey" }, { "key_jump", "Space" }, { "glyphs", "sega" } };
+    config["input"] = { { "device", "mouse" }, { "key_a", "NoSuchKey" }, { "key_jump", "Space" },
+        { "glyphs", "sega" } };
     run = Parse(config, {}, { "--scale", "0" });
     CHECK(run.ok && run.warnings.size() == 8 && run.settings.glyphs == "auto");
     CHECK(run.settings.resolutionScale == 0 && run.settings.anisotropy == 1 && run.settings.vsync);
@@ -145,34 +158,44 @@ int main()
     CHECK(!Parse({}, {}, {}).settings.originalResolution);
     run = Parse({ { "video", { { "original_resolution", "1" } } } }, {}, {});
     CHECK(run.ok && run.warnings.empty() && run.settings.originalResolution);
-    run = Parse({ { "video", { { "original_resolution", "1" } } }, { "ssa.video", { { "original_resolution", "0" } } } }, {}, {});
+    run =
+        Parse({ { "video", { { "original_resolution", "1" } } }, { "ssa.video", { { "original_resolution", "0" } } } },
+            {}, {});
     CHECK(run.ok && !run.settings.originalResolution);
     run = Parse({ { "ssa.video", { { "original_resolution", "1" } } } }, {}, { "--original-resolution", "0" });
     CHECK(run.ok && !run.settings.originalResolution);
     run = Parse({}, {}, { "--original-resolution=1" });
-    CHECK(run.ok && run.settings.originalResolution && DescribeSettings(run.settings).find("original resolution") != std::string::npos);
-    run = Parse({ { "swapforce.video", { { "original_resolution", "1" } } } }, {}, {}); // another game's section: ignored
+    CHECK(run.ok && run.settings.originalResolution &&
+          DescribeSettings(run.settings).find("original resolution") != std::string::npos);
+    run =
+        Parse({ { "swapforce.video", { { "original_resolution", "1" } } } }, {}, {}); // another game's section: ignored
     CHECK(run.ok && !run.settings.originalResolution);
 
     // The game's own [<game>.video] wins over [video] for every video key (a game started without the launcher's PLAY).
-    run = Parse({ { "video", { { "fps_limit", "30" }, { "skip_intro_movies", "0" } } },
+    run =
+        Parse({ { "video", { { "fps_limit", "30" }, { "skip_intro_movies", "0" } } },
                   { "ssa.video", { { "fps_limit", "60" }, { "skip_intro_movies", "1" }, { "resolution_scale", "3" } } },
-                  { "giants.video", { { "fps_limit", "30" }, { "skip_intro_movies", "0" } } } }, {}, {});
-    CHECK(run.ok && run.warnings.empty() && run.settings.fpsLimit == 60 && run.settings.skipIntroMovies && SkipIntroMovies());
+                  { "giants.video", { { "fps_limit", "30" }, { "skip_intro_movies", "0" } } } },
+            {}, {});
+    CHECK(run.ok && run.warnings.empty() && run.settings.fpsLimit == 60 && run.settings.skipIntroMovies &&
+          SkipIntroMovies());
     run = Parse({ { "ssa.video", { { "fps_limit", "60" } } } }, {}, { "--fps-limit", "30" });
     CHECK(run.ok && run.settings.fpsLimit == 30);
     // The F3 menu's keys: the volume ([audio], then the game's own [<game>.audio]) and the FPS counter ([<game>.video] show_fps).
     run = Parse({}, {}, {});
     CHECK(run.ok && run.settings.volume == 100 && !run.settings.showFps);
-    run = Parse({ { "audio", { { "volume", "40" } } }, { "ssa.audio", { { "volume", "90" } } }, { "giants.audio", { { "volume", "10" } } },
-                  { "ssa.video", { { "show_fps", "1" } } } }, {}, {});
-    CHECK(run.ok && run.warnings.empty() && run.settings.volume == 90 && run.settings.showFps
-        && DescribeSettings(run.settings).find("fps counter") != std::string::npos && DescribeSettings(run.settings).find("volume 90") != std::string::npos);
+    run = Parse({ { "audio", { { "volume", "40" } } }, { "ssa.audio", { { "volume", "90" } } },
+                    { "giants.audio", { { "volume", "10" } } }, { "ssa.video", { { "show_fps", "1" } } } },
+        {}, {});
+    CHECK(run.ok && run.warnings.empty() && run.settings.volume == 90 && run.settings.showFps &&
+          DescribeSettings(run.settings).find("fps counter") != std::string::npos &&
+          DescribeSettings(run.settings).find("volume 90") != std::string::npos);
     run = Parse({ { "audio", { { "volume", "150" } } } }, {}, {});
     CHECK(run.ok && run.warnings.size() == 1 && run.settings.volume == 100);
     // Keys: [input], then the game's own [<game>.input] (another game's section is ignored).
     run = Parse({ { "input", { { "key_y", "G" } } }, { "ssa.input", { { "key_y", "H" } } } }, {}, {});
-    CHECK(run.ok && run.warnings.empty() && run.settings.keys[KeyIndex("y")] == "H" && run.settings.keys[KeyIndex("x")] == "C");
+    CHECK(run.ok && run.warnings.empty() && run.settings.keys[KeyIndex("y")] == "H" &&
+          run.settings.keys[KeyIndex("x")] == "C");
     run = Parse({ { "input", { { "key_y", "G" } } }, { "giants.input", { { "key_y", "H" } } } }, {}, {});
     CHECK(run.ok && run.settings.keys[KeyIndex("y")] == "G");
 
@@ -193,7 +216,8 @@ int main()
     CHECK(!run.settings.textureDump && run.settings.texturePacks);
     run = Parse({ { "video", { { "texture_dump", "1" }, { "texture_packs", "0" } } } }, {}, {});
     CHECK(run.settings.textureDump && !run.settings.texturePacks && run.warnings.empty());
-    run = Parse({ { "video", { { "texture_dump", "1" } } } }, { { "SKY_TEXTURE_DUMP", "0" }, { "SKY_TEXTURE_PACKS", "0" } }, {});
+    run = Parse({ { "video", { { "texture_dump", "1" } } } },
+        { { "SKY_TEXTURE_DUMP", "0" }, { "SKY_TEXTURE_PACKS", "0" } }, {});
     CHECK(!run.settings.textureDump && !run.settings.texturePacks);
     run = Parse({}, { { "SKY_TEXTURE_PACKS", "0" } }, { "--texture-packs", "1", "--texture-dump=1" });
     CHECK(run.settings.textureDump && run.settings.texturePacks);
@@ -233,7 +257,8 @@ int main()
     run = Parse(pads, {}, {});
     CHECK(run.ok && run.warnings.empty() && !run.settings.padMap.Identity());
     CHECK(run.settings.padMap.target[PadButtonIndex("rb")] == PadButtonIndex("x")); // the game's wins over [input]
-    CHECK(run.settings.padMap.target[PadButtonIndex("lt")] == -1 && run.settings.padMap.target[PadButtonIndex("a")] == PadButtonIndex("dpad_up"));
+    CHECK(run.settings.padMap.target[PadButtonIndex("lt")] == -1 &&
+          run.settings.padMap.target[PadButtonIndex("a")] == PadButtonIndex("dpad_up"));
     CHECK(run.settings.padMap.target[PadButtonIndex("y")] == PadButtonIndex("y")); // another game's remap is not read
     CHECK(run.settings.rumble[0] == "low" && run.settings.rumble[1] == "strong");
     CHECK(DescribeSettings(run.settings).find("rb->x") != std::string::npos);
@@ -242,7 +267,8 @@ int main()
     run = Parse(badPads, {}, {});
     CHECK(run.warnings.size() == 3 && run.settings.padMap.Identity() && run.settings.rumble[0] == "normal");
     run = Parse({}, {}, { "--pad", "lb=a", "--rumble", "off" });
-    CHECK(run.ok && run.settings.padMap.target[PadButtonIndex("lb")] == PadButtonIndex("a") && run.settings.rumble[1] == "off");
+    CHECK(run.ok && run.settings.padMap.target[PadButtonIndex("lb")] == PadButtonIndex("a") &&
+          run.settings.rumble[1] == "off");
     CHECK(!Parse({}, {}, { "--pad", "lb" }).ok);
 
     {
@@ -269,7 +295,8 @@ int main()
         map.target[PadButtonIndex("a")] = -1; // off
         pad.buttons = Button::A | Button::X;
         CHECK(RemapPad(pad, map).buttons == Button::X);
-        map = PadMap(); // triggers: LT -> A (digital past 30), B -> RT (all the way), RT stays analog under another name
+        map =
+            PadMap(); // triggers: LT -> A (digital past 30), B -> RT (all the way), RT stays analog under another name
         map.target[PadButtonIndex("lt")] = int8_t(PadButtonIndex("a"));
         map.target[PadButtonIndex("b")] = int8_t(PadButtonIndex("rt"));
         pad = GamepadState();
@@ -286,8 +313,10 @@ int main()
         out = RemapPad(pad, map);
         CHECK(out.leftTrigger == 0 && out.rightTrigger == 90);
     }
-    CHECK(ScaleRumble(40000, "off") == 0 && ScaleRumble(40000, "normal") == 40000 && ScaleRumble(40000, "low") == 16000);
-    CHECK(ScaleRumble(20000, "strong") == 32000 && ScaleRumble(60000, "strong") == 65535 && ScaleRumble(40000, "bogus") == 40000);
+    CHECK(
+        ScaleRumble(40000, "off") == 0 && ScaleRumble(40000, "normal") == 40000 && ScaleRumble(40000, "low") == 16000);
+    CHECK(ScaleRumble(20000, "strong") == 32000 && ScaleRumble(60000, "strong") == 65535 &&
+          ScaleRumble(40000, "bogus") == 40000);
 
     // Errors: unknown option, missing value, malformed --key.
     CHECK(!Parse({}, {}, { "--frobnicate" }).ok);
@@ -299,7 +328,8 @@ int main()
     CHECK(Parse({}, {}, { "--version" }).settings.version);
     CHECK(Parse({}, {}, { "--list-gamepads" }).settings.listGamepads);
     CHECK(SettingsHelp("SSARecomp").find("--anisotropy") != std::string::npos);
-    CHECK(DescribeSettings(Parse({}, {}, { "--scale", "2" }).settings).find("scale 2 (2240x1408)") != std::string::npos);
+    CHECK(
+        DescribeSettings(Parse({}, {}, { "--scale", "2" }).settings).find("scale 2 (2240x1408)") != std::string::npos);
 
     printf("settings test: %d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;

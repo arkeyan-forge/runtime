@@ -149,8 +149,8 @@ namespace
     }
 
     // Packet `index` of the current buffer, counting on into the other buffer past its end; null if not handed over.
-    const uint8_t* FindPacket(const XmaContextData& data, uint32_t index, uint32_t* buffer = nullptr,
-        uint32_t* bufferIndex = nullptr)
+    const uint8_t* FindPacket(
+        const XmaContextData& data, uint32_t index, uint32_t* buffer = nullptr, uint32_t* bufferIndex = nullptr)
     {
         uint32_t which = data.current_buffer;
         uint32_t count = data.InputBufferPacketCount(which);
@@ -336,7 +336,9 @@ void XmaContext::TraceWrapStep(const int16_t* block, uint32_t stride)
             else
             {
                 m_zeroCounting = false;
-                fprintf(stderr, "[xma-wrap] ctx=%p last_before=%.0f first_after=%.0f typical_step=%.1f leading_zero_samples=%u first_nonzero=%.0f\n",
+                fprintf(stderr,
+                    "[xma-wrap] ctx=%p last_before=%.0f first_after=%.0f typical_step=%.1f leading_zero_samples=%u "
+                    "first_nonzero=%.0f\n",
                     static_cast<void*>(this), m_wrapBefore, m_wrapFirst, m_wrapStep, m_zeroRun, sample);
             }
         }
@@ -477,8 +479,8 @@ void XmaContext::Decode(XmaContextData& data)
 
     bool loopEndFrame =
         data.loop_count != 0 && data.input_buffer_read_offset == std::max(PacketHeaderBits, uint32_t(data.loop_end));
-    m_decoder->DecodeFrame(frame, frameStart, frameBits, SampleRates[data.sample_rate], data.is_stereo ? 2 : 1,
-        m_frame.data());
+    m_decoder->DecodeFrame(
+        frame, frameStart, frameBits, SampleRates[data.sample_rate], data.is_stereo ? 2 : 1, m_frame.data());
     if (m_traceWrap && (loopEndFrame || m_loopStartSkipPending))
     {
         // RMS of each 128-sample subframe (channel 0) of the loop end / start frame
@@ -487,11 +489,13 @@ void XmaContext::Decode(XmaContextData& data)
         {
             double sum = 0;
             for (int i = 0; i < 128; i++)
-                sum += double(m_frame[(sub * 128 + i) * (data.is_stereo ? 2 : 1)]) * m_frame[(sub * 128 + i) * (data.is_stereo ? 2 : 1)];
+                sum += double(m_frame[(sub * 128 + i) * (data.is_stereo ? 2 : 1)]) *
+                       m_frame[(sub * 128 + i) * (data.is_stereo ? 2 : 1)];
             at += snprintf(text + at, sizeof(text) - at, " %.0f", std::sqrt(sum / 128));
         }
         fprintf(stderr, "[xma-frame] ctx=%p %s subframe rms:%s (end=%u skip=%u)\n", static_cast<void*>(this),
-            loopEndFrame ? "loop-end" : "loop-start", text, unsigned(data.loop_subframe_end), unsigned(data.loop_subframe_skip));
+            loopEndFrame ? "loop-end" : "loop-start", text, unsigned(data.loop_subframe_end),
+            unsigned(data.loop_subframe_skip));
     }
     m_frameBlocksLeft = BlocksPerFrameChannel << data.is_stereo;
     m_loopFrameBlockLimit = loopEndFrame ? (data.loop_subframe_end + 1u) << data.is_stereo : 0;

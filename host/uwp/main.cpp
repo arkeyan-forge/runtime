@@ -121,8 +121,9 @@ namespace
         Ref<Storage::IStorageFolder> folder;
         Ref<Storage::IStorageItem> item;
         HSTRING path = nullptr;
-        if (FAILED(GetFactory(L"Windows.Storage.ApplicationData", statics)) || FAILED(statics->get_Current(data.Put()))
-            || FAILED(data->get_LocalFolder(folder.Put())) || FAILED(folder.As(item)) || FAILED(item->get_Path(&path)))
+        if (FAILED(GetFactory(L"Windows.Storage.ApplicationData", statics)) ||
+            FAILED(statics->get_Current(data.Put())) || FAILED(data->get_LocalFolder(folder.Put())) ||
+            FAILED(folder.As(item)) || FAILED(item->get_Path(&path)))
             return {};
         UINT32 length = 0;
         const wchar_t* text = WindowsGetStringRawBuffer(path, &length);
@@ -142,9 +143,10 @@ namespace
         Ref<Storage::IStorageItem> item;
         HString name(L"Skylanders");
         HSTRING path = nullptr;
-        if (FAILED(GetFactory(L"Windows.Storage.ApplicationData", statics)) || FAILED(statics->get_Current(data.Put()))
-            || FAILED(data.As(shared)) || FAILED(shared->GetPublisherCacheFolder(name, folder.Put())) || FAILED(folder.As(item))
-            || FAILED(item->get_Path(&path)))
+        if (FAILED(GetFactory(L"Windows.Storage.ApplicationData", statics)) ||
+            FAILED(statics->get_Current(data.Put())) || FAILED(data.As(shared)) ||
+            FAILED(shared->GetPublisherCacheFolder(name, folder.Put())) || FAILED(folder.As(item)) ||
+            FAILED(item->get_Path(&path)))
             return {};
         UINT32 length = 0;
         const wchar_t* text = WindowsGetStringRawBuffer(path, &length);
@@ -166,7 +168,8 @@ namespace
     {
         Ref<System::Profile::IAnalyticsInfoStatics> analytics;
         HSTRING form = nullptr;
-        if (FAILED(GetFactory(L"Windows.System.Profile.AnalyticsInfo", analytics)) || FAILED(analytics->get_DeviceForm(&form)))
+        if (FAILED(GetFactory(L"Windows.System.Profile.AnalyticsInfo", analytics)) ||
+            FAILED(analytics->get_DeviceForm(&form)))
             return 1;
         UINT32 length = 0;
         std::wstring text(WindowsGetStringRawBuffer(form, &length));
@@ -182,7 +185,8 @@ namespace
         if (GetFileAttributesW(preferred.c_str()) != INVALID_FILE_ATTRIBUTES)
             return preferred;
         WIN32_FIND_DATAW data;
-        HANDLE find = FindFirstFileExW((folder + L"\\*.iso").c_str(), FindExInfoBasic, &data, FindExSearchNameMatch, nullptr, 0);
+        HANDLE find =
+            FindFirstFileExW((folder + L"\\*.iso").c_str(), FindExInfoBasic, &data, FindExSearchNameMatch, nullptr, 0);
         if (find == INVALID_HANDLE_VALUE)
             return {};
         FindClose(find);
@@ -199,10 +203,7 @@ namespace
         PrintGuestLocation();
     }
 
-    int16_t Axis(double value)
-    {
-        return int16_t(std::lround(std::clamp(value, -1.0, 1.0) * 32767.0));
-    }
+    int16_t Axis(double value) { return int16_t(std::lround(std::clamp(value, -1.0, 1.0) * 32767.0)); }
 
     GamepadState ReadGamepad(Gaming::Input::IGamepadStatics* gamepads)
     {
@@ -211,18 +212,25 @@ namespace
         Ref<Gaming::Input::IGamepad> gamepad;
         UINT32 count = 0;
         Gaming::Input::GamepadReading reading{};
-        if (gamepads == nullptr || FAILED(gamepads->get_Gamepads(list.Put())) || FAILED(list->get_Size(&count)) || count == 0
-            || FAILED(list->GetAt(0, gamepad.Put())) || FAILED(gamepad->GetCurrentReading(&reading)))
+        if (gamepads == nullptr || FAILED(gamepads->get_Gamepads(list.Put())) || FAILED(list->get_Size(&count)) ||
+            count == 0 || FAILED(list->GetAt(0, gamepad.Put())) || FAILED(gamepad->GetCurrentReading(&reading)))
             return state;
 
         using namespace Gaming::Input;
         static const std::pair<GamepadButtons, uint16_t> buttons[] = {
-            { GamepadButtons_DPadUp, Button::DpadUp }, { GamepadButtons_DPadDown, Button::DpadDown },
-            { GamepadButtons_DPadLeft, Button::DpadLeft }, { GamepadButtons_DPadRight, Button::DpadRight },
-            { GamepadButtons_Menu, Button::Start }, { GamepadButtons_View, Button::Back },
-            { GamepadButtons_LeftThumbstick, Button::LeftThumb }, { GamepadButtons_RightThumbstick, Button::RightThumb },
-            { GamepadButtons_LeftShoulder, Button::LeftShoulder }, { GamepadButtons_RightShoulder, Button::RightShoulder },
-            { GamepadButtons_A, Button::A }, { GamepadButtons_B, Button::B }, { GamepadButtons_X, Button::X },
+            { GamepadButtons_DPadUp, Button::DpadUp },
+            { GamepadButtons_DPadDown, Button::DpadDown },
+            { GamepadButtons_DPadLeft, Button::DpadLeft },
+            { GamepadButtons_DPadRight, Button::DpadRight },
+            { GamepadButtons_Menu, Button::Start },
+            { GamepadButtons_View, Button::Back },
+            { GamepadButtons_LeftThumbstick, Button::LeftThumb },
+            { GamepadButtons_RightThumbstick, Button::RightThumb },
+            { GamepadButtons_LeftShoulder, Button::LeftShoulder },
+            { GamepadButtons_RightShoulder, Button::RightShoulder },
+            { GamepadButtons_A, Button::A },
+            { GamepadButtons_B, Button::B },
+            { GamepadButtons_X, Button::X },
             { GamepadButtons_Y, Button::Y },
         };
         for (const auto& [gamepadButton, button] : buttons)
@@ -248,8 +256,8 @@ namespace
 
         HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** out) override
         {
-            if (iid == __uuidof(Interface) || iid == __uuidof(IUnknown) || iid == __uuidof(IAgileObject)
-                || (std::is_base_of_v<IInspectable, Interface> && iid == __uuidof(IInspectable)))
+            if (iid == __uuidof(Interface) || iid == __uuidof(IUnknown) || iid == __uuidof(IAgileObject) ||
+                (std::is_base_of_v<IInspectable, Interface> && iid == __uuidof(IInspectable)))
             {
                 *out = static_cast<Interface*>(this);
                 AddRef();
@@ -295,7 +303,8 @@ namespace
 
     std::atomic<bool> g_closed;
 
-    class ClosedHandler final : public Unknown<Foundation::ITypedEventHandler<UI::Core::CoreWindow*, UI::Core::CoreWindowEventArgs*>>
+    class ClosedHandler final
+        : public Unknown<Foundation::ITypedEventHandler<UI::Core::CoreWindow*, UI::Core::CoreWindowEventArgs*>>
     {
     public:
         HRESULT STDMETHODCALLTYPE Invoke(ICoreWindow*, UI::Core::ICoreWindowEventArgs*) override
@@ -320,11 +329,13 @@ namespace
     // which takes the system's splash screen down and lets the CoreWindow's swap chain reach the display.
     std::atomic<bool> g_activated;
 
-    class ActivatedHandler final : public Unknown<Foundation::ITypedEventHandler<ApplicationModel::Core::CoreApplicationView*,
-        ApplicationModel::Activation::IActivatedEventArgs*>>
+    class ActivatedHandler final
+        : public Unknown<Foundation::ITypedEventHandler<ApplicationModel::Core::CoreApplicationView*,
+              ApplicationModel::Activation::IActivatedEventArgs*>>
     {
     public:
-        HRESULT STDMETHODCALLTYPE Invoke(ICoreApplicationView* view, ApplicationModel::Activation::IActivatedEventArgs* args) override
+        HRESULT STDMETHODCALLTYPE Invoke(
+            ICoreApplicationView* view, ApplicationModel::Activation::IActivatedEventArgs* args) override
         {
             ApplicationModel::Activation::ActivationKind kind{};
             if (args != nullptr)
@@ -338,7 +349,8 @@ namespace
         }
     };
 
-    class VisibilityHandler final : public Unknown<Foundation::ITypedEventHandler<UI::Core::CoreWindow*, UI::Core::VisibilityChangedEventArgs*>>
+    class VisibilityHandler final
+        : public Unknown<Foundation::ITypedEventHandler<UI::Core::CoreWindow*, UI::Core::VisibilityChangedEventArgs*>>
     {
     public:
         HRESULT STDMETHODCALLTYPE Invoke(ICoreWindow*, UI::Core::IVisibilityChangedEventArgs* args) override
@@ -382,8 +394,8 @@ namespace
 
             Ref<UI::Core::ISystemNavigationManagerStatics> navigationStatics;
             Ref<UI::Core::ISystemNavigationManager> navigation;
-            if (SUCCEEDED(GetFactory(L"Windows.UI.Core.SystemNavigationManager", navigationStatics))
-                && SUCCEEDED(navigationStatics->GetForCurrentView(navigation.Put())))
+            if (SUCCEEDED(GetFactory(L"Windows.UI.Core.SystemNavigationManager", navigationStatics)) &&
+                SUCCEEDED(navigationStatics->GetForCurrentView(navigation.Put())))
             {
                 auto* back = new BackHandler();
                 navigation->add_BackRequested(back, &token);
@@ -450,7 +462,8 @@ namespace
             {
                 std::string localFigures = Utf8(LocalStatePath()) + "\\figures";
                 std::wstring publisher = PublisherFolder();
-                _putenv_s("SKY_COLLECTION", publisher.empty() ? localFigures.c_str() : (Utf8(publisher) + "\\Collection").c_str());
+                _putenv_s("SKY_COLLECTION",
+                    publisher.empty() ? localFigures.c_str() : (Utf8(publisher) + "\\Collection").c_str());
                 if (!publisher.empty())
                     _putenv_s("SKY_MIGRATE_FROM", localFigures.c_str());
                 fprintf(stderr, "[uwp] figure collection %s\n", skyenv::Get("SKY_COLLECTION"));
@@ -499,8 +512,8 @@ namespace
             FLOAT dpi = 96.0f;
             Ref<Graphics::Display::IDisplayInformationStatics> displayStatics;
             Ref<Graphics::Display::IDisplayInformation> display;
-            if (SUCCEEDED(GetFactory(L"Windows.Graphics.Display.DisplayInformation", displayStatics))
-                && SUCCEEDED(displayStatics->GetForCurrentView(display.Put())))
+            if (SUCCEEDED(GetFactory(L"Windows.Graphics.Display.DisplayInformation", displayStatics)) &&
+                SUCCEEDED(displayStatics->GetForCurrentView(display.Put())))
                 display->get_LogicalDpi(&dpi);
             width = UINT32(std::lround(bounds.Width * dpi / 96.0f));
             height = UINT32(std::lround(bounds.Height * dpi / 96.0f));

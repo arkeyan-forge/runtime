@@ -33,9 +33,9 @@ namespace
 
     // XACHIEVEMENT_DETAILS: id, label*, description*, unachieved*, image id, gamerscore, FILETIME unlock time, flags.
     constexpr uint32_t AchievementDetailsSize = 0x24;
-    constexpr uint32_t DetailLabel = 0x1;       // XACHIEVEMENT_DETAILS_LABEL: the enumeration fills pwszLabel...
+    constexpr uint32_t DetailLabel = 0x1; // XACHIEVEMENT_DETAILS_LABEL: the enumeration fills pwszLabel...
     constexpr uint32_t DetailDescription = 0x2; // ...pwszDescription...
-    constexpr uint32_t DetailUnachieved = 0x4;  // ...and pwszUnachieved
+    constexpr uint32_t DetailUnachieved = 0x4; // ...and pwszUnachieved
     constexpr uint32_t FlagAchieved = 0x00020000;
     constexpr int64_t FileTimeUnixEpoch = 11644473600ll; // seconds from 1601 to 1970
 
@@ -65,8 +65,8 @@ namespace
                     score += info.gamerscore;
                 }
         }
-        fprintf(stderr, "[achievement] %zu achievements, %u unlocked (gamerscore %u of %u)\n", g_list.items.size(), unlocked, score,
-            g_list.TotalGamerscore());
+        fprintf(stderr, "[achievement] %zu achievements, %u unlocked (gamerscore %u of %u)\n", g_list.items.size(),
+            unlocked, score, g_list.TotalGamerscore());
     }
 
     const progress::Unlock* UnlockOf(uint32_t id)
@@ -81,14 +81,29 @@ namespace
     std::vector<uint8_t> GuestText(const std::string& text)
     {
         std::vector<uint8_t> out;
-        auto put = [&](uint32_t unit) { out.push_back(uint8_t(unit >> 8)); out.push_back(uint8_t(unit)); };
+        auto put = [&](uint32_t unit) {
+            out.push_back(uint8_t(unit >> 8));
+            out.push_back(uint8_t(unit));
+        };
         for (size_t i = 0; i < text.size();)
         {
             uint8_t lead = uint8_t(text[i]);
             uint32_t code = lead, extra = 0;
-            if (lead >= 0xF0) { code = lead & 0x07; extra = 3; }
-            else if (lead >= 0xE0) { code = lead & 0x0F; extra = 2; }
-            else if (lead >= 0xC0) { code = lead & 0x1F; extra = 1; }
+            if (lead >= 0xF0)
+            {
+                code = lead & 0x07;
+                extra = 3;
+            }
+            else if (lead >= 0xE0)
+            {
+                code = lead & 0x0F;
+                extra = 2;
+            }
+            else if (lead >= 0xC0)
+            {
+                code = lead & 0x1F;
+                extra = 1;
+            }
             i++;
             for (; extra != 0 && i < text.size(); extra--, i++)
                 code = code << 6 | (uint8_t(text[i]) & 0x3F);
@@ -162,7 +177,8 @@ namespace
                 g_memory.Write<uint32_t>(details + 0x0C, pointers[2]);
                 g_memory.Write<uint32_t>(details + 0x10, row.imageId);
                 g_memory.Write<uint32_t>(details + 0x14, row.gamerscore);
-                g_memory.Write<uint64_t>(details + 0x18, row.unlockTime != 0 ? uint64_t(row.unlockTime + FileTimeUnixEpoch) * 10000000ull : 0);
+                g_memory.Write<uint64_t>(details + 0x18,
+                    row.unlockTime != 0 ? uint64_t(row.unlockTime + FileTimeUnixEpoch) * 10000000ull : 0);
                 g_memory.Write<uint32_t>(details + 0x20, row.flags | (row.unlockTime != 0 ? FlagAchieved : 0));
             }
             return count;
@@ -172,7 +188,9 @@ namespace
     void Announce(const achievements::Info& info)
     {
         std::string english = "Achievement unlocked: " + info.name;
-        std::string french = "Succ\xC3\xA8s d\xC3\xA9" "bloqu\xC3\xA9 : " + info.name;
+        std::string french = "Succ\xC3\xA8s d\xC3\xA9"
+                             "bloqu\xC3\xA9 : " +
+                             info.name;
         ToyboxNotice(english.c_str(), french.c_str());
     }
 }
@@ -245,7 +263,8 @@ PPC_FUNC(__imp__XamUserCreateAchievementEnumerator)
         {
             const achievements::Info& info = g_list.items[i];
             const progress::Unlock* unlock = UnlockOf(info.id);
-            AchievementEnumerator::Row row = { info.id, info.imageId, info.gamerscore, info.flags & 0xF, unlock != nullptr ? std::max<int64_t>(unlock->time, 1) : 0,
+            AchievementEnumerator::Row row = { info.id, info.imageId, info.gamerscore, info.flags & 0xF,
+                unlock != nullptr ? std::max<int64_t>(unlock->time, 1) : 0,
                 { GuestText(info.name), GuestText(info.unlockedDescription), GuestText(info.lockedDescription) } };
             enumerator->rows.push_back(std::move(row));
         }

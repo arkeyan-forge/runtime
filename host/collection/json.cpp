@@ -28,7 +28,8 @@ namespace collection
 
             void Space()
             {
-                while (at < text.size() && (text[at] == ' ' || text[at] == '\t' || text[at] == '\n' || text[at] == '\r'))
+                while (
+                    at < text.size() && (text[at] == ' ' || text[at] == '\t' || text[at] == '\n' || text[at] == '\r'))
                     at++;
             }
 
@@ -73,7 +74,10 @@ namespace collection
                 for (int i = 0; i < 4; i++)
                 {
                     char c = text[at++];
-                    int digit = c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
+                    int digit = c >= '0' && c <= '9'   ? c - '0'
+                                : c >= 'a' && c <= 'f' ? c - 'a' + 10
+                                : c >= 'A' && c <= 'F' ? c - 'A' + 10
+                                                       : -1;
                     if (digit < 0)
                         return Fail("bad \\u escape");
                     value = value << 4 | uint32_t(digit);
@@ -99,7 +103,9 @@ namespace collection
                     char escape = text[at++];
                     switch (escape)
                     {
-                    case '"': case '\\': case '/': out += escape; break;
+                    case '"':
+                    case '\\':
+                    case '/': out += escape; break;
                     case 'b': out += '\b'; break;
                     case 'f': out += '\f'; break;
                     case 'n': out += '\n'; break;
