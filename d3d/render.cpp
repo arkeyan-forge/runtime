@@ -683,6 +683,8 @@ namespace
     std::vector<float> g_constants(2 * 256 * 4);
     // What PrepareDraw saw of the draw it built, for BuildDraw: it draws into the wide frame, may read the scene, VTE_CNTL.
     bool g_frameDraw, g_frameSceneRead, g_frameComposite;
+    // The draw's guest shader hashes, for the frame dump's lines (0: none).
+    uint64_t g_drawVertexShader, g_drawPixelShader;
 
     void ReadConstants(uint32_t device, float* out)
     {
@@ -717,6 +719,8 @@ namespace
         uint32_t pixelShaderObject = Read32(device + Device::PixelShader);
         const GuestShader* vs = FindGuestShader(Read32(device + Device::VertexShader));
         const GuestShader* ps = pixelShaderObject != 0 ? FindGuestShader(pixelShaderObject) : nullptr;
+        g_drawVertexShader = vs != nullptr ? vs->hash : 0;
+        g_drawPixelShader = ps != nullptr ? ps->hash : 0;
         draw.vertexShader = vs != nullptr ? gpu::FindXenosShader(vs->hash) : nullptr;
         draw.pixelShader = ps != nullptr ? gpu::FindXenosShader(ps->hash) : nullptr;
         if (draw.vertexShader == nullptr || (pixelShaderObject != 0 && draw.pixelShader == nullptr))
@@ -802,6 +806,44 @@ namespace
         draw.raster.cullMode = cullFront && cullBack ? plume::RenderCullMode::NONE // both: nothing drawn; not handled
             : cullFront ? plume::RenderCullMode::FRONT : cullBack ? plume::RenderCullMode::BACK : plume::RenderCullMode::NONE;
         draw.raster.frontFace = (mode >> 2) & 1 ? plume::RenderFrontFace::CLOCKWISE : plume::RenderFrontFace::COUNTER_CLOCKWISE;
+
+        // Polygon offset (depth bias): PA_SU_POLY_OFFSET_{FRONT,BACK}_{SCALE,OFFSET} (0x2380-0x2383), enabled by
+        // PA_SU_SC_MODE_CNTL bit 11 (front faces), 12 (back faces) and 13 (points and lines, with the front values); the
+        // host has one bias per draw, so the front one wins when both apply. Swap Force draws its lava canyon's and
+        // crystal tunnel's G-buffer decals (vertex shader 1A20887C...) over the walls with a slope scale of 16 or 48 and
+        // a GEQUAL test: without the offset they depth-fight the wall under them and the lava shimmers in patches from
+        // frame to frame (games/swapforce/docs/shaders.md). The units follow Xenia's conversion (BSD): the slope scale
+        // counts 1/16 subpixels, the constant offset is in units of 2^-19 of the 20e4 depth (2^-23 of a 24-bit one),
+        // rounded away from zero; the slope is per guest pixel, so it grows with the host's scale. SKY_POLY_OFFSET=0
+        // turns it off (to see the fault, or to check that tools/regress/analyze.py's shimmer check catches it).
+        static const bool polyOffset = [] { const char* v = skyenv::Get("SKY_POLY_OFFSET"); return v == nullptr || strcmp(v, "0") != 0; }();
+        if (polyOffset)
+        {
+            const bool polygonal = primitive != 1 && primitive != 2 && primitive != 3 && primitive != 12;
+            int face = -1; // 0 front, 1 back
+            if (!polygonal)
+                face = (mode >> 13) & 1 ? 0 : -1;
+            else if ((mode >> 11) & 1 && !cullFront)
+                face = 0;
+            else if ((mode >> 12) & 1 && !cullBack)
+                face = 1;
+            if (face >= 0)
+            {
+                float scale = std::bit_cast<float>(GpuRegister(device, 0x2380 + 2 * face));
+                float offset = std::bit_cast<float>(GpuRegister(device, 0x2381 + 2 * face));
+                offset *= (GpuRegister(device, Reg::RB_DEPTH_INFO) >> 16) & 1 ? float(1 << 19) : float(1 << 23);
+                draw.raster.depthBias = int32_t(std::ceil(std::fabs(offset))) * (offset < 0.0f ? -1 : 1);
+                draw.raster.slopeScaledDepthBias = scale / 16.0f * float(Scale());
+                static bool logged = false;
+                if (!logged && (draw.raster.depthBias != 0 || draw.raster.slopeScaledDepthBias != 0.0f))
+                {
+                    logged = true;
+                    fprintf(stderr, "[render] polygon offset first used: frame %llu, pixel shader %016llX, slope scale %g, offset %g\n",
+                        (unsigned long long)g_frame, (unsigned long long)g_drawPixelShader, scale,
+                        std::bit_cast<float>(GpuRegister(device, 0x2381 + 2 * face)));
+                }
+            }
+        }
 
         // Viewport from the PA_CL_VPORT registers (screen = ndc * scale + offset).
         auto regFloat = [&](uint32_t reg) { return std::bit_cast<float>(GpuRegister(device, reg)); };
@@ -1270,12 +1312,16 @@ namespace
         if (g_dump.active)
         {
             fprintf(stderr, "[dump] prim %u count %u first %u idx %d vp %.1f %.1f %.1f %.1f z %.2f-%.2f sc %d %d %d %d pos %.3f %.3f blend %d %d/%d mask %x spec %x "
-                "depthctl %08x stencil %08x targets %u%s\n",
+                "depthctl %08x stencil %08x targets %u%s vs %016llx ps %016llx sumode %08x polyoffset %g %g %g %g\n",
                 primitive, draw.count, draw.first, draw.indices != nullptr, draw.viewport.x, draw.viewport.y, draw.viewport.width, draw.viewport.height,
                 draw.viewport.minDepth, draw.viewport.maxDepth, draw.scissor.left, draw.scissor.top, draw.scissor.right, draw.scissor.bottom,
                 draw.positionScale[0], draw.positionScale[1], draw.blend[0].enabled, int(draw.blend[0].srcColor), int(draw.blend[0].dstColor),
                 draw.blend[0].writeMask, draw.specConstants, GpuRegister(device, Reg::RB_DEPTHCONTROL), GpuRegister(device, Reg::RB_STENCILREFMASK),
-                draw.colorTargetCount, draw.depthTarget != nullptr ? "+depth" : "");
+                draw.colorTargetCount, draw.depthTarget != nullptr ? "+depth" : "",
+                static_cast<unsigned long long>(g_drawVertexShader), static_cast<unsigned long long>(g_drawPixelShader),
+                GpuRegister(device, Reg::PA_SU_SC_MODE_CNTL), std::bit_cast<float>(GpuRegister(device, 0x2380)),
+                std::bit_cast<float>(GpuRegister(device, 0x2381)), std::bit_cast<float>(GpuRegister(device, 0x2382)),
+                std::bit_cast<float>(GpuRegister(device, 0x2383)));
             for (uint32_t i = 0; i < draw.inputCount; i++)
                 fprintf(stderr, "[dump]   input loc %u stream %u off %u fmt %d\n", draw.inputs[i].location, draw.inputs[i].stream, draw.inputs[i].offset, int(draw.inputs[i].format));
             for (uint32_t i = 0; i < draw.streamCount; i++)
@@ -1288,7 +1334,14 @@ namespace
             for (uint32_t i = 0; i < gpu::MaxSamplers; i++)
                 if (draw.textures[i] != nullptr)
                 {
-                    fprintf(stderr, "[dump]   tex %u %ux%u fmt %d\n", i, gpu::Desc(draw.textures[i]).width, gpu::Desc(draw.textures[i]).height, int(gpu::Desc(draw.textures[i]).format));
+                    // The sampler and the fetch constant's dwords 3-5 (filters, mip levels, LOD bias, mip address).
+                    uint32_t fetch[6];
+                    GpuRegisters(device, 0x4800 + i * 6, 6, fetch);
+                    const gpu::SamplerState& sampler = draw.samplers[i];
+                    fprintf(stderr, "[dump]   tex %u %ux%u fmt %d levels %u filter %d%d%d aniso %u lod %g-%g bias %g fetch %08x %08x %08x\n", i,
+                        gpu::Desc(draw.textures[i]).width, gpu::Desc(draw.textures[i]).height, int(gpu::Desc(draw.textures[i]).format),
+                        gpu::Desc(draw.textures[i]).mipLevels, int(sampler.minFilter), int(sampler.magFilter), int(sampler.mipFilter),
+                        sampler.maxAnisotropy, sampler.minLod, sampler.maxLod, sampler.mipLodBias, fetch[3], fetch[4], fetch[5]);
                     if (std::find(dumped.begin(), dumped.end(), draw.textures[i]) == dumped.end() && gpu::Desc(draw.textures[i]).format != gpu::Format::BC3_UNORM)
                     {
                         dumped.push_back(draw.textures[i]);
