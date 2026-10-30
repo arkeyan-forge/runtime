@@ -17,6 +17,8 @@
 #include <string>
 #include <unordered_map>
 
+// The helpers of the hooks below; a game hooks its three zlib calls together, as the stream state lives on the host.
+#ifdef GAME_HOOK_inflate
 #ifdef SSA_INFLATE_MINIZ
 // No system zlib (Windows): miniz's inflate, public domain, from the tree. Only the declarations here; CMake compiles
 // miniz.c itself. Its stream is zlib's, field for field, so the hooks below are the same for both.
@@ -130,6 +132,7 @@ namespace
     }
 
 }
+#endif
 
 // inflateInit2_(strm, windowBits, version, stream_size); inflateInit_ (0x825F23B8) branches here with windowBits 15.
 #ifdef GAME_HOOK_inflateInit2_

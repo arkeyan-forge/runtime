@@ -148,6 +148,9 @@ if(SSA_UWP)
     target_link_options(SSAPresentTest PRIVATE -municode)
 endif()
 target_link_libraries(SSARecomp PRIVATE SSARecompLib SSARecompGpu SSAXenonUtils fmt::fmt SDL3::SDL3-static)
+# ppc_context.h and ppc_config.h are XenonRecomp's output: system headers here, so their warnings stay out of ours. System
+# directories come after every -I one, so XenonUtils (which has its own ppc_context.h) is one too, after the game's.
+target_include_directories(SSARecomp SYSTEM PRIVATE ${SSA_PPC_DIR} ${SSA_XENON_UTILS})
 
 # The launcher window: SDL_Renderer drawing, a small TrueType atlas (stb_truetype, MIT/public domain) and two
 # OFL fonts. It links into both the game and the launcher test (the test links it even though it never opens a window,
@@ -316,7 +319,8 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
     add_executable(SSAAchievementsKernelTest EXCLUDE_FROM_ALL kernel/xam_achievements_test.cpp kernel/xam_achievements.cpp kernel/objects.cpp
         kernel/overlapped.cpp memory.cpp host/collection/achievements.cpp host/collection/progress.cpp host/collection/save_backup.cpp
         host/collection/datadir.cpp vfs.cpp ${SSA_PLATFORM_SOURCES})
-    target_include_directories(SSAAchievementsKernelTest PRIVATE . ${SSA_PPC_DIR})
+    target_include_directories(SSAAchievementsKernelTest PRIVATE .)
+    target_include_directories(SSAAchievementsKernelTest SYSTEM PRIVATE ${SSA_PPC_DIR} ${SSA_XENON_UTILS}) # as SSARecomp's
     target_link_libraries(SSAAchievementsKernelTest PRIVATE SSAXenonUtils fmt::fmt SDL3::SDL3-static)
 endif()
 
