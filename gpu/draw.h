@@ -107,6 +107,7 @@ namespace gpu
         // Sampler registers whose texture is resolution-scale times its guest size (resolves): fetches with unnormalized
         // coordinates (in guest texels) scale them (bit n = register n).
         uint32_t scaledTextures;
+        float resolutionScale; // the target's: guest pixels (vPos, point sizes) to host pixels
         // The vertex input the vertex shader fetches at a computed index, as `pulledCount` float4s (0: none).
         const float* pulledVertices;
         uint32_t pulledCount;

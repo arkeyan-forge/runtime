@@ -1210,7 +1210,7 @@ void gpu::detail::DrawNow(const DrawDesc& draw)
     shared.paramGen = draw.paramGen;
     shared.positionScale[0] = draw.positionScale[0];
     shared.positionScale[1] = draw.positionScale[1];
-    shared.resolutionScale = float(gpu::g_settings.resolutionScale);
+    shared.resolutionScale = draw.resolutionScale;
     shared.scaledTextures = draw.scaledTextures;
     shared.pointScale[0] = draw.viewport.width != 0.0f ? 1.0f / std::fabs(draw.viewport.width) : 0.0f;
     shared.pointScale[1] = draw.viewport.height != 0.0f ? 1.0f / std::fabs(draw.viewport.height) : 0.0f;

@@ -267,6 +267,8 @@ if(APPLE)
         VERBATIM)
 endif()
 
+add_executable(SSARenderScaleTest d3d/render_scale_test.cpp)
+
 # Protocol test of the emulated Skylanders portal (no game data needed): ./SSAPortalTest
 add_executable(SSAPortalTest host/portal_emulated.cpp host/portal_identity.cpp host/portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/ssa/ssa_portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/giants/giants_portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/swapforce/swapforce_portal_prompt.cpp host/portal_test.cpp host/figures/figure_data.cpp)
 target_include_directories(SSAPortalTest PRIVATE . ${CMAKE_SOURCE_DIR}/games/ssa ${CMAKE_SOURCE_DIR}/games/giants ${CMAKE_SOURCE_DIR}/games/swapforce)

@@ -7,6 +7,7 @@
 #include "d3d/command_buffers.h"
 #include "d3d/depth_readback.h"
 #include "d3d/device.h"
+#include "d3d/render_scale.h"
 #include "d3d/ring.h"
 #include "d3d/shaders.h"
 #include "d3d/ultrawide.h"
@@ -57,6 +58,8 @@ namespace
     // Resolution scale (settings): host render targets, and the textures resolved from them, are this many times the
     // guest's surfaces, so guest pixel coordinates (viewports, scissors, resolve and clear rectangles) are scaled by it.
     int32_t Scale() { return int32_t(gpu::g_settings.resolutionScale); }
+
+    int32_t TargetScale(const gpu::TextureDesc& desc) { return d3d::TargetScale(desc.width, desc.height, Scale()); }
 
     struct Stats
     {
@@ -124,8 +127,9 @@ namespace
         gpu::Texture*& texture = g_targets[key];
         if (texture == nullptr)
         {
-            gpu::TextureDesc desc{ .width = (IsFrameSize(width, height) ? ultrawide::FrameWidth() : width) * Scale(),
-                .height = height * Scale() };
+            const int32_t scale = d3d::TargetScale(width, height, Scale());
+            gpu::TextureDesc desc{ .width = (IsFrameSize(width, height) ? ultrawide::FrameWidth() : width) * scale,
+                .height = height * scale };
             desc.format = depth ? xenos::DepthTargetFormat : xenos::ColorTargetFormat(format);
             desc.usage =
                 depth ? gpu::TextureUsage::DepthStencil : gpu::TextureUsage::RenderTarget | gpu::TextureUsage::Sampled;
@@ -732,6 +736,42 @@ namespace
     }
 
     // Fills everything except the vertex data and the draw range. False when the draw cannot be rendered (yet).
+    // SKY_SKIP_PS=<hex hash>[,<hex hash>...]: drops the draws of these pixel shaders (a test aid: bisects a frame by pass).
+    // A hash may be cut short, as the docs write them (123B15C5). The target keeps what it held: a post pass that writes
+    // the target it read from is removed cleanly, one that writes another target leaves that target's old contents.
+    bool SkipPixelShader(uint64_t hash)
+    {
+        struct Skip
+        {
+            uint64_t prefix;
+            uint32_t shift;
+            bool logged;
+        };
+        static std::vector<Skip> skips = [] {
+            std::vector<Skip> list;
+            const char* value = skyenv::Get("SKY_SKIP_PS");
+            while (value != nullptr && *value != '\0')
+            {
+                char* end = nullptr;
+                uint64_t prefix = strtoull(value, &end, 16);
+                if (end == value)
+                    break;
+                list.push_back({ prefix, uint32_t(64 - 4 * std::min<ptrdiff_t>(end - value, 16)), false });
+                value = *end == ',' ? end + 1 : end;
+            }
+            return list;
+        }();
+        for (Skip& skip : skips)
+            if ((skip.shift == 0 ? hash : hash >> skip.shift) == skip.prefix)
+            {
+                if (!skip.logged)
+                    fprintf(stderr, "[render] SKY_SKIP_PS: skipping pixel shader %016llX\n", (unsigned long long)hash);
+                skip.logged = true;
+                return true;
+            }
+        return false;
+    }
+
     bool PrepareDraw(uint32_t device, uint32_t primitive, gpu::DrawDesc& draw)
     {
         memset(&draw, 0, sizeof(draw));
@@ -743,6 +783,11 @@ namespace
         const GuestShader* ps = pixelShaderObject != 0 ? FindGuestShader(pixelShaderObject) : nullptr;
         g_drawVertexShader = vs != nullptr ? vs->hash : 0;
         g_drawPixelShader = ps != nullptr ? ps->hash : 0;
+        if (ps != nullptr && SkipPixelShader(ps->hash))
+        {
+            g_stats.skippedShader++;
+            return false;
+        }
         draw.vertexShader = vs != nullptr ? gpu::FindXenosShader(vs->hash) : nullptr;
         draw.pixelShader = ps != nullptr ? gpu::FindXenosShader(ps->hash) : nullptr;
         if (draw.vertexShader == nullptr || (pixelShaderObject != 0 && draw.pixelShader == nullptr))
@@ -888,20 +933,22 @@ namespace
         uint32_t vte = GpuRegister(device, Reg::PA_CL_VTE_CNTL);
         const gpu::TextureDesc& size = gpu::Desc(sizeTarget);
         const bool frame = IsFrameTexture(size);
+        const int32_t targetScale = TargetScale(size);
+        draw.resolutionScale = float(targetScale);
         draw.positionScale[0] = draw.positionScale[1] = 1.0f;
         if ((vte & 1) == 0)
         {
             // Viewport transform disabled: shaders output pixel positions. Convert them to clip space in the shader
             // (g_PositionScale) and draw over the whole target.
             // The wide frame is still 1280 guest pixels for the game.
-            float guestWidth = float(frame ? ultrawide::FrameWidth16x9 : size.width / Scale());
+            float guestWidth = float(frame ? ultrawide::FrameWidth16x9 : size.width / targetScale);
             draw.positionScale[0] = 2.0f / guestWidth;
-            draw.positionScale[1] = -2.0f / float(size.height / Scale());
+            draw.positionScale[1] = -2.0f / float(size.height / targetScale);
             draw.halfPixelOffset[0] = -1.0f;
             draw.halfPixelOffset[1] = 1.0f;
             xScale = guestWidth / 2;
             xOffset = xScale;
-            yScale = -float(size.height / Scale()) / 2;
+            yScale = -float(size.height / targetScale) / 2;
             yOffset = -yScale;
         }
         // An inverted depth range (MinZ > MaxZ) is kept as it is: Swap Force draws its scene with viewports 1..0.2 and
@@ -910,18 +957,18 @@ namespace
         draw.viewport =
             plume::RenderViewport(xOffset - std::fabs(xScale), yOffset - std::fabs(yScale), 2 * std::fabs(xScale),
                 2 * std::fabs(yScale), (vte & 0x20) ? zOffset : 0.0f, (vte & 0x10) ? zOffset + zScale : 1.0f);
-        draw.viewport.x *= Scale();
-        draw.viewport.y *= Scale();
-        draw.viewport.width *= Scale();
-        draw.viewport.height *= Scale();
+        draw.viewport.x *= targetScale;
+        draw.viewport.y *= targetScale;
+        draw.viewport.width *= targetScale;
+        draw.viewport.height *= targetScale;
 
         int32_t left = int32_t(Read32(device + Device::Scissor)), top = int32_t(Read32(device + Device::Scissor + 4));
         int32_t right = int32_t(Read32(device + Device::Scissor + 8)),
                 bottom = int32_t(Read32(device + Device::Scissor + 12));
-        left *= Scale();
-        top *= Scale();
-        right *= Scale();
-        bottom *= Scale();
+        left *= targetScale;
+        top *= targetScale;
+        right *= targetScale;
+        bottom *= targetScale;
         draw.scissor =
             plume::RenderRect(std::clamp(left, 0, int32_t(size.width)), std::clamp(top, 0, int32_t(size.height)),
                 std::clamp(right, 0, int32_t(size.width)), std::clamp(bottom, 0, int32_t(size.height)));
@@ -947,7 +994,8 @@ namespace
             draw.textures[slot] = TextureFor(fetch);
             auto host = g_textures.find(TextureKey(fetch));
             draw.swizzles[slot] = SwizzleFor(fetch, host != g_textures.end() && host->second.swapRB);
-            if (host != g_textures.end() && host->second.resolved)
+            if (host != g_textures.end() && host->second.resolved &&
+                gpu::Desc(host->second.texture).width != fetch.Width())
                 draw.scaledTextures |= 1u << slot; // a resolve: resolution-scale times its guest size
             draw.samplers[slot] = SamplerFor(fetch);
         }
@@ -1353,13 +1401,26 @@ namespace
         if (!indexed && primitive == 8 && upData == 0)
             ExpandRectangles(draw, count);
 
-        if (upData != 0 || g_dump.active || (g_frameComposite && game::UltrawideCompositeVpos))
+        // FXAA's corner taps (fetch offsets of +-0.5 guest texels) and steps (c0, c1, from the guest's frame size) land N host
+        // pixels apart at scale N: an edge filter that wide also softens what the higher resolution added. Measured at
+        // scale 2: 2.9 % of the pixels changed and 20 % of the sharpness lost, against 1.4 % and 13 % in host pixels.
+        const bool hostKernel =
+            game::HostKernelPixelShader != 0 && Scale() > 1 && g_drawPixelShader == game::HostKernelPixelShader;
+        if (upData != 0 || g_dump.active || (g_frameComposite && game::UltrawideCompositeVpos) || hostKernel)
         {
             // A BeginVertices draw captures the constants when the buffer is requested, before the game fills the
             // vertices (and may change state); the debug dump wants the same host-order copy.
             ReadConstants(device, g_constants.data());
             draw.vertexConstants = g_constants.data();
             draw.pixelConstants = g_constants.data() + 256 * 4;
+            if (hostKernel)
+            {
+                HostKernel kernel{ .scaledTextures = draw.scaledTextures };
+                std::copy_n(draw.pixelConstants, kernel.constants.size(), kernel.constants.begin());
+                kernel = ScaleHostKernel(kernel, Scale());
+                std::copy(kernel.constants.begin(), kernel.constants.end(), g_constants.data() + 256 * 4);
+                draw.scaledTextures = kernel.scaledTextures;
+            }
             if (g_frameComposite && game::UltrawideCompositeVpos)
             {
                 // The composite reads the scene at (pixel position) x VposParams.xy + VposParams.zw (pixel constant c0),
@@ -1598,20 +1659,21 @@ namespace
             return;
 
         const bool frame = !depth && IsFrameTexture(gpu::Desc(target));
+        const int32_t scale = TargetScale(gpu::Desc(target));
         int32_t left = 0, top = 0, right = int32_t(gpu::Desc(target).width), bottom = int32_t(gpu::Desc(target).height);
         if (args.rect != 0)
         {
-            left = std::max(int32_t(Read32(args.rect)) * Scale(), 0);
-            top = std::max(int32_t(Read32(args.rect + 4)) * Scale(), 0);
+            left = std::max(int32_t(Read32(args.rect)) * scale, 0);
+            top = std::max(int32_t(Read32(args.rect + 4)) * scale, 0);
             // A rectangle over the guest's whole frame takes the whole wide one. The tiles of a predicated-tiling frame
             // (Giants: 0-864 and 864-1280) take the wide frame from its left edge, or to its right edge, and meet at the
             // centred position of their common edge.
-            int32_t guestRight = int32_t(Read32(args.rect + 8)) * Scale();
-            if (frame && left == 0 && guestRight >= int32_t(ultrawide::FrameWidth16x9) * Scale())
+            int32_t guestRight = int32_t(Read32(args.rect + 8)) * scale;
+            if (frame && left == 0 && guestRight >= int32_t(ultrawide::FrameWidth16x9) * scale)
                 ; // the whole wide frame
             else if (frame && game::ExpandTiledTargets)
             {
-                if (guestRight >= int32_t(ultrawide::FrameWidth16x9) * Scale())
+                if (guestRight >= int32_t(ultrawide::FrameWidth16x9) * scale)
                     guestRight = right;
                 else
                     guestRight += FrameShift();
@@ -1621,7 +1683,7 @@ namespace
             }
             else
                 right = std::min(guestRight, right);
-            bottom = std::min(int32_t(Read32(args.rect + 12)) * Scale(), bottom);
+            bottom = std::min(int32_t(Read32(args.rect + 12)) * scale, bottom);
         }
 
         if (args.destination != 0)
@@ -1633,7 +1695,7 @@ namespace
             // Depth (k_24_8, k_24_8_FLOAT textures) is sampled as its value in X, as Xenia converts it.
             gpu::Format format = depth ? gpu::Format::R32_FLOAT : gpu::Desc(target).format;
             // The frame's copy is as wide as the frame: that is what the swap presents.
-            const uint32_t hostWidth = frame ? gpu::Desc(target).width : fetch.Width() * Scale();
+            const uint32_t hostWidth = frame ? gpu::Desc(target).width : fetch.Width() * scale;
             // A cube texture receives one resolve per face (`slice`): the level's ambient cube map is built this way.
             bool cube = !depth && fetch.Dimension() == 3;
             if (host.texture == nullptr || gpu::Desc(host.texture).format != format ||
@@ -1641,7 +1703,7 @@ namespace
             {
                 gpu::DestroyTexture(host.texture);
                 host.texture = gpu::CreateTexture({ .width = hostWidth,
-                    .height = fetch.Height() * Scale(),
+                    .height = fetch.Height() * scale,
                     .arraySize = cube ? 6u : 1u,
                     .format = format,
                     .usage = gpu::TextureUsage::Sampled | gpu::TextureUsage::RenderTarget,
@@ -1653,8 +1715,8 @@ namespace
             // start with X, as for ARGB textures (ZYXW): the host copy keeps the target's order, so sampling swaps back.
             host.swapRB = !depth && ((fetch.dword[3] >> 1) & 7) != 0;
 
-            uint32_t x = args.point != 0 ? Read32(args.point) * Scale() : 0,
-                     y = args.point != 0 ? Read32(args.point + 4) * Scale() : 0;
+            uint32_t x = args.point != 0 ? Read32(args.point) * scale : 0,
+                     y = args.point != 0 ? Read32(args.point + 4) * scale : 0;
             if (frame && game::ExpandTiledTargets && ultrawide::Active())
                 x = uint32_t(
                     left); // a tile of the wide frame lands where it was read (the copy is as wide as the frame)
@@ -1727,10 +1789,6 @@ namespace
         }
         if (right <= left || bottom <= top)
             return;
-        left *= Scale();
-        top *= Scale();
-        right *= Scale();
-        bottom *= Scale();
 
         float rgba[4] = {};
         if (color != 0)
@@ -1740,7 +1798,8 @@ namespace
         // The whole target: a load-action clear, cheaper than plume's rectangle clear.
         auto clearRect = [&](const gpu::Texture* target, plume::RenderRect& out) -> const plume::RenderRect* {
             const gpu::TextureDesc& desc = gpu::Desc(target);
-            int32_t l = left, r = right;
+            const int32_t scale = TargetScale(desc);
+            int32_t l = left * scale, r = right * scale;
             if (IsFrameTexture(desc))
             {
                 // The wide frame: a clear of the guest's whole frame clears all of it, a smaller one is centred.
@@ -1749,8 +1808,8 @@ namespace
                 else
                     l += FrameShift(), r += FrameShift();
             }
-            out = plume::RenderRect(std::max(l, 0), std::max(top, 0), std::min(r, int32_t(desc.width)),
-                std::min(bottom, int32_t(desc.height)));
+            out = plume::RenderRect(std::max(l, 0), std::max(top * scale, 0), std::min(r, int32_t(desc.width)),
+                std::min(bottom * scale, int32_t(desc.height)));
             if (out.left == 0 && out.top == 0 && out.right == int32_t(desc.width) && out.bottom == int32_t(desc.height))
                 return nullptr;
             return &out;
