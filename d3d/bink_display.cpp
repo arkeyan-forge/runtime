@@ -18,6 +18,7 @@
 #include <ppc_context.h>
 #include "../host/env.h"
 
+#ifdef GAME_HOOK_BinkDoFrame
 namespace
 {
     // HBINK
@@ -100,7 +101,6 @@ namespace
     }
 }
 
-#ifdef GAME_HOOK_BinkDoFrame
 PPC_FUNC_IMPL(GAME_IMP(BinkDoFrame));
 // BinkDoFrame(HBINK)
 PPC_FUNC(GAME_HOOK(BinkDoFrame))

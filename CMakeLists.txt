@@ -76,6 +76,7 @@ add_executable(SSARecomp
     kernel/net.cpp
     kernel/objects.cpp
     kernel/overlapped.cpp
+    kernel/guest_format.cpp
     kernel/printf.cpp
     kernel/portal.cpp
     kernel/rtl_time.cpp
@@ -196,6 +197,11 @@ endif()
 # DDS reader and writer, content hash and texture pack index (no game data needed): ./SSATexturePackTest
 add_executable(SSATexturePackTest EXCLUDE_FROM_ALL host/texture_pack_test.cpp host/dds.cpp host/texture_pack.cpp host/collection/datadir.cpp)
 target_include_directories(SSATexturePackTest PRIVATE . ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/xxHash)
+
+# The guest's printf (flags, width, precision, the Microsoft conversions; no game data needed): ./SSAGuestFormatTest
+add_executable(SSAGuestFormatTest kernel/guest_format_test.cpp kernel/guest_format.cpp)
+target_include_directories(SSAGuestFormatTest PRIVATE .)
+target_link_libraries(SSAGuestFormatTest PRIVATE SSAXenonUtils)
 
 # Settings parser test (launcher.ini, environment, command line; no game data needed): ./SSASettingsTest
 add_executable(SSASettingsTest host/settings_test.cpp host/settings.cpp host/pad_map.cpp)

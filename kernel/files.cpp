@@ -476,10 +476,7 @@ namespace
         file.stream.open(
             openPath, std::ios::binary | std::ios::in | (file.writable ? std::ios::out : std::ios::openmode()));
         if (!file.stream.is_open() && !file.tempPath.empty())
-        {
-            std::error_code error;
             fs::remove(file.tempPath, error);
-        }
         return file.stream.is_open() ? StatusSuccess : StatusAccessDenied;
     }
 

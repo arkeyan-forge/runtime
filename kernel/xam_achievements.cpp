@@ -33,9 +33,9 @@ namespace
 
     // XACHIEVEMENT_DETAILS: id, label*, description*, unachieved*, image id, gamerscore, FILETIME unlock time, flags.
     constexpr uint32_t AchievementDetailsSize = 0x24;
-    constexpr uint32_t DetailLabel = 0x1; // XACHIEVEMENT_DETAILS_LABEL: the enumeration fills pwszLabel...
-    constexpr uint32_t DetailDescription = 0x2; // ...pwszDescription...
-    constexpr uint32_t DetailUnachieved = 0x4; // ...and pwszUnachieved
+    // XACHIEVEMENT_DETAILS_LABEL, _DESCRIPTION and _UNACHIEVED: the detail flags that ask for pwszLabel,
+    // pwszDescription and pwszUnachieved (Row::text, in that order).
+    constexpr uint32_t DetailText[3] = { 0x1, 0x2, 0x4 };
     constexpr uint32_t FlagAchieved = 0x00020000;
     constexpr int64_t FileTimeUnixEpoch = 11644473600ll; // seconds from 1601 to 1970
 
@@ -139,7 +139,7 @@ namespace
         {
             uint32_t bytes = 0;
             for (int i = 0; i < 3; i++)
-                if (detailFlags & (1u << i))
+                if (detailFlags & DetailText[i])
                     bytes += uint32_t(row.text[i].size());
             return bytes;
         }
@@ -165,7 +165,7 @@ namespace
                 uint32_t pointers[3] = {};
                 for (int t = 0; t < 3; t++)
                 {
-                    if (!(detailFlags & (1u << t)))
+                    if (!(detailFlags & DetailText[t]))
                         continue;
                     pointers[t] = strings;
                     memcpy(g_memory.Translate(strings), row.text[t].data(), row.text[t].size());

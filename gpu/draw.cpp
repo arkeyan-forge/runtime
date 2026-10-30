@@ -631,7 +631,7 @@ namespace
             // converted by value by D3D12 and Metal; Vulkan needs the scaled format (the validation layer rejects the
             // pairing and MoltenVK fails the pipeline). The key keeps the guest's format: pipelines.bin and the baseline
             // were written with it.
-            const bool uintInput = input.location >= 1 && input.location <= 3 || input.location == 9;
+            const bool uintInput = (input.location >= 1 && input.location <= 3) || input.location == 9;
             const RenderFormat format = !uintInput && input.format == RenderFormat::R8G8B8A8_UINT
                                             ? RenderFormat::R8G8B8A8_USCALED
                                             : input.format;

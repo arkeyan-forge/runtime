@@ -727,7 +727,7 @@ gpu::Texture* gpu::CreateTexture(const TextureDesc& desc)
     // must be cleared, discarded or copied to before any other use, or the GPU may read garbage metadata and fault (AMD).
     textureDesc.committed = (desc.usage & (TextureUsage::RenderTarget | TextureUsage::DepthStencil)) != 0;
 
-    auto texture = new Texture{ desc };
+    auto texture = new Texture{ .desc = desc };
 #if defined(_WIN32)
     // D3D12: the big allocations, for the memory budget (the console renders at scale 2).
     uint64_t bytes = uint64_t(desc.width) * desc.height * desc.depth * desc.arraySize * RenderFormatSize(desc.format) /

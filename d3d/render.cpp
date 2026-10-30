@@ -867,10 +867,10 @@ namespace
                 offset *= (GpuRegister(device, Reg::RB_DEPTH_INFO) >> 16) & 1 ? float(1 << 19) : float(1 << 23);
                 draw.raster.depthBias = int32_t(std::ceil(std::fabs(offset))) * (offset < 0.0f ? -1 : 1);
                 draw.raster.slopeScaledDepthBias = scale / 16.0f * float(Scale());
-                static bool logged = false;
-                if (!logged && (draw.raster.depthBias != 0 || draw.raster.slopeScaledDepthBias != 0.0f))
+                static bool biasLogged = false;
+                if (!biasLogged && (draw.raster.depthBias != 0 || draw.raster.slopeScaledDepthBias != 0.0f))
                 {
-                    logged = true;
+                    biasLogged = true;
                     fprintf(stderr,
                         "[render] polygon offset first used: frame %llu, pixel shader %016llX, slope scale %g, offset "
                         "%g\n",
@@ -1145,7 +1145,7 @@ namespace
                     data.assign(static_cast<uint8_t*>(g_memory.Translate(guest)),
                         static_cast<uint8_t*>(g_memory.Translate(guest)) + bytes);
                     xenos::SwapEndian(data.data(), data.size(), 2);
-                    draw.streams[slot] = { data.data(), bytes, stride, false };
+                    draw.streams[slot] = { data.data(), bytes, stride, false, {} };
                 }
             }
 
@@ -1163,7 +1163,7 @@ namespace
         if (missing != 0 && draw.streamCount < gpu::MaxVertexStreams)
         {
             uint32_t slot = draw.streamCount++;
-            draw.streams[slot] = { g_defaultInputs, sizeof(g_defaultInputs), sizeof(g_defaultInputs), true };
+            draw.streams[slot] = { g_defaultInputs, sizeof(g_defaultInputs), sizeof(g_defaultInputs), true, {} };
             for (uint32_t location = 0; location < 32 && draw.inputCount < gpu::MaxVertexElements; location++)
             {
                 if ((missing >> location) & 1)

@@ -10,7 +10,7 @@
 
 namespace plume
 {
-    class RenderBuffer;
+    struct RenderBuffer;
 }
 
 namespace gpu

@@ -39,8 +39,10 @@ namespace
         std::vector<uint8_t> state; // its recorded bytes, range after range
         std::vector<RegisterWrite> writes; // registers written into the buffer since the previous draw, and by this one
     };
+#if defined(GAME_HOOK_D3DDevice_EndCommandBuffer) || defined(GAME_HOOK_D3DDevice_RunCommandBuffer)
     constexpr uint32_t WritesOnly =
         ~0u; // RecordedDraw::primitive of the buffer's last entry: what follows its last draw
+#endif
 
     std::mutex g_mutex;
     uint32_t g_recording; // command buffer being recorded, 0 if none

@@ -26,7 +26,6 @@ namespace
     constexpr uint32_t ErrorInvalidName = 123;
     constexpr uint32_t ErrorAlreadyExists = 183;
     constexpr uint32_t ErrorDeviceNotConnected = 1167;
-    constexpr uint32_t ErrorNotFound = 1168;
     constexpr uint32_t ErrorCancelled = 1223;
     constexpr uint32_t ErrorNoSuchUser = 0x525;
 
