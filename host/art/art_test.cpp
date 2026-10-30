@@ -29,6 +29,16 @@ namespace
 {
     int g_checks = 0, g_failures = 0;
 
+    // For getenv too: on Windows SDL_setenv_unsafe writes only the Win32 environment, which getenv does not read.
+    void SetVariable(const char* name, const std::string& value)
+    {
+#ifdef _WIN32
+        _putenv_s(name, value.c_str());
+#else
+        setenv(name, value.c_str(), 1);
+#endif
+    }
+
 #define CHECK(condition)                                                                                               \
     do                                                                                                                 \
     {                                                                                                                  \
@@ -507,7 +517,7 @@ namespace
     {
         std::filesystem::path folder = scratch / "rule";
         std::filesystem::create_directories(folder);
-        SDL_setenv_unsafe("SKY_PORTRAITS", datadir::Text(folder).c_str(), 1);
+        SetVariable("SKY_PORTRAITS", datadir::Text(folder));
         collection::Image square{ 4, 4, std::vector<uint32_t>(16, 0xFF336699) };
         for (const char* name : { "toy_eruptor_hud", "eruptor", "eruptor_lightcore", "eagle" })
             CHECK(collection::SavePng(square, datadir::Text(folder / (std::string(name) + ".png"))));
@@ -875,7 +885,7 @@ int main(int argc, char** argv)
     {
         temporary = true;
         scratch = std::filesystem::temp_directory_path() / "SSAArtTest";
-        SDL_setenv_unsafe("SKYLANDERS_DATA", datadir::Text(scratch).c_str(), 1);
+        SetVariable("SKYLANDERS_DATA", datadir::Text(scratch));
     }
     std::filesystem::create_directories(scratch);
     TestPortraitRule(scratch);

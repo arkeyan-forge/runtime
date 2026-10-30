@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <map>
 #include <string>
+#include <string_view>
 
 namespace
 {
@@ -77,9 +78,12 @@ int main()
         CHECK(std::string(skyenv::Get("SKY_LAUNCHER_ENVTEST_B")) == "launcher");
         put("SSA_LAUNCHER_ENVTEST_C", "ini");
         CHECK(std::string(skyenv::Get("SKY_LAUNCHER_ENVTEST_C")) == "ini");
-        put("SKY_ENVTEST_D", "");
-        put("SSA_ENVTEST_D", "old");
-        CHECK(std::string(skyenv::Get("SKY_ENVTEST_D")).empty()); // set, even empty, wins
+        // Set, even empty, wins; through a table, as Windows has no empty variable (_putenv_s(name, "") removes it).
+        auto table = [](const char* name) -> const char* {
+            std::string_view variable = name;
+            return variable == "SKY_ENVTEST_D" ? "" : variable == "SSA_ENVTEST_D" ? "old" : nullptr;
+        };
+        CHECK(std::string(skyenv::Get("SKY_ENVTEST_D", table)).empty());
         CHECK(std::string(skyenv::Get("PATH")) == std::string(std::getenv("PATH"))); // other names are plain
     }
 

@@ -486,9 +486,9 @@ void LauncherPainter::DashedRoundRect(
 void LauncherPainter::Triangle(float x1, float y1, float x2, float y2, float x3, float y3, SDL_Color color)
 {
     SDL_Vertex vertices[3] = {
-        { { x1, y1 }, { color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, color.a / 255.0f } },
-        { { x2, y2 }, { color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, color.a / 255.0f } },
-        { { x3, y3 }, { color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, color.a / 255.0f } },
+        { { x1, y1 }, { color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, color.a / 255.0f }, { 0, 0 } },
+        { { x2, y2 }, { color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, color.a / 255.0f }, { 0, 0 } },
+        { { x3, y3 }, { color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, color.a / 255.0f }, { 0, 0 } },
     };
     SDL_RenderGeometry(m_renderer, nullptr, vertices, 3, nullptr, 0);
 }

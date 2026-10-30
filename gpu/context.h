@@ -17,7 +17,7 @@
 struct gpu::Texture
 {
     TextureDesc desc;
-    std::unique_ptr<plume::RenderTexture> texture;
+    std::unique_ptr<plume::RenderTexture> texture{};
     mutable plume::RenderTextureLayout layout = plume::RenderTextureLayout::UNKNOWN;
     uint32_t heapIndex = 0; // slot in the bindless heap of its kind (sampled textures only; 0 = none)
 
@@ -28,7 +28,7 @@ struct gpu::Texture
         std::unique_ptr<plume::RenderTextureView> view;
         uint32_t heapIndex;
     };
-    std::vector<SwizzledView> swizzledViews;
+    std::vector<SwizzledView> swizzledViews{};
 };
 
 namespace gpu

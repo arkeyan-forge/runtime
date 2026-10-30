@@ -5,6 +5,8 @@
 # final block: the bit count first and (byte count * 2) | 1 last (DXC's ComputeHashRetail). Checked against
 # containers that dxil.dll signed (the precompiled shaders in SDL's D3D12 backends).
 
+cmake_minimum_required(VERSION 3.20) # a -P script sets no policy: CMP0007 (empty list elements) as in the build
+
 file(READ "${INPUT}" HEX HEX)
 if(NOT HEX MATCHES "^44584243") # "DXBC"
     message(FATAL_ERROR "${INPUT} is not a DXIL container")

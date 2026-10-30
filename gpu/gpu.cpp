@@ -610,8 +610,8 @@ bool gpu::Init(SDL_Window* window, uint32_t width, uint32_t height)
     c.renderInterface = CreateD3D12Interface();
 #else
     // Desktop Windows: Vulkan, then D3D12 when there is no Vulkan device. SKY_GPU_BACKEND=vulkan or d3d12 picks one.
-    const char* requested = skyenv::Get("SKY_GPU_BACKEND");
 #if defined(_WIN32)
+    const char* requested = skyenv::Get("SKY_GPU_BACKEND");
     bool tryVulkan = requested == nullptr || SDL_strcasecmp(requested, "d3d12") != 0;
 #else
     bool tryVulkan = true;

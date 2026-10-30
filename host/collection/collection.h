@@ -105,7 +105,7 @@ namespace collection
         int element = -1; // an Element; -1: all
         int kind = -1; // a VariantKind (Figure::Kind); -1: all
         bool favouritesOnly = false;
-        std::string text; // in the name, label, nickname or file name, any case
+        std::string text{}; // in the name, label, nickname or file name, any case
     };
 
     // Reads one dump (and its metadata and lock). False if it is not a 1 KB tag image.

@@ -257,9 +257,11 @@ namespace
         return slot;
     }
 
+#if defined(SSA_SHADER_CACHE) // the pipeline list and its precompiling start from the shader cache
     void LoadPipelineList();
     void StartPrecompiling();
     std::filesystem::path PipelineListPath();
+#endif
 
     void CreateDrawContext()
     {
@@ -662,8 +664,10 @@ namespace
     // list lacks is appended. At startup, threads build the listed ones while the intro movies play; every loading screen
     // waits until they are all built (WaitForPipelineList), so only unlisted pipelines are built at draw time.
 
+#if defined(SSA_SHADER_CACHE) // read and written by LoadPipelineList
     constexpr uint32_t PipelineListMagic = 0x50415353; // "SSAP"
     constexpr uint32_t PipelineListVersion = 1; // change with PipelineKey or CreatePipeline
+#endif
 
     struct PipelineListHeader
     {
@@ -699,6 +703,7 @@ namespace
         std::atomic<bool> unsavedBuilds = false; // D3D12: pipelines built at draw time, not in pipelines.d3d12 yet
     } g_pipelineList;
 
+#if defined(SSA_SHADER_CACHE)
     std::filesystem::path PipelineListPath()
     {
         std::string directory;
@@ -779,6 +784,7 @@ namespace
         fprintf(stderr, "[gpu] pipeline list: %zu pipelines (%zu from pipelines.bin, %zu more of the baseline's %zu)\n",
             g_pipelineList.keys.size(), own, g_pipelineList.keys.size() - own, baseline);
     }
+#endif
 
     void AddToPipelineList(const PipelineKey& key, uint64_t hash)
     {
@@ -823,6 +829,7 @@ namespace
         }
     }
 
+#if defined(SSA_SHADER_CACHE)
     void PrecompilePipelines()
     {
         BuildListedPipelines();
@@ -849,6 +856,7 @@ namespace
         // Before the device goes away at exit (the game never calls gpu::Shutdown).
         std::atexit(StopPrecompiling);
     }
+#endif
 
     RenderPipeline* Pipeline(const gpu::DrawDesc& draw)
     {

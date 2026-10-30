@@ -1128,7 +1128,6 @@ namespace
 
     void App::DrawSettings()
     {
-        SDL_FRect area{ ContentX, HeroY, ContentW, FooterY + FooterH - HeroY };
         // header
         widgets->Label("SETTINGS", ContentX, HeroY + 6, TextDim);
         painter.Text("Tweak language, display and game data.", ContentX, HeroY + 28, 12, TextSecondary);

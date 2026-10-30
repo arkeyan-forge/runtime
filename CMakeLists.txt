@@ -1,6 +1,8 @@
 # Host OS services (memory, threads, faults, files): POSIX or Win32.
 if(WIN32)
     set(SSA_PLATFORM_SOURCES platform/platform_win32.cpp)
+    # Windows 10 (CreateFile2) in every target that links it, before any header (fmt forces <cstdlib> first on mingw).
+    set_source_files_properties(platform/platform_win32.cpp PROPERTIES COMPILE_DEFINITIONS _WIN32_WINNT=0x0A00)
 else()
     set(SSA_PLATFORM_SOURCES platform/platform_posix.cpp)
 endif()
@@ -111,15 +113,18 @@ add_subdirectory(gpu)
 # one (macOS, Linux), else miniz from the tree (Windows).
 find_package(ZLIB QUIET)
 set(SSA_MINIZ_DIR ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/smol-v/testing/external/miniz)
+# miniz (public domain, from the tree; the launcher's PNG reader, and inflate.cpp's without zlib): a library of its own,
+# so our warning flags stay off it, and its directory is SYSTEM for the targets that include it.
+add_library(SSAMiniz STATIC ${SSA_MINIZ_DIR}/miniz.c)
+target_compile_definitions(SSAMiniz PRIVATE MINIZ_NO_STDIO MINIZ_NO_TIME MINIZ_NO_ARCHIVE_APIS MINIZ_NO_ZLIB_COMPATIBLE_NAMES)
+target_include_directories(SSAMiniz SYSTEM INTERFACE ${SSA_MINIZ_DIR})
 if(ZLIB_FOUND)
     target_sources(SSARecomp PRIVATE inflate.cpp)
     target_link_libraries(SSARecomp PRIVATE ZLIB::ZLIB)
 elseif(EXISTS ${SSA_MINIZ_DIR}/miniz.c)
-    target_sources(SSARecomp PRIVATE inflate.cpp ${SSA_MINIZ_DIR}/miniz.c)
-    target_include_directories(SSARecomp PRIVATE ${SSA_MINIZ_DIR})
+    target_sources(SSARecomp PRIVATE inflate.cpp)
+    target_link_libraries(SSARecomp PRIVATE SSAMiniz)
     set_source_files_properties(inflate.cpp PROPERTIES COMPILE_DEFINITIONS SSA_INFLATE_MINIZ)
-    set_source_files_properties(${SSA_MINIZ_DIR}/miniz.c PROPERTIES LANGUAGE C
-        COMPILE_DEFINITIONS "MINIZ_NO_STDIO;MINIZ_NO_TIME;MINIZ_NO_ARCHIVE_APIS;MINIZ_NO_ZLIB_COMPATIBLE_NAMES")
 else()
     message(STATUS "No zlib and no miniz: levels are inflated by the game's own translated zlib (slower loads)")
 endif()
@@ -156,11 +161,10 @@ target_include_directories(SSARecomp SYSTEM PRIVATE ${SSA_PPC_DIR} ${SSA_XENON_U
 # OFL fonts. It links into both the game and the launcher test (the test links it even though it never opens a window,
 # because launcher.cpp calls into it).
 if(NOT SSA_UWP)
-    add_library(SSALauncherUi STATIC host/launcher_ui.cpp host/launcher_ui_draw.cpp host/launcher_assets.cpp host/stb_impl.cpp host/widgets/launcher_widgets.cpp
-        ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/smol-v/testing/external/miniz/miniz.c)
-    target_include_directories(SSALauncherUi PRIVATE . ${CMAKE_SOURCE_DIR}/thirdparty/stb
-        ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/smol-v/testing/external/miniz)
-    target_link_libraries(SSALauncherUi PUBLIC SDL3::SDL3-static fmt::fmt SSAXenonUtils)
+    add_library(SSALauncherUi STATIC host/launcher_ui.cpp host/launcher_ui_draw.cpp host/launcher_assets.cpp host/stb_impl.cpp host/widgets/launcher_widgets.cpp)
+    target_include_directories(SSALauncherUi PRIVATE .)
+    target_include_directories(SSALauncherUi SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/stb) # stb's warnings are not ours
+    target_link_libraries(SSALauncherUi PUBLIC SDL3::SDL3-static fmt::fmt SSAXenonUtils SSAMiniz)
     # A development convenience (fonts are looked for in the source tree); not in the player kit, which holds no path.
     if(NOT SSA_KIT_BUILD)
         target_compile_definitions(SSALauncherUi PRIVATE SSA_SOURCE_FONT_DIR="${CMAKE_SOURCE_DIR}/resources/launcher/fonts")

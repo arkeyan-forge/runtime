@@ -39,13 +39,13 @@ struct PortalProbe
     uint16_t vendor, product;
     std::string name;       // the device's product string, or what the model is
     bool opened = false;
-    std::string status;     // "ok" (it answered), or "error: ..."
+    std::string status{};   // "ok" (it answered), or "error: ..."
     // HID: what the device is, each write method tried with the answers to 'R' and 'S', and the one that worked.
-    std::string details, write;
+    std::string details{}, write{};
     // The portal's answer to 'R' (portal_identity.h): its id as "01 28", the model's name, and what the game makes of
     // it ("works", "warns", "rejected", "unknown"); empty when it did not answer.
-    std::string id, model, verdict, verdictReason;
-    std::vector<std::pair<std::string, std::string>> methods;
+    std::string id{}, model{}, verdict{}, verdictReason{};
+    std::vector<std::pair<std::string, std::string>> methods{};
 };
 // Fills the probe's id, model and verdict from the portal's answer to 'R' (`report` starts at the letter).
 void NameProbe(PortalProbe& probe, const uint8_t* report, size_t size);

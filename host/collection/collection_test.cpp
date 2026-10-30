@@ -79,6 +79,13 @@ namespace
         return reads.alternate && (!reads.lightcore || (toy.type == 106 && variant.kind == VariantKind::Legendary));
     }
 
+    // A live process that is not the test: launchd or init; on Windows the System process.
+#ifdef _WIN32
+    const std::string LivePid = "4";
+#else
+    const std::string LivePid = "1";
+#endif
+
     void SetVariable(const char* name, const std::string& value)
     {
 #ifdef _WIN32
@@ -687,14 +694,11 @@ namespace
         CHECK(WriteStats(gill, stats));
         Unlock(gill);
         CHECK(!GetLock(gill).locked);
-        std::string other = R"({"game": "launcher", "pid": 1, "since": "2026-10-24T10:00:00Z"})";
+        std::string other = R"({"game": "launcher", "pid": )" + LivePid + R"(, "since": "2026-10-24T10:00:00Z"})";
         SDL_SaveFile((gill + ".lock").c_str(), other.data(), other.size());
-#ifndef _WIN32
-        // pid 1 (launchd, init) is alive and not ours.
         CHECK(GetLock(gill).Busy() && GetLock(gill).game == "launcher");
         CHECK(!WriteStats(gill, stats, &error) && error == "in use by launcher");
         CHECK(!Lock(gill, "ssa") && !Rename(gill, "x"));
-#endif
         BreakLock(gill);
         std::string dead = R"({"game": "ssa", "pid": 2147483000, "since": "2026-10-24T10:00:00Z"})";
         SDL_SaveFile((series + ".lock").c_str(), dead.data(), dead.size());
@@ -1135,7 +1139,7 @@ namespace
         CHECK(!ChangeHalf(loose, a.bottom));
 
         // A swapper is busy when either half is (a lock of another live process); nothing is changed meanwhile.
-        std::string foreign = R"({"game": "ssa", "pid": 1, "since": "2026-10-24T10:00:00Z"})";
+        std::string foreign = R"({"game": "ssa", "pid": )" + LivePid + R"(, "since": "2026-10-24T10:00:00Z"})";
         SDL_SaveFile((loose + ".lock").c_str(), foreign.data(), foreign.size());
         list = List({ "swapforce" });
         bool seen = false;

@@ -12,7 +12,7 @@ namespace collection
         {
             const std::string& text;
             size_t at = 0;
-            std::string error;
+            std::string error{};
 
             bool Fail(const char* what)
             {
