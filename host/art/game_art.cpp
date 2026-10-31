@@ -12,6 +12,7 @@
 #include "../collection/upgrades.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
@@ -30,7 +31,8 @@ namespace art
     namespace
     {
         // Bump when a picture is read or composed differently: the cached pictures (not the portraits) are made again.
-        constexpr int CacheVersion = 4; // 4: Swap Force's logo from its lossless 32-bit picture
+        constexpr int CacheVersion =
+            5; // 5: the scenes (<cache>/scenes/); 4: Swap Force's logo from its lossless 32-bit picture
 
         std::string Lower(std::string text)
         {
@@ -338,10 +340,19 @@ namespace art
             std::string archive, folder, ending; // the entries whose name starts with `folder` (and ends with `ending`)
         };
 
+        // Whole-window scenes with no character and no text, one picture each: the stream's `names`, or the entries of an
+        // archive (name fragments). The first of the manifest is the one shown while the others are not read yet.
+        struct SceneGroup
+        {
+            std::string stream, archive;
+            std::vector<std::string> names;
+        };
+
         struct Manifest
         {
             std::string game;
             Source logo, background;
+            std::vector<SceneGroup> scenes;
             // Portraits. [Lux]: the stream, the picture names per toy the catalogue names ("toy_{name}_hud": {name} is
             // the catalogue's internal name, lower case) and, with `images`, the catalogue's other images. [Alchemy]:
             // every square picture of the archive's entry under `folder`, named as on the disc.
@@ -394,6 +405,13 @@ namespace art
                     m.game = json["game"].AsString();
                     m.logo = ReadSource(json["logo"]);
                     m.background = ReadSource(json["background"]);
+                    for (const collection::Json& group : json["scenes"].Items())
+                    {
+                        SceneGroup scenes{ group["stream"].AsString(), group["archive"].AsString(), {} };
+                        for (const collection::Json& name : group["names"].Items())
+                            scenes.names.push_back(name.AsString());
+                        m.scenes.push_back(std::move(scenes));
+                    }
                     m.portraits = ReadSource(json["portraits"]);
                     for (const collection::Json& name : json["portraits"]["pictures"].Items())
                         m.pictures.push_back(name.AsString());
@@ -447,6 +465,51 @@ namespace art
                     alchemy::DecodePicture(*scene, candidate, out))
                     return true;
             return false;
+        }
+
+        // A scene's name: its file's name without the folder and the extension ("ui_sky4/x/levelload_300.png" ->
+        // "levelload_300", "textures\\juicestandard_bg_verdant_10.igz" -> "juicestandard_bg_verdant_10").
+        std::string SceneName(const std::string& entry)
+        {
+            size_t from = entry.find_last_of("/\\");
+            std::string name = from == std::string::npos ? entry : entry.substr(from + 1);
+            if (size_t dot = name.find('.'); dot != std::string::npos)
+                name.resize(dot);
+            return name;
+        }
+
+        // Reads the scenes of `m` into `folder`, one by one (a disc that lacks one skips it); false when `stop` was raised
+        // before the end.
+        bool ReadScenes(
+            const Manifest& m, const Disc& disc, const std::filesystem::path& folder, const std::atomic<bool>* stop)
+        {
+            std::error_code error;
+            for (const SceneGroup& group : m.scenes)
+            {
+                std::optional<alchemy::IgaArchive> archive;
+                if (!group.archive.empty())
+                    archive = OpenArchive(disc, group.archive);
+                std::map<std::string, Image> streamed;
+                if (!group.stream.empty())
+                    streamed = LuxPictures(disc, group.stream, { group.names.begin(), group.names.end() });
+                for (const std::string& entry : group.names)
+                {
+                    if (stop != nullptr && *stop)
+                        return false;
+                    Image picture;
+                    if (auto found = streamed.find(entry); found != streamed.end())
+                        picture = found->second;
+                    else if (archive)
+                        if (std::optional<alchemy::IgzFile> scene = OpenScene(*archive, entry))
+                            for (const alchemy::IgzFile::Picture& candidate : scene->Pictures())
+                                if (alchemy::DecodePicture(*scene, candidate, picture))
+                                    break;
+                    std::filesystem::path file = folder / (SceneName(entry) + ".png");
+                    if (picture.rgba.empty() || !SavePng(picture, file))
+                        std::filesystem::remove(file, error);
+                }
+            }
+            return true;
         }
 
         // The logo and the background, as the manifest says.
@@ -748,6 +811,63 @@ namespace art
     }
 
     bool Known(std::string_view game) { return FindManifest(game) != nullptr; }
+
+    std::vector<std::string> SceneNames(std::string_view game)
+    {
+        std::vector<std::string> names;
+        if (const Manifest* where = FindManifest(game))
+            for (const SceneGroup& group : where->scenes)
+                for (const std::string& entry : group.names)
+                    names.push_back(SceneName(entry));
+        return names;
+    }
+
+    std::string CachedScene(std::string_view game, std::string_view name)
+    {
+        std::filesystem::path cache = CacheFolder(game);
+        if (cache.empty() || name.empty())
+            return {};
+        std::filesystem::path file = cache / "scenes" / (std::string(name) + ".png");
+        return Exists(file) ? Text(file) : std::string();
+    }
+
+    bool ScenesRead(std::string_view game)
+    {
+        const Manifest* where = FindManifest(game);
+        std::filesystem::path cache = CacheFolder(game);
+        if (where == nullptr || where->scenes.empty() || cache.empty())
+            return true; // nothing to read
+        std::ifstream marker(cache / "scenes" / "done");
+        int version = 0;
+        return marker >> version && version == CacheVersion;
+    }
+
+    int ExtractScenes(std::string_view game, const Disc& disc, const std::atomic<bool>* stop)
+    {
+        const Manifest* where = FindManifest(game);
+        std::filesystem::path cache = CacheFolder(game);
+        if (where == nullptr || where->scenes.empty() || cache.empty())
+            return 0;
+        std::filesystem::path folder = cache / "scenes";
+        std::error_code error;
+        std::filesystem::create_directories(folder, error);
+        if (!ScenesRead(game) && ReadScenes(*where, disc, folder, stop))
+            std::ofstream(folder / "done", std::ios::trunc)
+                << CacheVersion << "\n"; // asked no more until the reader changes
+        int present = 0;
+        for (const auto& entry : ListDirectory(folder, error))
+            present += entry.path().extension() == ".png";
+        return present;
+    }
+
+    std::string PickScene(const std::vector<std::string>& names, std::string_view last, uint32_t random)
+    {
+        std::vector<const std::string*> choices;
+        for (const std::string& name : names)
+            if (name != last || names.size() < 2)
+                choices.push_back(&name);
+        return choices.empty() ? std::string() : *choices[random % choices.size()];
+    }
 
     bool ReadLogo(std::string_view game, const Disc& disc, Image& logo)
     {

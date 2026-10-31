@@ -16,6 +16,8 @@
 //                                              the same after Giants or Swap Force, which may write the extra areas:
 //                                              the identity stays, both pairs' checksums stay valid, and a written
 //                                              figure gets its extra area
+//   SSAFigureTest --make-trap-pair .scratch/<folder>
+//                                              two Water/Gulper dumps, normal and evolved; no game is started
 // Exit code 0 = pass.
 #include "host/collection/catalogue.h"
 #include "host/figures/figure_catalog.h"
@@ -25,6 +27,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <stdexcept>
 #include <set>
 #include <string>
 
@@ -406,23 +410,249 @@ namespace
         }
         CHECK(figures::FindToy(210, "trapteam") != nullptr && figures::FindToy(210, "giants") == nullptr);
 
-        // A trap without a villain is a blank tag; with one, the villain reads back from the one named place.
+        CHECK(figures::TrapVillainVerified);
+    }
+
+    // Explicit physical map independent of the codec's trailer-packing loop.
+    constexpr size_t TrapBlocks[] = { 8, 9, 10, 12, 13, 14, 16, 17, 18, 20, 21, 22, 24, 25, 26, 28, 29, 30, 32, 33,
+        34 };
+
+    uint8_t& TrapByte(FigureData& plain, int copy, size_t packed)
+    {
+        return plain[(TrapBlocks[packed / 16] + 28 * copy) * 16 + packed % 16];
+    }
+
+    void SealTestTrap(FigureData& plain, int copy, bool verify)
+    {
+        std::array<uint8_t, 336> packed{};
+        for (size_t i = 0; i < packed.size(); i++)
+            packed[i] = TrapByte(plain, copy, i);
+        auto crc = [&](size_t at, size_t begin, size_t size) {
+            uint16_t expected = FigureChecksum(packed.data() + begin, size);
+            if (verify)
+                CHECK((TrapByte(plain, copy, at) | TrapByte(plain, copy, at + 1) << 8) == expected);
+            TrapByte(plain, copy, at) = uint8_t(expected);
+            TrapByte(plain, copy, at + 1) = uint8_t(expected >> 8);
+        };
+        crc(10, 64, 272);
+        crc(12, 16, 48);
+        // Refresh the body CRCs before calculating the first-block CRC.
+        for (size_t i = 0; i < 16; i++)
+            packed[i] = TrapByte(plain, copy, i);
+        packed[14] = 5;
+        packed[15] = 0;
+        crc(14, 0, 16);
+    }
+
+    // Choosing the villain a trap plays: the records of the others stay, the evolved flag moves with its villain.
+    void TestTrapSelect()
+    {
+        using figures::AreaState;
+        figures::TrapStats stats;
+        FigureData tag = figures::CreateTrap(211, 0x3002, 9, true);
+        CHECK(figures::ReadTrapStats(tag, stats) == AreaState::Valid);
+        CHECK(!figures::SelectTrapVillain(stats, 0) && !figures::SelectTrapVillain(stats, 47));
+        CHECK(figures::SelectTrapVillain(stats, 12) && stats.selectedVillain == 12 && stats.villainCount == 2);
+        CHECK(stats.villains[0].id == 12 && !stats.villains[0].questComplete);
+        CHECK(stats.villains[1].id == 9 && stats.villains[1].questComplete);
+        CHECK(figures::WriteTrapStats(tag, stats));
+        figures::FigureStats view;
+        CHECK(figures::ReadStats(tag, view) == AreaState::Valid && view.villain == 12 && !view.villainEvolved);
+        CHECK(figures::ReadTrapStats(tag, stats) == AreaState::Valid && stats.villains[1].id == 9);
+        CHECK(figures::SelectTrapVillain(stats, 9) && stats.villains[0].id == 9 && stats.villains[0].questComplete);
+        CHECK(stats.villains[1].id == 12 && stats.villainCount == 2);
+        CHECK(figures::WriteTrapStats(tag, stats));
+        CHECK(figures::ReadStats(tag, view) == AreaState::Valid && view.villain == 9 && view.villainEvolved);
+        // An empty trap, then all six slots: the seventh choice replaces the selected villain.
         FigureData empty = figures::CreateTrap(211, 0x3002);
-        FigureData blank = figures::CreateFigure(211, 0x3002);
-        CHECK(memcmp(empty.data() + 0x10, blank.data() + 0x10, 0x0E) == 0 &&
-              memcmp(empty.data() + 0x20, blank.data() + 0x20, 0x10) == 0);
+        CHECK(figures::ReadTrapStats(empty, stats) == AreaState::Blank);
+        for (uint8_t id = 1; id <= 6; id++)
+            CHECK(figures::SelectTrapVillain(stats, id));
+        CHECK(stats.villainCount == 6 && stats.selectedVillain == 6);
+        CHECK(figures::SelectTrapVillain(stats, 20) && stats.villainCount == 6 && stats.villains[0].id == 20);
+        CHECK(figures::WriteTrapStats(empty, stats));
+        CHECK(figures::ReadTrapStats(empty, stats) == AreaState::Valid && stats.villainCount == 6);
+    }
+
+    void TestTrapCodec()
+    {
+        using figures::AreaState;
+        figures::TrapStats read;
+        FigureData blank = figures::CreateTrap(211, 0x3002);
+        CHECK(figures::ReadTrapStats(blank, read) == AreaState::Blank);
+        for (bool evolved : { false, true })
+        {
+            FigureData tag = figures::CreateTrap(211, 0x3002, 9, evolved);
+            CHECK(figures::ToyType(tag) == 211 && figures::Variant(tag) == 0x3002);
+            CHECK((tag[30] | tag[31] << 8) == FigureChecksum(tag.data(), 30));
+            CHECK(figures::ReadTrapStats(tag, read) == AreaState::Valid);
+            CHECK(read.dataFormat == 0 && read.villainCount == 1 && read.selectedVillain == 9 &&
+                  read.preloadVillain == 0 && read.villains[0].questComplete == evolved && read.sequence == 2);
+            FigureData plain = figures::Decrypt(tag);
+            for (int copy = 0; copy < 2; copy++)
+            {
+                CHECK(plain[0x81 + 0x1C0 * copy] == 1 && plain[0x90 + 0x1C0 * copy] == 9 &&
+                      plain[0x91 + 0x1C0 * copy] == uint8_t(evolved));
+                SealTestTrap(plain, copy, true); // all three CRCs, including the entire tail
+                for (size_t block : TrapBlocks)
+                {
+                    size_t start = (block + 28 * copy) * 16;
+                    CHECK(memcmp(tag.data() + start, plain.data() + start, 16) != 0);
+                }
+            }
+            CHECK(figures::Encrypt(plain) == tag);
+            figures::FigureStats compatibility;
+            CHECK(figures::ReadStats(tag, compatibility) == AreaState::Valid && compatibility.villain == 9);
+            CHECK(figures::ReadExtraState(tag) == AreaState::Blank);
+            FigureData before = tag;
+            compatibility.gold = 123;
+            figures::WriteStats(tag, compatibility);
+            CHECK(tag == before); // the character editor cannot overwrite trap records
+
+            // Break each CRC partition in turn; use the other copy, or report a damaged pair.
+            for (size_t offset : { 0u, 16u, 335u })
+            {
+                FigureData broken = plain;
+                TrapByte(broken, 1, offset) ^= 0x40;
+                CHECK(figures::ReadTrapStats(figures::Encrypt(broken), read) == AreaState::Valid && read.sequence == 1);
+                FigureData repaired = figures::Encrypt(broken);
+                CHECK(figures::WriteTrapStats(repaired, read));
+                FigureData repairPlain = figures::Decrypt(repaired);
+                SealTestTrap(repairPlain, 0, true);
+                SealTestTrap(repairPlain, 1, true);
+                CHECK(figures::ReadTrapStats(repaired, read) == AreaState::Valid && read.sequence == 3);
+                TrapByte(broken, 0, offset) ^= 0x40;
+                FigureData damaged = figures::Encrypt(broken);
+                CHECK(figures::ReadTrapStats(damaged, read) == AreaState::Damaged);
+                before = damaged;
+                CHECK(!figures::WriteTrapStats(damaged, {}) && damaged == before);
+            }
+        }
+
+        figures::TrapStats six;
+        six.dataFormat = 3; // synthetic value: preservation test, no guest acceptance claim
+        six.preloadVillain = 13;
+        six.villainCount = 6;
+        six.selectedVillain = 1;
+        for (size_t i = 0; i < six.villains.size(); i++)
+        {
+            auto& villain = six.villains[i];
+            villain.id = uint8_t(i + 1);
+            villain.questComplete = (i % 2) != 0;
+            villain.hat = uint8_t(20 + i);
+            villain.bauble = uint8_t(30 + i);
+            for (size_t j = 0; j < villain.name.size(); j++)
+                villain.name[j] = char16_t(0x120 + 16 * i + j);
+        }
+        FigureData tag = blank;
+        CHECK(figures::WriteTrapStats(tag, six));
+        CHECK(figures::ReadTrapStats(tag, read) == AreaState::Valid && read.villainCount == 6 &&
+              read.selectedVillain == 1 && read.dataFormat == 3 && read.preloadVillain == 13);
+        FigureData plain = figures::Decrypt(tag);
+        for (int copy = 0; copy < 2; copy++)
+        {
+            SealTestTrap(plain, copy, true);
+            for (size_t i = 0; i < six.villains.size(); i++)
+            {
+                const auto& expected = six.villains[i];
+                const auto& actual = read.villains[i];
+                CHECK(actual.id == expected.id && actual.questComplete == expected.questComplete &&
+                      actual.hat == expected.hat && actual.bauble == expected.bauble && actual.name == expected.name);
+                CHECK(plain[0x90 + 64 * i + 0x1C0 * copy] == expected.id);
+                // Reserved record bytes and high quest bits must survive editing, too.
+                TrapByte(plain, copy, 0x10 + 48 * i + 36) = uint8_t(0x80 + i);
+                TrapByte(plain, copy, 0x10 + 48 * i + 1) |= 0xA0;
+            }
+            TrapByte(plain, copy, 2) = 0x5A;
+            TrapByte(plain, copy, 335) = 0xC3;
+            TrapByte(plain, copy, 9) = uint8_t(254 + copy);
+            SealTestTrap(plain, copy, false);
+        }
+        tag = figures::Encrypt(plain);
+        CHECK(figures::ReadTrapStats(tag, read) == AreaState::Valid && read.sequence == 255);
+        std::swap(read.villains[0], read.villains[5]);
+        read.selectedVillain = read.villains[0].id;
+        read.villains[0].questComplete = false;
+        FigureData before = tag;
+        CHECK(figures::WriteTrapStats(tag, read));
+        CHECK(figures::ReadTrapStats(tag, read) == AreaState::Valid && read.sequence == 1 && read.selectedVillain == 6);
+        CHECK(read.villains[0].hat == 25 && read.villains[0].bauble == 35 &&
+              read.villains[0].name == six.villains[5].name);
+        for (size_t i = 1; i < read.villains.size(); i++)
+        {
+            const auto& expected = six.villains[i == 5 ? 0 : i];
+            const auto& actual = read.villains[i];
+            CHECK(actual.id == expected.id && actual.questComplete == expected.questComplete &&
+                  actual.hat == expected.hat && actual.bauble == expected.bauble && actual.name == expected.name);
+        }
+        FigureData edited = figures::Decrypt(tag);
+        CHECK(edited[0x89] == 0 && edited[0x249] == 1);
+        for (int copy = 0; copy < 2; copy++)
+        {
+            SealTestTrap(edited, copy, true);
+            CHECK(TrapByte(edited, copy, 2) == 0x5A && TrapByte(edited, copy, 335) == 0xC3);
+            for (size_t i = 0; i < six.villains.size(); i++)
+            {
+                CHECK(TrapByte(edited, copy, 0x10 + 48 * i + 36) == uint8_t(0x80 + i));
+                CHECK((TrapByte(edited, copy, 0x10 + 48 * i + 1) & 0xFE) == 0xA0);
+            }
+        }
+        for (size_t block = 0; block < 64; block++)
+            if (block < 8 || block % 4 == 3 || block == 35 || block >= 63)
+                CHECK(memcmp(tag.data() + block * 16, before.data() + block * 16, 16) == 0);
+
+        // A newest, then wrap 255 -> 0: edits use the tag's sequence, even with a stale caller's counter.
+        for (int copy = 0; copy < 2; copy++)
+        {
+            TrapByte(edited, copy, 9) = uint8_t(copy == 0 ? 254 : 253);
+            SealTestTrap(edited, copy, false);
+        }
+        tag = figures::Encrypt(edited);
+        read.sequence = 0;
+        CHECK(figures::WriteTrapStats(tag, read));
+        edited = figures::Decrypt(tag);
+        CHECK(edited[0x89] == 0 && edited[0x249] == 255);
+        CHECK(figures::ReadTrapStats(tag, read) == AreaState::Valid && read.sequence == 0);
+
+        before = tag;
+        read.villainCount = 7;
+        CHECK(!figures::WriteTrapStats(tag, read) && tag == before);
+        read.villainCount = 6;
+        read.selectedVillain = 9;
+        CHECK(!figures::WriteTrapStats(tag, read) && tag == before);
+        read.selectedVillain = read.villains[0].id;
+        read.villains[1].id = read.villains[0].id;
+        CHECK(!figures::WriteTrapStats(tag, read) && tag == before);
+        CHECK(figures::ReadTrapStats(tag, read) == AreaState::Valid);
+        read.villainCount = 0;
+        read.selectedVillain = 0;
+        read.villains = {};
+        CHECK(figures::WriteTrapStats(tag, read));
+        CHECK(figures::ReadTrapStats(tag, read) == AreaState::Valid && read.villainCount == 0 &&
+              read.selectedVillain == 0);
+
+        FigureData character = figures::CreateFigure(16, 0x1801);
         figures::FigureStats stats;
-        CHECK(figures::ReadStats(empty, stats) == figures::AreaState::Blank && stats.villain == 0);
-        FigureData held = figures::CreateTrap(211, 0x3002, 9); // Gulper (lead from the fan port)
-        CHECK(figures::ToyType(held) == 211 && figures::Variant(held) == 0x3002 &&
-              (held[0x1E] | held[0x1F] << 8) == FigureChecksum(held.data(), 0x1E));
-        CHECK(figures::ReadStats(held, stats) == figures::AreaState::Valid && stats.villain == 9 &&
-              figures::ReadExtraState(held) == figures::AreaState::Valid);
-        // Taking the villain out leaves a valid trap; a character's extra area is untouched by it.
-        stats.villain = 0;
-        figures::WriteStats(held, stats);
-        figures::FigureStats freed;
-        CHECK(figures::ReadStats(held, freed) == figures::AreaState::Valid && freed.villain == 0);
+        figures::SetTotalExperience(stats, 132400);
+        stats.hat = 7;
+        figures::WriteStats(character, stats);
+        before = character;
+        CHECK(!figures::WriteTrapStats(character, six) && character == before);
+        CHECK(figures::ReadTrapStats(character, read) == AreaState::Damaged);
+        CHECK(figures::Encrypt(figures::Decrypt(character)) == before);
+        for (auto invalid : { std::array<uint16_t, 2>{ 16, 9 }, { 211, 1009 } })
+        {
+            bool rejected = false;
+            try
+            {
+                figures::CreateTrap(invalid[0], 0x3002, invalid[1]);
+            }
+            catch (const std::invalid_argument&)
+            {
+                rejected = true;
+            }
+            CHECK(rejected);
+        }
     }
 
     void TestCatalog()
@@ -643,6 +873,19 @@ namespace
     {
         FigureData tag;
         CHECK(LoadFigure(path, tag));
+        if (figures::ToyType(tag) >= 210 && figures::ToyType(tag) <= 220)
+        {
+            figures::TrapStats trap;
+            figures::AreaState state = figures::ReadTrapStats(tag, trap);
+            CHECK(state != figures::AreaState::Damaged);
+            printf("%s: trap %u:%04X, %s, count %u, selected %u, evolved %u, seq %u\n", path, figures::ToyType(tag),
+                figures::Variant(tag),
+                state == figures::AreaState::Valid   ? "valid"
+                : state == figures::AreaState::Blank ? "blank"
+                                                     : "DAMAGED",
+                trap.villainCount, trap.selectedVillain, unsigned(trap.villains[0].questComplete), trap.sequence);
+            return;
+        }
         figures::FigureStats stats;
         figures::AreaState state = figures::ReadStats(tag, stats);
         CHECK(state != figures::AreaState::Damaged);
@@ -681,6 +924,45 @@ namespace
 
 namespace
 {
+    int MakeTrapPair(const char* folder)
+    {
+        namespace fs = std::filesystem;
+        std::error_code error;
+        fs::path root = fs::canonical(fs::current_path(), error);
+        if (error)
+            return fprintf(stderr, "cannot resolve working directory\n"), 1;
+        fs::path destination = fs::weakly_canonical(folder, error);
+        fs::path relative = destination.lexically_relative(root);
+        if (error || relative.empty() || *relative.begin() != ".scratch" || relative == ".scratch")
+            return fprintf(stderr, "use a folder below .scratch in the clone root\n"), 2;
+        fs::create_directories(destination, error);
+        if (error)
+            return fprintf(stderr, "cannot create scratch folder\n"), 1;
+
+        // Both candidates have the same identity, format 0, preload 0 and sequences 1/2.
+        FigureData blank = figures::CreateTrap(211, 0x3002);
+        for (bool evolved : { false, true })
+        {
+            fs::path path = destination / (evolved ? "water-gulper-evolved.sky" : "water-gulper-normal.sky");
+            FigureData tag = blank;
+            figures::TrapStats stats;
+            stats.villainCount = 1;
+            stats.selectedVillain = stats.villains[0].id = 9;
+            stats.villains[0].questComplete = evolved;
+            if (!figures::WriteTrapStats(tag, stats))
+                return fprintf(stderr, "cannot encode trap\n"), 1;
+            // Exclusive creation also refuses existing files and symlinks; test inputs are never overwritten.
+            FILE* out = fopen(path.string().c_str(), "wbx");
+            if (out == nullptr)
+                return fprintf(stderr, "cannot create scratch dump (already exists or not writable)\n"), 1;
+            bool written = fwrite(tag.data(), 1, tag.size(), out) == tag.size();
+            if (fclose(out) != 0 || !written)
+                return fprintf(stderr, "cannot write scratch dump\n"), 1;
+            TestDump((relative / path.filename()).string().c_str());
+        }
+        return g_failures == 0 ? 0 : 1;
+    }
+
     // --make <dump> <type>[:<variant hex>] [xp=<total>] [gold=] [hat=] [ssahat=] [sfxp=] [upgrades=<hex>] [wowpow=]: a figure for a test run.
     int Make(int argc, char** argv)
     {
@@ -700,6 +982,8 @@ namespace
         }
         else
             tag = figures::CreateFigure(type, variant);
+        if (figures::ToyType(tag) >= 210 && figures::ToyType(tag) <= 220)
+            return fprintf(stderr, "use --make-trap-pair for trap candidates\n"), 2;
         for (int i = 4; i < argc; i++)
         {
             std::string arg = argv[i];
@@ -851,6 +1135,8 @@ namespace
 
 int main(int argc, char** argv)
 {
+    if (argc == 3 && strcmp(argv[1], "--make-trap-pair") == 0)
+        return MakeTrapPair(argv[2]);
     if (argc > 1 && (strcmp(argv[1], "--make") == 0 || strcmp(argv[1], "--edit") == 0))
         return Make(argc, argv);
     if (argc == 4 && strcmp(argv[1], "--same-extra") == 0)
@@ -862,6 +1148,8 @@ int main(int argc, char** argv)
     TestCrypto();
     TestTag();
     TestTrapTeam();
+    TestTrapCodec();
+    TestTrapSelect();
     TestCatalog();
     TestGiants();
     TestRoundTrips();

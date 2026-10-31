@@ -2,6 +2,7 @@
 #include "figure_crypto.h"
 #include <algorithm>
 #include <cstring>
+#include <stdexcept>
 
 namespace figures
 {
@@ -10,6 +11,8 @@ namespace figures
         constexpr char KeyConstant[] = " Copyright (C) 2010 Activision. All Rights Reserved. ";
         constexpr size_t AreaBlocks[2] = { 0x08, 0x24 };
         constexpr size_t AreaSpan = 9 * FigureBlockSize; // 7 data blocks and the 2 trailers between them
+        constexpr size_t TrapSpan = 27 * FigureBlockSize; // 21 data blocks, six intervening trailers
+        using TrapArea = std::array<uint8_t, 21 * FigureBlockSize>;
         // Giants' second pair: 4 data blocks and the trailer between them (blocks 17, 18, 20, 21 and 45, 46, 48, 49),
         // kept as 64 bytes. Byte 0 is the checksum (LE16), byte 2 the sequence number.
         constexpr size_t ExtraBlocks[2] = { 0x11, 0x2D };
@@ -21,6 +24,7 @@ namespace figures
         constexpr uint8_t AccessReadWrite[4] = { 0x7F, 0x0F, 0x08, 0x69 };
 
         bool IsTrailer(size_t block) { return block % 4 == 3; }
+        bool IsTrap(const FigureData& tag) { return ToyType(tag) >= 210 && ToyType(tag) <= 220; }
         bool IsZero(const uint8_t* data, size_t size)
         {
             for (size_t i = 0; i < size; i++)
@@ -75,6 +79,50 @@ namespace figures
             header[0x0E] = 0x05;
             header[0x0F] = 0x00;
             return FigureChecksum(header, sizeof(header));
+        }
+
+        TrapArea PackTrap(const FigureData& plain, int copy)
+        {
+            TrapArea packed{};
+            for (size_t i = 0, n = 0; i < TrapSpan / FigureBlockSize; i++)
+            {
+                size_t block = AreaBlocks[copy] + i;
+                if (!IsTrailer(block))
+                    memcpy(
+                        packed.data() + n++ * FigureBlockSize, plain.data() + block * FigureBlockSize, FigureBlockSize);
+            }
+            return packed;
+        }
+
+        void UnpackTrap(FigureData& plain, int copy, const TrapArea& packed)
+        {
+            for (size_t i = 0, n = 0; i < TrapSpan / FigureBlockSize; i++)
+            {
+                size_t block = AreaBlocks[copy] + i;
+                if (!IsTrailer(block))
+                    memcpy(
+                        plain.data() + block * FigureBlockSize, packed.data() + n++ * FigureBlockSize, FigureBlockSize);
+            }
+        }
+
+        bool TrapValid(const TrapArea& a)
+        {
+            return Le16(a.data() + 0x0E) == HeaderChecksum(a.data()) &&
+                   Le16(a.data() + 0x0C) == FigureChecksum(a.data() + 0x10, 3 * FigureBlockSize) &&
+                   Le16(a.data() + 0x0A) == FigureChecksum(a.data() + 0x40, 17 * FigureBlockSize);
+        }
+
+        void SealTrap(TrapArea& a)
+        {
+            Put16(a.data() + 0x0A, FigureChecksum(a.data() + 0x40, 17 * FigureBlockSize));
+            Put16(a.data() + 0x0C, FigureChecksum(a.data() + 0x10, 3 * FigureBlockSize));
+            Put16(a.data() + 0x0E, HeaderChecksum(a.data()));
+        }
+
+        int NewestTrap(const TrapArea& a, const TrapArea& b)
+        {
+            bool validA = TrapValid(a), validB = TrapValid(b);
+            return validA && validB ? (uint8_t(a[9] + 1) == b[9] ? 1 : 0) : validA ? 0 : validB ? 1 : -1;
         }
 
         uint16_t FirstChecksum(const uint8_t* a)
@@ -245,13 +293,16 @@ namespace figures
     {
         // Every block of an area in use is encrypted, zero or not (the title does the same); other zero blocks are
         // left zero, as on a new figure.
+        bool trap = IsTrap(plain);
         bool areaUsed[2], extraUsed[2];
         for (int i = 0; i < 2; i++)
         {
-            areaUsed[i] = !AreaBlank(plain.data() + AreaBlocks[i] * FigureBlockSize);
+            TrapArea packed = trap ? PackTrap(plain, i) : TrapArea{};
+            areaUsed[i] = trap ? !IsZero(packed.data(), packed.size())
+                               : !AreaBlank(plain.data() + AreaBlocks[i] * FigureBlockSize);
             uint8_t extra[ExtraSize];
             PackExtra(plain, ExtraBlocks[i], extra);
-            extraUsed[i] = !ExtraBlank(extra);
+            extraUsed[i] = !trap && !ExtraBlank(extra);
         }
 
         FigureData tag = plain;
@@ -263,8 +314,8 @@ namespace figures
             bool inUsedArea = false;
             for (int i = 0; i < 2; i++)
             {
-                inUsedArea |=
-                    areaUsed[i] && block >= AreaBlocks[i] && block < AreaBlocks[i] + AreaSpan / FigureBlockSize;
+                inUsedArea |= areaUsed[i] && block >= AreaBlocks[i] &&
+                              block < AreaBlocks[i] + (trap ? TrapSpan : AreaSpan) / FigureBlockSize;
                 inUsedArea |=
                     extraUsed[i] && block >= ExtraBlocks[i] && block < ExtraBlocks[i] + ExtraSpan / FigureBlockSize;
             }
@@ -295,20 +346,144 @@ namespace figures
         return tag;
     }
 
-    FigureData CreateTrap(uint16_t toyType, uint16_t variant, uint16_t villain)
+    FigureData CreateTrap(uint16_t toyType, uint16_t variant, uint16_t villain, bool evolved)
     {
+        if (toyType < 210 || toyType > 220 || villain > 46 || (villain == 0 && evolved))
+            throw std::invalid_argument("invalid trap family or villain");
         FigureData tag = CreateFigure(toyType, variant);
         if (villain != 0)
         {
-            FigureStats stats;
-            stats.villain = villain;
-            WriteStats(tag, stats);
+            TrapStats stats;
+            stats.villainCount = 1;
+            stats.selectedVillain = stats.villains[0].id = uint8_t(villain);
+            stats.villains[0].questComplete = evolved;
+            WriteTrapStats(tag, stats);
         }
         return tag;
     }
 
+    AreaState ReadTrapStats(const FigureData& tag, TrapStats& stats)
+    {
+        stats = {};
+        if (!IsTrap(tag))
+            return AreaState::Damaged;
+        FigureData plain = Decrypt(tag);
+        TrapArea a = PackTrap(plain, 0), b = PackTrap(plain, 1);
+        int newest = NewestTrap(a, b);
+        if (newest < 0)
+            return IsZero(a.data(), a.size()) && IsZero(b.data(), b.size()) ? AreaState::Blank : AreaState::Damaged;
+        const TrapArea& area = newest == 0 ? a : b;
+        stats.dataFormat = area[0];
+        stats.villainCount = area[1];
+        stats.preloadVillain = area[7];
+        stats.sequence = area[9];
+        stats.selectedVillain = area[0x10];
+        for (size_t i = 0; i < stats.villains.size(); i++)
+        {
+            const uint8_t* record = area.data() + 0x10 + 48 * i;
+            TrapVillain& villain = stats.villains[i];
+            villain.id = record[0];
+            villain.questComplete = (record[1] & 1) != 0;
+            villain.hat = record[2];
+            villain.bauble = record[3];
+            for (size_t unit = 0; unit < villain.name.size(); unit++)
+                villain.name[unit] = char16_t(Le16(record + 4 + unit * 2));
+        }
+        return AreaState::Valid;
+    }
+
+    bool SelectTrapVillain(TrapStats& stats, uint8_t id)
+    {
+        if (id == 0 || id > 46)
+            return false;
+        size_t at = stats.villains.size();
+        size_t empty = at;
+        for (size_t i = 0; i < stats.villains.size(); i++)
+        {
+            if (stats.villains[i].id == id)
+                at = i;
+            else if (stats.villains[i].id == 0 && empty == stats.villains.size())
+                empty = i;
+        }
+        if (at == stats.villains.size())
+        {
+            if (empty != stats.villains.size())
+            {
+                std::swap(stats.villains[0], stats.villains[empty]);
+                stats.villainCount++;
+            }
+            stats.villains[0] = {};
+            stats.villains[0].id = id;
+        }
+        else
+            std::swap(stats.villains[0], stats.villains[at]);
+        stats.selectedVillain = id;
+        return true;
+    }
+
+    bool WriteTrapStats(FigureData& tag, const TrapStats& stats)
+    {
+        if (!IsTrap(tag) || stats.selectedVillain != stats.villains[0].id)
+            return false;
+        std::array<bool, 256> seen{};
+        size_t count = 0;
+        for (const TrapVillain& villain : stats.villains)
+        {
+            if (villain.id == 0)
+                continue;
+            if (seen[villain.id])
+                return false;
+            seen[villain.id] = true;
+            count++;
+        }
+        if (count != stats.villainCount || (count != 0 && stats.selectedVillain == 0))
+            return false;
+
+        FigureData plain = Decrypt(tag);
+        TrapArea a = PackTrap(plain, 0), b = PackTrap(plain, 1);
+        int newest = NewestTrap(a, b);
+        if (newest < 0 && (!IsZero(a.data(), a.size()) || !IsZero(b.data(), b.size())))
+            return false;
+        TrapArea area = newest == 0 ? a : newest == 1 ? b : TrapArea{};
+        uint8_t sequence = newest < 0 ? 0 : area[9];
+        area[0] = stats.dataFormat;
+        area[1] = stats.villainCount;
+        area[7] = stats.preloadVillain;
+        for (size_t i = 0; i < stats.villains.size(); i++)
+        {
+            uint8_t* record = area.data() + 0x10 + 48 * i;
+            const TrapVillain& villain = stats.villains[i];
+            record[0] = villain.id;
+            record[1] = uint8_t((record[1] & 0xFE) | uint8_t(villain.questComplete));
+            record[2] = villain.hat;
+            record[3] = villain.bauble;
+            for (size_t unit = 0; unit < villain.name.size(); unit++)
+                Put16(record + 4 + unit * 2, villain.name[unit]);
+        }
+        // Prepare the inactive copy first. This produces an offline image, not physical portal write scheduling.
+        int first = newest < 0 ? 0 : 1 - newest;
+        for (int i = 0; i < 2; i++)
+        {
+            area[9] = uint8_t(sequence + 1 + i);
+            SealTrap(area);
+            UnpackTrap(plain, i == 0 ? first : 1 - first, area);
+        }
+        tag = Encrypt(plain);
+        return true;
+    }
+
     AreaState ReadStats(const FigureData& tag, FigureStats& stats)
     {
+        if (IsTrap(tag))
+        {
+            TrapStats trap;
+            AreaState state = ReadTrapStats(tag, trap);
+            stats = {};
+            stats.villain = trap.selectedVillain;
+            stats.villainEvolved = trap.villains[0].questComplete;
+            stats.sequence = trap.sequence;
+            return state;
+        }
         FigureData plain = Decrypt(tag);
         int area = NewestArea(plain);
         stats = {};
@@ -352,13 +527,14 @@ namespace figures
                 stats.hat = extra[5];
             stats.swapForceExperience = Le32(extra + 8);
             stats.wowPow = extra[6] & 1;
-            stats.villain = Le16(extra + TrapVillainOffset);
         }
         return AreaState::Valid;
     }
 
     AreaState ReadExtraState(const FigureData& tag)
     {
+        if (IsTrap(tag))
+            return AreaState::Blank; // traps have no character extra pair
         FigureData plain = Decrypt(tag);
         uint8_t extra[ExtraSize];
         if (NewestExtra(plain, extra) >= 0)
@@ -381,6 +557,8 @@ namespace figures
 
     void WriteStats(FigureData& tag, const FigureStats& unchecked)
     {
+        if (IsTrap(tag))
+            return; // character fields overlap trap records; use WriteTrapStats
         // Whatever the caller passes, the figure never gets more than the games allow (experience of level 10 in the
         // first area, Giants' 63500 and Swap Force's 101000 in the extra one, gold).
         FigureStats stats = unchecked;
@@ -409,7 +587,7 @@ namespace figures
         // A hat only Giants shows (not the first area's own) needs the extra area too.
         bool writeExtra = newestExtra >= 0 || !ExtraBlank(extraA) || !ExtraBlank(extraB) ||
                           stats.giantsExperience != 0 || (stats.hat != 0 && stats.hat != stats.ssaHat) ||
-                          stats.swapForceExperience != 0 || stats.wowPow != 0 || stats.villain != 0;
+                          stats.swapForceExperience != 0 || stats.wowPow != 0;
 
         uint8_t* a = area;
         a[0] = uint8_t(stats.experience);
@@ -453,7 +631,6 @@ namespace figures
                 extra[5] = uint8_t(std::min<uint16_t>(stats.hat, 0xFF));
             Put32(extra + 8, stats.swapForceExperience);
             extra[6] = uint8_t((extra[6] & 0xFE) | (stats.wowPow & 1));
-            Put16(extra + TrapVillainOffset, stats.villain);
             uint8_t sequence = newestExtra >= 0 ? extra[2] : stats.extraSequence;
             for (int i = 0; i < 2; i++)
             {

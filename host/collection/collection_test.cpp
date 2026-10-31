@@ -487,6 +487,19 @@ namespace
         figures::SetTotalExperience(stats, figures::LevelExperience[19]);
         CHECK(WriteStats(master, stats) && Read(master, figure) && figure.level == 20 &&
               LevelText(figure, "trapteam") == "Level 20" && LevelText(figure, "giants") == "Level 15 (20)");
+        // A trap's villain and evolved switch: the choice is stored, another can follow, a busy dump is refused.
+        std::string error;
+        CHECK(SetTrapVillain(trap, 9, true) && Read(trap, figure) && figure.state == figures::AreaState::Valid &&
+              figure.stats.villain == 9 && figure.stats.villainEvolved);
+        CHECK(SetTrapVillain(trap, 12, false) && Read(trap, figure) && figure.stats.villain == 12 &&
+              !figure.stats.villainEvolved);
+        CHECK(SetTrapVillain(trap, 9, false) && Read(trap, figure) && figure.stats.villain == 9);
+        CHECK(!SetTrapVillain(trap, 99, false, &error) && error == "no such villain");
+        CHECK(!SetTrapVillain(master, 9, false, &error) && Read(master, figure) && figure.stats.villain == 0);
+        const std::string busy = R"({"game": "launcher", "pid": )" + LivePid + R"(, "since": "2026-10-24T10:00:00Z"})";
+        SDL_SaveFile((trap + ".lock").c_str(), busy.data(), busy.size());
+        CHECK(GetLock(trap).Busy() && !SetTrapVillain(trap, 12, false, &error) && error == "in use by launcher");
+        SDL_RemovePath((trap + ".lock").c_str());
         for (const std::string& path : { trap, master, mini, elite })
             CHECK(Delete(path));
     }

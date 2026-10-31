@@ -5,6 +5,7 @@
 // archive, which picture) is the table in game_art.cpp. Used by the in-game Toy Box and by Skylauncher (game page,
 // sidebar, collection). Nothing is shipped or downloaded. docs/runtime/host/game_art.md.
 #include "xenos_texture.h"
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -65,9 +66,23 @@ namespace art
     // False when `game` has no manifest or the disc has no readable logo.
     bool ReadLogo(std::string_view game, const Disc& disc, Image& logo);
 
+    // The game's scenes: whole-window pictures of its worlds with no character and no text, listed by its manifest,
+    // read from the disc once (ExtractScenes, apart from Extract: Giants' take a few seconds) and cached as
+    // <cache>/scenes/<name>.png. The launcher shows one of them, picked at random at each start. A scene is named after
+    // its picture ("levelload_300").
+    std::vector<std::string> SceneNames(std::string_view game); // the manifest's, whether or not cached
+    std::string CachedScene(std::string_view game, std::string_view name); // its file, empty if not cached
+    // True when this version of the reader has read the game's scenes (or the game has none): nothing left to read.
+    bool ScenesRead(std::string_view game);
+    // Reads the scenes the cache does not have, one by one; stops early (and reads again next time) once `stop` is raised.
+    // The number of scene files afterwards.
+    int ExtractScenes(std::string_view game, const Disc& disc, const std::atomic<bool>* stop = nullptr);
+    // One of `names` at random (`random` picks), never `last` unless it is the only one; empty if `names` is.
+    std::string PickScene(const std::vector<std::string>& names, std::string_view last, uint32_t random);
+
     enum Parts
     {
-        Pictures = 1,  // logo, background, title icon
+        Pictures = 1, // logo, background, title icon
         Portraits = 2, // the toy portraits (the in-game Toy Box asks for these only)
         Artworks = 4, // the large toy pictures of the games that have them (Giants: about 8 s and 60 MB the first time)
         Upgrades = 8, // the toys' upgrade names, descriptions and prices (<data>/<Game>/upgrades.json; game_text.h)

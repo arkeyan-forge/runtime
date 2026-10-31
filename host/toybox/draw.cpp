@@ -1335,8 +1335,8 @@ namespace toybox
         }
 
         // Trap Team: the villains a trap of this element can hold, the game's own table (Game::villains), with the
-        // pictures of its villain vault. Which one a trap holds is read from the tag only once its place is verified
-        // (figures::TrapVillainVerified); until then the list is all the sheet says.
+        // pictures of its villain vault. Which one a trap holds is read from the tag once its place is verified
+        // (figures::TrapVillainVerified), with the evolved flag.
         void DrawTrapVillains(const Model& model, const Figure& f, float x, float y, float width)
         {
             const Game* game = Catalogue::Get().FindGame(model.game);
@@ -1349,10 +1349,11 @@ namespace toybox
                 return;
             const collection::Villain* held = nullptr;
             for (const collection::Villain* villain : villains)
-                if (figures::TrapVillainVerified && f.stats.villain == villain->id)
+                if (figures::TrapVillainVerified && f.stats.villain + figures::VillainResourceBase == villain->id)
                     held = villain;
             Text(g_bold, 14, ImVec2(x, y), Look::TextSoft,
-                held != nullptr ? std::string(L("Holds ", "Contient ")) + held->name
+                held != nullptr ? std::string(L("Holds ", "Contient ")) + held->name +
+                                      (f.stats.villainEvolved ? L(" · Evolved", " · Évolué") : "")
                                 : std::string(L("Can hold ", "Peut contenir ")) + std::to_string(villains.size()) +
                                       L(" villains", " méchants"));
             y += 28;

@@ -133,6 +133,10 @@ namespace collection
 
     // Writes progress into the dump (both areas, docs/runtime/host/figures.md). Refused while another process uses it.
     bool WriteStats(const std::string& path, const figures::FigureStats& stats, std::string* error = nullptr);
+    // Trap Team: makes `villain` (1-46) the trap's selected villain and sets whether it is evolved, keeping the other
+    // villains it holds (figures::SelectTrapVillain). Refused while another process uses the dump, or for a
+    // figure that is not a readable trap.
+    bool SetTrapVillain(const std::string& path, uint8_t villain, bool evolved, std::string* error = nullptr);
     bool SetNickname(const std::string& path, const std::string& utf8, std::string* error = nullptr);
     // Renames the dump (and its metadata and backups). `file` is a bare file name; the extension is kept if missing.
     bool Rename(const std::string& path, const std::string& file, std::string* error = nullptr);

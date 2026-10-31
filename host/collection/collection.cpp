@@ -642,6 +642,27 @@ namespace collection
         return SaveDump(path, tag) || Refuse(error, "cannot write the file");
     }
 
+    bool SetTrapVillain(const std::string& path, uint8_t villain, bool evolved, std::string* error)
+    {
+        if (GetLock(path).Busy())
+            return Refuse(error, "in use by " + GetLock(path).game);
+        FigureData tag;
+        if (!LoadDump(path, tag))
+            return Refuse(error, "not a figure dump");
+        figures::TrapStats stats;
+        if (figures::ReadTrapStats(tag, stats) == figures::AreaState::Damaged)
+            return Refuse(error, "not a readable trap");
+        if (!figures::SelectTrapVillain(stats, villain))
+            return Refuse(error, "no such villain");
+        stats.villains[0].questComplete = evolved;
+        if (Backup(path).empty())
+            return Refuse(error, "cannot back up the dump first");
+        PruneBackups(path);
+        if (!figures::WriteTrapStats(tag, stats))
+            return Refuse(error, "cannot write the trap");
+        return SaveDump(path, tag) || Refuse(error, "cannot write the file");
+    }
+
     bool SetNickname(const std::string& path, const std::string& utf8, std::string* error)
     {
         Figure figure;
