@@ -9,11 +9,13 @@
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_iostream.h>
 #include <SDL3/SDL_stdinc.h>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <initializer_list>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace
@@ -331,6 +333,21 @@ int main()
             block = Receive(other);
         CHECK(block.size() > 19 && block[0] == 'Q' && block[3] == 9 && block[3 + 0x0C] == 0x01 &&
               block[3 + 0x0D] == 0x18);
+    }
+
+    // A status interval: an active portal sends no second unprompted status before it has passed, so a title that reads
+    // until nothing is left comes to the end of its loop (Trap Team's portal thread).
+    {
+        EmulatedPortal paced;
+        paced.SetStatusInterval(std::chrono::milliseconds(40));
+        Send(paced, { 'A', 0x01 });
+        CHECK(Receive(paced)[0] == 'A');
+        CHECK(Receive(paced)[0] == 'S');
+        CHECK(Receive(paced).empty());
+        Send(paced, { 'S' });
+        CHECK(Receive(paced)[0] == 'S'); // an answer is never held back
+        std::this_thread::sleep_for(std::chrono::milliseconds(60));
+        CHECK(Receive(paced)[0] == 'S');
     }
 
     SDL_RemovePath(path.c_str());

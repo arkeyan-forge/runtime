@@ -1,6 +1,7 @@
 // Checks the settings parser: launcher.ini, SKY_* variables (and the older SSA_* names) and the command line, and their precedence.
 // usage: SSASettingsTest
 #include "host/env.h"
+#include "host/gamemenu.h"
 #include "host/pad_map.h"
 #include "host/settings.h"
 #include <cstdio>
@@ -175,6 +176,30 @@ int main()
         Parse({ { "swapforce.video", { { "original_resolution", "1" } } } }, {}, {}); // another game's section: ignored
     CHECK(run.ok && !run.settings.originalResolution);
 
+    // edge_smoothing: not chosen by default (auto); [video], then the game's [<game>.video], then the command line.
+    CHECK(Parse({}, {}, {}).settings.edgeSmoothing == edgesmoothing::Auto);
+    run = Parse({ { "video", { { "edge_smoothing", "off" } } } }, {}, {});
+    CHECK(run.ok && run.warnings.empty() && run.settings.edgeSmoothing == edgesmoothing::Off);
+    run = Parse(
+        { { "video", { { "edge_smoothing", "off" } } }, { "ssa.video", { { "edge_smoothing", "light" } } } }, {}, {});
+    CHECK(run.ok && run.settings.edgeSmoothing == edgesmoothing::Light);
+    run = Parse({ { "ssa.video", { { "edge_smoothing", "off" } } } }, {}, { "--edge-smoothing", "game" });
+    CHECK(run.ok && run.settings.edgeSmoothing == edgesmoothing::Game);
+    run = Parse({ { "swapforce.video", { { "edge_smoothing", "off" } } } }, {}, {}); // another game's section: ignored
+    CHECK(run.ok && run.settings.edgeSmoothing == edgesmoothing::Auto);
+    run = Parse({}, {}, { "--edge-smoothing=bogus" });
+    CHECK(run.ok && run.warnings.size() == 1 && run.settings.edgeSmoothing == edgesmoothing::Auto);
+    run = Parse({ { "video", { { "edge_smoothing", "auto" } } } }, {}, { "--edge-smoothing=light" });
+    CHECK(run.ok && DescribeSettings(run.settings).find("edge smoothing light") != std::string::npos);
+    CHECK(DescribeSettings(Parse({}, {}, {}).settings).find("edge smoothing") == std::string::npos);
+    // Not chosen: light from resolution scale 2, game at 1; a choice stays whatever the scale.
+    CHECK(edgesmoothing::Resolve(edgesmoothing::Auto, 1) == edgesmoothing::Game);
+    CHECK(edgesmoothing::Resolve(edgesmoothing::Auto, 2) == edgesmoothing::Light);
+    CHECK(edgesmoothing::Resolve(edgesmoothing::Auto, 4) == edgesmoothing::Light);
+    CHECK(edgesmoothing::Resolve(edgesmoothing::Game, 4) == edgesmoothing::Game);
+    CHECK(edgesmoothing::Resolve(edgesmoothing::Light, 1) == edgesmoothing::Light);
+    CHECK(edgesmoothing::Resolve(edgesmoothing::Off, 2) == edgesmoothing::Off);
+
     // The game's own [<game>.video] wins over [video] for every video key (a game started without the launcher's PLAY).
     run =
         Parse({ { "video", { { "fps_limit", "30" }, { "skip_intro_movies", "0" } } },
@@ -228,15 +253,36 @@ int main()
     run = Parse({}, { { "SKY_TEXTURE_DUMP", "yes" } }, {});
     CHECK(!run.settings.textureDump && run.warnings.size() == 1);
 
-    // fps_limit: 30 or 60; 0 and more than 60 mean 60, other values 30, with a warning.
+    // fps_limit: 30, 60, 120, 144, 240 or 0 (no limit); another value is lowered to the rate below it, with a warning.
     run = Parse({ { "video", { { "fps_limit", "60" } } } }, {}, {});
     CHECK(run.settings.fpsLimit == 60 && run.warnings.empty());
-    run = Parse({}, {}, { "--fps-limit", "0" });
-    CHECK(run.settings.fpsLimit == 60 && run.warnings.size() == 1);
-    run = Parse({}, {}, { "--fps-limit", "144" });
+    for (const char* rate : { "30", "120", "144", "240", "0" })
+    {
+        run = Parse({}, {}, { "--fps-limit", rate });
+        CHECK(run.settings.fpsLimit == uint32_t(atoi(rate)) && run.warnings.empty());
+    }
+    run = Parse({ { "video", { { "fps_limit", "display" } } } }, {}, {});
+    CHECK(run.settings.fpsLimit == 60 && run.warnings.empty());
+    run = Parse({}, {}, { "--fps-limit", "165" });
+    CHECK(run.settings.fpsLimit == 144 && run.warnings.size() == 1);
+    run = Parse({}, {}, { "--fps-limit", "1000" });
+    CHECK(run.settings.fpsLimit == 240 && run.warnings.size() == 1);
+    run = Parse({}, {}, { "--fps-limit", "100" });
     CHECK(run.settings.fpsLimit == 60 && run.warnings.size() == 1);
     run = Parse({}, {}, { "--fps-limit", "45" });
     CHECK(run.settings.fpsLimit == 30 && run.warnings.size() == 1);
+
+    // The F3 menu keeps a limit above 60 and lowers none by opening it: every rate stands for itself.
+    for (uint32_t rate : gamemenu::FrameRates)
+        CHECK(gamemenu::NormalFrameRate(rate) == rate);
+    CHECK(gamemenu::NormalFrameRate(165) == 144 && gamemenu::NormalFrameRate(45) == 30 &&
+          gamemenu::NormalFrameRate(1000) == 240);
+
+    // A game's cap (Giants 60): higher rates and no limit are lowered to it, lower ones stay, 0 is no cap.
+    CHECK(gamemenu::CapFrameRate(120, 60) == 60 && gamemenu::CapFrameRate(0, 60) == 60 &&
+          gamemenu::CapFrameRate(30, 60) == 30);
+    CHECK(gamemenu::CapFrameRate(60, 60) == 60 && gamemenu::CapFrameRate(0, 0) == 0 &&
+          gamemenu::CapFrameRate(240, 0) == 240);
 
     // [portal] toybox_auto_open: on by default, launcher.ini turns it off, SKY_TOYBOX_AUTO_OPEN overrides, bad values warn.
     CHECK(Parse({}, {}, {}).settings.toyboxAutoOpen);

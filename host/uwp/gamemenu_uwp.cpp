@@ -1,5 +1,6 @@
 // The F3 menu on Xbox (UWP): no launcher.ini to write and no log folder to report from yet, so the values only apply to this
 // run and "Report a problem" says it cannot. Not built or run with the other builds: the UWP target is paused (docs/runtime/host/gamemenu.md).
+#include "game.h"
 #include "host/gamemenu.h"
 #include "host/audio.h"
 #include "host/settings.h"
@@ -36,7 +37,7 @@ bool gamemenu::SetFullscreen(bool on)
 }
 bool gamemenu::SetFpsLimit(uint32_t fps)
 {
-    g_values.fpsLimit = fps >= 60 ? 60 : 30;
+    g_values.fpsLimit = CapFrameRate(NormalFrameRate(fps), game::Current().maxFpsLimit);
     SetFrameRateLimit(g_values.fpsLimit);
     return true;
 }
@@ -60,6 +61,12 @@ bool gamemenu::SetSkipIntroMovies(bool on)
     g_values.skipIntroMovies = on;
     return true;
 }
+bool gamemenu::SetEdgeSmoothing(uint32_t mode)
+{
+    g_values.edgeSmoothing = mode;
+    return true;
+}
+uint32_t gamemenu::EdgeSmoothingNow() { return g_values.edgeSmoothing; }
 bool gamemenu::RestartNeeded() { return false; }
 std::string gamemenu::FpsText() { return {}; }
 

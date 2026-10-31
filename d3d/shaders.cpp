@@ -121,7 +121,10 @@ namespace d3d
         case 3: return 1; // NORMAL
         case 6: return 2; // TANGENT
         case 7: return 3; // BINORMAL
-        case 5: return usageIndex < 4 ? 4 + usageIndex : 12 + (usageIndex - 4); // TEXCOORD
+        case 5:
+            return usageIndex == 8  ? 17
+                   : usageIndex < 4 ? 4 + usageIndex
+                                    : 12 + (usageIndex - 4); // TEXCOORD (8: Trap Team; 16 is PSIZE)
         case 10: return usageIndex == 0 ? 8 : 11; // COLOR
         case 2: return 9; // BLENDINDICES
         case 1: return 10; // BLENDWEIGHT

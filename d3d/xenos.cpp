@@ -1,7 +1,7 @@
 #include "d3d/xenos.h"
 #include <algorithm>
 #include <bit>
-#include <byteswap.h>
+#include "byteswap.h"
 #include <cstring>
 
 using plume::RenderBlend;

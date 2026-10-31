@@ -9,6 +9,7 @@
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -343,6 +344,9 @@ void PortalInit()
             fprintf(stderr, "[portal] %s portal unavailable, emulating one\n", mode.c_str());
         g_emulated = new EmulatedPortal;
         g_emulated->SetModel(EmulatedPortalModel(GameId));
+        // Trap Team's portal thread reads until a read returns nothing: one status report per 8 ms (below Giants' 12 ms
+        // poll) lets it finish and release the lock the main thread waits on.
+        g_emulated->SetStatusInterval(std::chrono::milliseconds(8));
         // Tests: another model from the table, by its id ("01 28", "0128"), to see what the game does with it.
         if (const char* wanted = skyenv::Get("SKY_PORTAL_MODEL"))
         {

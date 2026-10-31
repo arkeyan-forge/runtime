@@ -242,7 +242,7 @@ namespace
         const Catalogue& catalogue = Catalogue::Get();
         std::set<uint16_t> types;
         int perGame[6] = {};
-        const char* games[] = { "ssa", "giants", "swapforce", "trap_team", "superchargers", "imaginators" };
+        const char* games[] = { "ssa", "giants", "swapforce", "trapteam", "superchargers", "imaginators" };
         for (const Toy& toy : catalogue.Toys())
         {
             CHECK(types.insert(toy.type).second);
@@ -325,12 +325,12 @@ namespace
             // Swap Force tells the 2013 decorations apart, Trap Team Eon's Elite too.
             CHECK(read("swapforce", eruptor, 0x2C02).exact &&
                   read("swapforce", eruptor, 0x2C02).kind == VariantKind::AltDeco);
-            CHECK(!read("swapforce", eruptor, 0x3810).exact && read("trap_team", eruptor, 0x3810).exact);
+            CHECK(!read("swapforce", eruptor, 0x3810).exact && read("trapteam", eruptor, 0x3810).exact);
             // Trap Team's re-release of a sidekick (0x3000) is a version only in the games that tell it apart.
             const Toy* terrabite = catalogue.Find(505);
             CHECK(terrabite != nullptr && catalogue.VersionsFor("giants", *terrabite).empty() &&
                   catalogue.VersionsFor("swapforce", *terrabite).empty());
-            CHECK(catalogue.VersionsFor("trap_team", *terrabite).size() == 1);
+            CHECK(catalogue.VersionsFor("trapteam", *terrabite).size() == 1);
             // No version list repeats a toy's own name, shows a base entry or lists a variant its game plays as the plain toy.
             for (const Game& game : catalogue.Games())
                 for (const Toy& toy : catalogue.Toys())
@@ -343,9 +343,9 @@ namespace
             seen.type = 9;
             seen.variant = 0x3810;
             seen.variantInfo = catalogue.Describe(eruptor, seen.variant);
-            CHECK(NameIn(seen, "giants") == "Series 2 Eruptor" && NameIn(seen, "trap_team") == "Eon's Elite Eruptor" &&
-                  KindIn(seen, "giants") == VariantKind::Series &&
-                  KindIn(seen, "trap_team") == VariantKind::EonsElite && seen.DisplayName() == "Eon's Elite Eruptor");
+            CHECK(NameIn(seen, "giants") == "Series 2 Eruptor" && NameIn(seen, "trapteam") == "Eon's Elite Eruptor" &&
+                  KindIn(seen, "giants") == VariantKind::Series && KindIn(seen, "trapteam") == VariantKind::EonsElite &&
+                  seen.DisplayName() == "Eon's Elite Eruptor");
         }
 
         // Variants: listed, worked out from the bits, unknown toys.
@@ -470,6 +470,25 @@ namespace
         CHECK(!copy.Load(R"({"format": 1, "toys": [{"type": 15, "name": "X", "category": "nonsense"}]})", error));
         CHECK(!copy.Load(R"({"format": 2})", error) && !copy.Load("{", error));
         CHECK(copy.Toys().size() == before && copy.Find(15)->name == "Slam Bam");
+    }
+
+    // Trap Team [TrapTeam]: a trap, a Trap Master, a mini and an Eon's Elite through the collection; only the trap has no level.
+    void TestTrapTeam()
+    {
+        using namespace collection;
+        std::string trap = Create(210, 0x3014), master = Create(450), mini = Create(502), elite = Create(9, 0x3810);
+        Figure figure;
+        CHECK(Read(trap, figure) && figure.type == 210 && figure.Kind() == VariantKind::Shape && !HasProgress(figure) &&
+              LevelText(figure, "trapteam").empty());
+        CHECK(Read(master, figure) && HasProgress(figure) && LevelText(figure, "trapteam") == "New");
+        CHECK(Read(mini, figure) && HasProgress(figure) && Read(elite, figure) &&
+              figure.Kind() == VariantKind::EonsElite && HasProgress(figure));
+        figures::FigureStats stats;
+        figures::SetTotalExperience(stats, figures::LevelExperience[19]);
+        CHECK(WriteStats(master, stats) && Read(master, figure) && figure.level == 20 &&
+              LevelText(figure, "trapteam") == "Level 20" && LevelText(figure, "giants") == "Level 15 (20)");
+        for (const std::string& path : { trap, master, mini, elite })
+            CHECK(Delete(path));
     }
 
     // A blank LightCore toy: the Giants toy with its own variant, as the Toy Box creates it. Last, so that the counts
@@ -852,8 +871,18 @@ namespace
         const Game* ssa = catalogue.FindGame("ssa");
         CHECK(ssa != nullptr && ssa->seats.size() == 4 && ssa->seats[0].id == "p1" && ssa->seats[0].player == 1);
         CHECK(ssa != nullptr && ssa->seats[2].id == "item" && ssa->seats[2].accepts.front() == Category::MagicItem);
-        CHECK(catalogue.FindGame("trap_team")->seats.size() == 5 &&
+        CHECK(catalogue.FindGame("trapteam")->seats.size() == 5 &&
               catalogue.FindGame("superchargers")->seats[1].id == "vehicle1");
+        // Trap Team's own tables (Init_Setup.bld, tools/trapteam_catalogue.py): 46 villains with their element; a trap's
+        // shapes are variants 0x3000 + the shape number; the plain figure's portrait is the newest year's.
+        const Game* trap = catalogue.FindGame("trapteam");
+        CHECK(trap->villains.size() == 46 && trap->villains[0].id == 1001 && trap->villains[0].name == "Chompy Mage" &&
+              trap->villains[0].element == Element::Life && trap->villains[8].name == "The Gulper" &&
+              trap->villains[8].element == Element::Water && trap->villains[9].element == Element::None);
+        CHECK(trap->portraits.at(450u << 16) == "450_12288_gusto" &&
+              trap->portraits.at(474u << 16 | 0x3403) == "474_13315_bushwhack_legendary");
+        const Toy* magicTrap = catalogue.Find(210);
+        CHECK(magicTrap != nullptr && magicTrap->variants.size() == 6 && magicTrap->variants.back().id == 0x3015);
 
         // A clean folder for this test.
         for (const Figure& f : List())
@@ -1158,7 +1187,7 @@ namespace
     void TestPortalOverview()
     {
         const Game* ssa = Catalogue::Get().FindGame("ssa");
-        const Game* trap = Catalogue::Get().FindGame("trap_team");
+        const Game* trap = Catalogue::Get().FindGame("trapteam");
         CHECK(ssa != nullptr && trap != nullptr);
         if (ssa == nullptr || trap == nullptr)
             return;
@@ -1523,6 +1552,7 @@ int main(int argc, char** argv)
     TestBadIndex();
     TestPortalOverview();
     TestGiants();
+    TestTrapTeam();
     TestUpgrades();
     TestWheel();
 

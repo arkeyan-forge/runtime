@@ -1,4 +1,6 @@
 #include "host/toybox/model.h"
+#include "game.h"
+#include "gpu/edge_smoothing.h"
 #include "host/gamemenu.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
@@ -18,6 +20,7 @@ namespace toybox
             FrameRate,
             Scale,
             Anisotropy,
+            EdgeSmoothing,
             Vsync,
             SkipIntro,
             Report,
@@ -29,7 +32,27 @@ namespace toybox
         constexpr uint32_t Levels[] = { 1, 2, 4, 8, 16 };
 
         std::string OnOff(bool on) { return on ? L("On", "Oui") : L("Off", "Non"); }
+
+        // The rows shown, as indexes of Row: the edge smoothing row only for a game with a known FXAA pass.
+        std::vector<int> ShownRows()
+        {
+            std::vector<int> shown;
+            for (int row = 0; row < Model::MenuRowCount; row++)
+                if (row != EdgeSmoothing || gamemenu::Current().edgeSmoothingShown)
+                    shown.push_back(row);
+            return shown;
+        }
+
+        // The launcher's words (a label of "Light" would be translated as the element in its French file).
+        std::string EdgeSmoothingLabel(uint32_t mode)
+        {
+            return mode == edgesmoothing::Game    ? L("Game", "Jeu")
+                   : mode == edgesmoothing::Light ? L("Gentle", "Doux")
+                                                  : L("None", "Aucun");
+        }
     }
+
+    int Model::MenuRowTotal() const { return int(ShownRows().size()); }
 
     std::vector<MenuRow> Model::MenuRows() const
     {
@@ -39,17 +62,23 @@ namespace toybox
         rows[Volume] = { Kind::Slider, L("Volume", "Volume"), std::to_string(v.volume) + " %", int(v.volume), false };
         rows[FpsCounter] = { Kind::Toggle, L("FPS counter", "Compteur d'images"), OnOff(v.showFps), 0, false };
         rows[Fullscreen] = { Kind::Toggle, L("Fullscreen", "Plein écran"), OnOff(v.fullscreen), 0, false };
-        rows[FrameRate] = { Kind::Choice, L("Frame rate", "Images par seconde"), std::to_string(v.fpsLimit), 0, false };
+        rows[FrameRate] = { Kind::Choice, L("Frame rate", "Images par seconde"),
+            v.fpsLimit == 0 ? std::string(L("Unlimited", "Illimité")) : std::to_string(v.fpsLimit), 0, false };
         rows[Scale] = { Kind::Choice, L("Resolution scale", "Échelle de résolution"),
             v.scale == 0 ? std::string(L("Auto", "Auto")) : "x" + std::to_string(v.scale), 0, true };
         rows[Anisotropy] = { Kind::Choice, L("Texture filtering", "Filtrage des textures"),
             v.anisotropy == 1 ? std::string(L("Off", "Non")) : std::to_string(v.anisotropy) + "x", 0, true };
+        rows[EdgeSmoothing] = { Kind::Choice, L("Edge smoothing", "Lissage des bords"),
+            EdgeSmoothingLabel(gamemenu::EdgeSmoothingNow()), 0, false };
         rows[Vsync] = { Kind::Toggle, L("VSync", "VSync"), OnOff(v.vsync), 0, true };
         rows[SkipIntro] = { Kind::Toggle, L("Skip the start-up logos", "Passer les logos de départ"),
             OnOff(v.skipIntroMovies), 0, true };
         rows[Report] = { Kind::Action, L("Report a problem", "Signaler un problème"), "", 0, false };
         rows[CloseMenu] = { Kind::Action, L("Close", "Fermer"), "", 0, false };
-        return rows;
+        std::vector<MenuRow> shown;
+        for (int row : ShownRows())
+            shown.push_back(rows[size_t(row)]);
+        return shown;
     }
 
     void Model::OpenMenu()
@@ -64,7 +93,7 @@ namespace toybox
 
     void Model::FocusMenuRow(int row, int step)
     {
-        menuRow = std::clamp(row, 0, MenuRowCount - 1);
+        menuRow = std::clamp(row, 0, MenuRowTotal() - 1);
         MenuStep(menuRow, step);
         m_dirty = true;
     }
@@ -72,6 +101,7 @@ namespace toybox
     // `step` -1 / +1 changes a value (a toggle flips, a choice moves along its list, the volume by 10), 0 does the row.
     void Model::MenuStep(int row, int step)
     {
+        row = ShownRows()[size_t(std::clamp(row, 0, MenuRowTotal() - 1))]; // the shown row's place in Row
         const gamemenu::Values& v = gamemenu::Current();
         bool saved = true;
         auto flip = [&](bool value, bool (*set)(bool)) { saved = set(!value); };
@@ -94,12 +124,23 @@ namespace toybox
         case Fullscreen: flip(v.fullscreen, gamemenu::SetFullscreen); break;
         case FrameRate:
         {
-            static const uint32_t Rates[] = { 30, 60 };
-            along(Rates, 2, v.fpsLimit, gamemenu::SetFpsLimit);
+            // The rates under the game's cap (game::Adapter::maxFpsLimit).
+            uint32_t rates[std::size(gamemenu::FrameRates)];
+            size_t count = 0;
+            for (uint32_t rate : gamemenu::FrameRates)
+                if (gamemenu::CapFrameRate(rate, ::game::Current().maxFpsLimit) == rate)
+                    rates[count++] = rate;
+            along(rates, count, v.fpsLimit, gamemenu::SetFpsLimit);
             break;
         }
         case Scale: along(Scales, 5, v.scale, gamemenu::SetScale); break;
         case Anisotropy: along(Levels, 5, v.anisotropy, gamemenu::SetAnisotropy); break;
+        case EdgeSmoothing:
+        {
+            static const uint32_t Modes[] = { edgesmoothing::Game, edgesmoothing::Light, edgesmoothing::Off };
+            along(Modes, 3, gamemenu::EdgeSmoothingNow(), gamemenu::SetEdgeSmoothing);
+            break;
+        }
         case Vsync: flip(v.vsync, gamemenu::SetVsync); break;
         case SkipIntro: flip(v.skipIntroMovies, gamemenu::SetSkipIntroMovies); break;
         case Report:
@@ -136,8 +177,8 @@ namespace toybox
     {
         switch (command)
         {
-        case Command::Up: menuRow = (menuRow + MenuRowCount - 1) % MenuRowCount; break;
-        case Command::Down: menuRow = (menuRow + 1) % MenuRowCount; break;
+        case Command::Up: menuRow = (menuRow + MenuRowTotal() - 1) % MenuRowTotal(); break;
+        case Command::Down: menuRow = (menuRow + 1) % MenuRowTotal(); break;
         case Command::Left: MenuStep(menuRow, -1); break;
         case Command::Right: MenuStep(menuRow, 1); break;
         case Command::Accept: MenuStep(menuRow, 0); break;

@@ -1,6 +1,8 @@
 #include "host/gamemenu.h"
+#include "gpu/edge_smoothing.h"
 #include "gpu/gpu.h"
 #include "game.h"
+#include "game_hooks.h"
 #include "host/audio.h"
 #include "host/collection/datadir.h"
 #include "host/env.h"
@@ -61,7 +63,8 @@ void gamemenu::Init(const RuntimeSettings& settings, SDL_Window* window, const c
     g_window = window;
     g_version = gameVersion != nullptr ? gameVersion : "";
     g_values = { settings.volume, settings.showFps, settings.fullscreen, settings.fpsLimit, settings.resolutionScale,
-        settings.anisotropy, settings.vsync, settings.skipIntroMovies };
+        settings.anisotropy, settings.vsync, settings.skipIntroMovies, settings.edgeSmoothing,
+        ::game::HostKernelPixelShader != 0 };
     HostAudioSetVolume(settings.volume);
 }
 
@@ -94,7 +97,7 @@ bool gamemenu::SetFullscreen(bool on)
 
 bool gamemenu::SetFpsLimit(uint32_t fps)
 {
-    g_values.fpsLimit = fps >= 60 ? 60 : 30;
+    g_values.fpsLimit = CapFrameRate(NormalFrameRate(fps), game::Current().maxFpsLimit);
     SetFrameRateLimit(g_values.fpsLimit);
     Logged("fps_limit", std::to_string(g_values.fpsLimit));
     return SaveVideo("fps_limit", std::to_string(g_values.fpsLimit));
@@ -122,6 +125,20 @@ bool gamemenu::SetSkipIntroMovies(bool on)
 {
     g_values.skipIntroMovies = on;
     return SaveForNextStart("skip_intro_movies", on ? "1" : "0");
+}
+
+bool gamemenu::SetEdgeSmoothing(uint32_t mode)
+{
+    g_values.edgeSmoothing = mode;
+    gpu::g_settings.edgeSmoothing = mode;
+    const char* name = edgesmoothing::Name(edgesmoothing::Mode(mode));
+    Logged("edge_smoothing", name);
+    return SaveVideo("edge_smoothing", name);
+}
+
+uint32_t gamemenu::EdgeSmoothingNow()
+{
+    return edgesmoothing::Resolve(edgesmoothing::Mode(g_values.edgeSmoothing), gpu::g_settings.resolutionScale);
 }
 
 bool gamemenu::RestartNeeded() { return g_restart; }

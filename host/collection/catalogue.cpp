@@ -162,6 +162,21 @@ namespace collection
                 }
                 game.seats.push_back(std::move(seat));
             }
+            for (const Json& entry : item["villains"].Items())
+            {
+                Villain villain;
+                villain.id = uint16_t(entry["id"].AsInt());
+                villain.name = entry["name"].AsString();
+                villain.model = entry["model"].AsString();
+                villain.element = ParseElement(entry["element"].AsString());
+                villain.vault = int(entry["vault"].AsInt());
+                if (villain.id == 0 || villain.name.empty() || villain.element == Element::Count)
+                {
+                    error = "a villain needs an id, a name and an element in " + game.id;
+                    return false;
+                }
+                game.villains.push_back(std::move(villain));
+            }
             ReadMap(item["names"], game.names);
             ReadMap(item["images"], game.images);
             ReadMap(item["hats"], game.hats);

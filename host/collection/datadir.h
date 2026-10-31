@@ -11,7 +11,7 @@
 //   <root>/<Game>/          one per game ("SSA"): the built game, its settings, saves, pipelines.bin, portal.txt,
 //                           figures, portraits, launcher-cache and SSARecomp.log
 //
-// <root> is SKYLANDERS_DATA (tests, portable use), else %APPDATA%\Skylanders on Windows, ~/Library/Application
+// <root> is SKYLANDERS_DATA (tests), <program folder>/data when portable.txt is beside the program, else %APPDATA%\Skylanders on Windows, ~/Library/Application
 // Support/Skylanders on macOS and $XDG_DATA_HOME/Skylanders (~/.local/share/Skylanders) elsewhere. Nothing here
 // creates a folder.
 #include <cstdint>
@@ -23,13 +23,23 @@
 namespace datadir
 {
     std::filesystem::path Root();
-    // A game's folder from its catalogue id: "ssa" is "SSA", "giants" is "Giants", "swapforce" is "SwapForce".
+    // A game's folder from its catalogue id: "ssa" is "SSA", "giants" is "Giants", "swapforce" is "SwapForce", "trapteam" is "TrapTeam".
     std::string GameFolderName(std::string_view id);
     std::filesystem::path Game(std::string_view id = "ssa");
     std::filesystem::path LauncherIni();
     std::filesystem::path Kits();
     std::filesystem::path Toolchains();
     std::filesystem::path Logs();
+
+    // Portable mode: a file portable.txt in `folder` makes <folder>/data the root (settings, saves, figures, logs, built games).
+    // Empty when the file is not there.
+    std::filesystem::path PortableRoot(const std::filesystem::path& folder);
+    // The folder that holds the running program (on macOS, the one that holds its .app). Empty when it cannot be found.
+    std::filesystem::path ProgramFolder();
+    // When portable.txt is beside the program and SKYLANDERS_DATA is not set, sets SKYLANDERS_DATA to the portable root, so
+    // Root() and the games the launcher starts follow it (and the older folders are not migrated). True when it did.
+    // Call first thing in main, before MigrateOnce.
+    bool ApplyPortable();
 
     // The path as UTF-8 text.
     std::string Text(const std::filesystem::path& path);

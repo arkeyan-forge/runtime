@@ -14,6 +14,7 @@
 #include "d3d/xenos.h"
 #include "gpu/buffer_cache.h"
 #include "gpu/draw.h"
+#include "gpu/edge_smoothing.h"
 #include "host/display.h"
 #include "host/dds.h"
 #include "host/art/xenos_texture.h"
@@ -27,7 +28,7 @@
 #include <atomic>
 #include <bit>
 #include <chrono>
-#include <byteswap.h>
+#include "byteswap.h"
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -58,6 +59,12 @@ namespace
     // Resolution scale (settings): host render targets, and the textures resolved from them, are this many times the
     // guest's surfaces, so guest pixel coordinates (viewports, scissors, resolve and clear rectangles) are scaled by it.
     int32_t Scale() { return int32_t(gpu::g_settings.resolutionScale); }
+    // The effective edge smoothing: the setting, or by the resolution scale when it was not chosen.
+    edgesmoothing::Mode EdgeSmoothing()
+    {
+        return edgesmoothing::Resolve(
+            edgesmoothing::Mode(gpu::g_settings.edgeSmoothing), uint32_t(gpu::g_settings.resolutionScale));
+    }
 
     int32_t TargetScale(const gpu::TextureDesc& desc) { return d3d::TargetScale(desc.width, desc.height, Scale()); }
 
@@ -321,19 +328,25 @@ namespace
         return hash;
     }
 
-    // The base level of a 2D DXT1 or DXT5 texture as RGBA8 (R in the low byte), for host/glyphs.cpp's atlases; empty
-    // for any other format.
+    // The base level of a 2D DXT1, DXT5 or 16-bit (expanded) texture as RGBA8 (R in the low byte), for host/glyphs.cpp's
+    // atlases; empty for any other format.
     std::vector<uint32_t> GuestBaseRgba(const xenos::TextureFetch& fetch, const xenos::TextureFormatInfo& info)
     {
         uint32_t format = fetch.Format();
         bool dxt1 = format == 18 || format == 51, dxt5 = format == 20 || format == 53;
         xenos::TextureLevel base = xenos::TextureLevelLayout(fetch, info, 0);
         uint32_t guest = PhysicalToGuest(base.address);
-        if ((!dxt1 && !dxt5) || guest == 0)
+        if ((!dxt1 && !dxt5 && !info.convertToRgba8) || guest == 0)
             return {};
         std::vector<uint8_t> blocks;
         uint32_t rowPitch;
         DecodeTexture(static_cast<const uint8_t*>(g_memory.Translate(guest)), fetch, info, base, blocks, rowPitch);
+        if (info.convertToRgba8)
+        {
+            std::vector<uint32_t> rgba(size_t(base.width) * base.height);
+            memcpy(rgba.data(), blocks.data(), rgba.size() * 4);
+            return rgba;
+        }
         uint32_t width = base.width, height = base.height, blocksX = (width + 3) / 4, blocksY = (height + 3) / 4;
         std::vector<uint32_t> rgba(size_t(width) * height);
         uint32_t texels[16];
@@ -1404,9 +1417,12 @@ namespace
         // FXAA's corner taps (fetch offsets of +-0.5 guest texels) and steps (c0, c1, from the guest's frame size) land N host
         // pixels apart at scale N: an edge filter that wide also softens what the higher resolution added. Measured at
         // scale 2: 2.9 % of the pixels changed and 20 % of the sharpness lost, against 1.4 % and 13 % in host pixels.
-        const bool hostKernel =
-            game::HostKernelPixelShader != 0 && Scale() > 1 && g_drawPixelShader == game::HostKernelPixelShader;
-        if (upData != 0 || g_dump.active || (g_frameComposite && game::UltrawideCompositeVpos) || hostKernel)
+        const bool fxaaPass = game::HostKernelPixelShader != 0 && g_drawPixelShader == game::HostKernelPixelShader;
+        const bool hostKernel = fxaaPass && Scale() > 1;
+        // The "Edge smoothing" setting: Game leaves the pass's contrast thresholds, Light and Off raise them (gpu/edge_smoothing.h).
+        const edgesmoothing::Mode smoothing = fxaaPass ? EdgeSmoothing() : edgesmoothing::Game;
+        if (upData != 0 || g_dump.active || (g_frameComposite && game::UltrawideCompositeVpos) || hostKernel ||
+            smoothing != edgesmoothing::Game)
         {
             // A BeginVertices draw captures the constants when the buffer is requested, before the game fills the
             // vertices (and may change state); the debug dump wants the same host-order copy.
@@ -1420,6 +1436,17 @@ namespace
                 kernel = ScaleHostKernel(kernel, Scale());
                 std::copy(kernel.constants.begin(), kernel.constants.end(), g_constants.data() + 256 * 4);
                 draw.scaledTextures = kernel.scaledTextures;
+            }
+            if (smoothing != edgesmoothing::Game)
+            {
+                // The threshold and the minimum are two consecutive vec4 of the pixel constants (game::HostKernelThreshold).
+                const bool off = smoothing == edgesmoothing::Off;
+                float* constants = g_constants.data() + 256 * 4 + game::HostKernelThreshold;
+                for (uint32_t i = 0; i < 4; i++)
+                {
+                    constants[i] = off ? edgesmoothing::OffThreshold : edgesmoothing::LightThreshold;
+                    constants[4 + i] = off ? edgesmoothing::OffMinimum : edgesmoothing::LightMinimum;
+                }
             }
             if (g_frameComposite && game::UltrawideCompositeVpos)
             {
@@ -2003,7 +2030,7 @@ PPC_FUNC(GAME_HOOK(D3DDevice_Swap))
     RendererTimer timer;
     // A game that paces itself by the interval it finds in its device (game::Adapter::presentIntervalPacesGame) is shown
     // interval 1 at 60 FPS: the guest D3D then does not hold the frame to two blanks, and the engine times its frames.
-    if (game::Current().presentIntervalPacesGame && FrameRateLimit() == 60 &&
+    if (game::Current().presentIntervalPacesGame && (FrameRateLimit() >= 60 || FrameRateLimit() == 0) &&
         Read32(ctx.r3.u32 + Device::PresentInterval) == 2)
         g_memory.Write<uint32_t>(ctx.r3.u32 + Device::PresentInterval, 1);
     ScanRing(ctx.r3.u32);
@@ -2024,6 +2051,33 @@ PPC_FUNC(GAME_HOOK(D3DDevice_Swap))
         for (uint32_t i = 0; i < 6; i++)
             fetch.dword[i] = texture != 0 ? Read32(texture + Resource::TextureFetch + i * 4) : 0;
         auto it = g_textures.find(TextureKey(fetch));
+        // SKY_PRESENT_PROBE=<n>: every nth swap, what the present samples (fetch words, size, format) and a readback of
+        // that texture; a swap whose texture is unknown presents nothing. Offscreen frames do not prove a window.
+        static const int probeEvery =
+            skyenv::Get("SKY_PRESENT_PROBE") != nullptr ? atoi(skyenv::Get("SKY_PRESENT_PROBE")) : 0;
+        if (probeEvery > 0 && g_frame % probeEvery == 0)
+        {
+            bool known = it != g_textures.end() && it->second.texture != nullptr;
+            fprintf(stderr, "[present] frame %llu: texture 0x%08X fetch %08X %08X %08X %08X %08X %08X, %s",
+                (unsigned long long)g_frame, texture, fetch.dword[0], fetch.dword[1], fetch.dword[2], fetch.dword[3],
+                fetch.dword[4], fetch.dword[5], known ? "found" : "NOT FOUND (nothing presented)");
+            std::vector<uint32_t> pixels;
+            uint32_t width = 0, height = 0;
+            if (known && gpu::ReadbackTexture(it->second.texture, pixels, width, height))
+            {
+                uint64_t lit = 0, sum = 0;
+                for (uint32_t p : pixels)
+                {
+                    uint32_t r = p & 0xFF, g = p >> 8 & 0xFF, b = p >> 16 & 0xFF;
+                    lit += (r | g | b) > 8;
+                    sum += r + g + b;
+                }
+                fprintf(stderr, ", read back %ux%u, %llu of %zu pixels lit, mean %.1f", width, height,
+                    (unsigned long long)lit, pixels.size(),
+                    pixels.empty() ? 0.0 : double(sum) / 3.0 / double(pixels.size()));
+            }
+            fprintf(stderr, "\n");
+        }
         if (it != g_textures.end() && it->second.texture != nullptr)
         {
             SetGameRendering(true);

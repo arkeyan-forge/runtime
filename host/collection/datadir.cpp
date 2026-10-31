@@ -12,8 +12,12 @@
 
 #if defined(_WIN32)
 #include <cwchar>
+#include <windows.h>
 #elif defined(__APPLE__)
+#include <mach-o/dyld.h>
 #include <pwd.h>
+#include <unistd.h>
+#else
 #include <unistd.h>
 #endif
 
@@ -88,7 +92,9 @@ namespace datadir
     std::string GameFolderName(std::string_view id)
     {
         if (id == "swapforce")
-            return "SwapForce"; // the one exception: two words
+            return "SwapForce"; // two words
+        if (id == "trapteam")
+            return "TrapTeam";
         std::string name(id);
         if (name.size() <= 3)
             std::transform(
@@ -117,6 +123,59 @@ namespace datadir
     fs::path Kits() { return Below("kit"); }
     fs::path Toolchains() { return Below("toolchains"); }
     fs::path Logs() { return Below("logs"); }
+
+    fs::path PortableRoot(const fs::path& folder)
+    {
+        std::error_code error;
+        if (folder.empty() || !fs::is_regular_file(folder / "portable.txt", error))
+            return {};
+        return folder / "data";
+    }
+
+    fs::path ProgramFolder()
+    {
+        fs::path program;
+#if defined(_WIN32)
+        wchar_t buffer[32768];
+        DWORD size = GetModuleFileNameW(nullptr, buffer, DWORD(std::size(buffer)));
+        if (size > 0 && size < std::size(buffer))
+            program = fs::path(std::wstring(buffer, size));
+#elif defined(__APPLE__)
+        char buffer[4096];
+        uint32_t size = sizeof(buffer);
+        if (_NSGetExecutablePath(buffer, &size) == 0)
+            program = buffer;
+#else
+        char buffer[4096];
+        ssize_t size = readlink("/proc/self/exe", buffer, sizeof(buffer));
+        if (size > 0 && size < ssize_t(sizeof(buffer)))
+            program = fs::path(std::string(buffer, size_t(size)));
+#endif
+        if (program.empty())
+            return {};
+        std::error_code error;
+        program = fs::weakly_canonical(program, error);
+        fs::path folder = program.parent_path();
+        // <folder>/Launcher.app/Contents/MacOS/Launcher: beside the .app.
+        if (folder.filename() == "MacOS" && folder.parent_path().filename() == "Contents" &&
+            folder.parent_path().parent_path().extension() == ".app")
+            return folder.parent_path().parent_path().parent_path();
+        return folder;
+    }
+
+    bool ApplyPortable()
+    {
+        if (Set("SKYLANDERS_DATA"))
+            return false;
+        fs::path root = PortableRoot(ProgramFolder());
+        if (root.empty())
+            return false;
+#if defined(_WIN32)
+        return _wputenv_s(L"SKYLANDERS_DATA", root.wstring().c_str()) == 0;
+#else
+        return setenv("SKYLANDERS_DATA", root.c_str(), 1) == 0;
+#endif
+    }
 
     std::string Text(const fs::path& path)
     {

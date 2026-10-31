@@ -30,7 +30,9 @@ namespace figures
         Legendary,
         Sidekick,
         MagicItem,
-        Adventure
+        Adventure,
+        Trap,      // Trap Team: holds a captured villain, no progress of its own
+        TrapMaster // Trap Team: keeps progress like a character
     };
 
     struct ToyInfo
@@ -52,7 +54,8 @@ namespace figures
     // Characters keep progress (experience, gold, upgrades...); items and adventure packs don't.
     inline bool HasProgress(const ToyInfo& toy)
     {
-        return toy.kind == ToyKind::Character || toy.kind == ToyKind::Legendary || toy.kind == ToyKind::Sidekick;
+        return toy.kind == ToyKind::Character || toy.kind == ToyKind::Legendary || toy.kind == ToyKind::Sidekick ||
+               toy.kind == ToyKind::TrapMaster;
     }
 
     const char* ElementName(Element element);

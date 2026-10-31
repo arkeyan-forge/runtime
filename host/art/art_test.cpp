@@ -20,6 +20,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -208,11 +209,13 @@ namespace
     // An IGZ file with one igImage2: an 8x8 DXT5 picture, top half red and bottom half blue as stored (so the right way
     // up it is blue on top), named "levels/test/portraits/eruptor.png", format hash `format`; tiled, or `linear` (rows 32
     // blocks apart). v6: Giants' layout [V]; v7: Swap Force's [V] (sections at 0x14, tags stored byte-swapped, TMHN
-    // handles with a kind, the name a string index, a dependency); 8-9: the later games' as the reader's table describes
-    // them (tagged records with a 16-byte header, sections { id, offset, size, alignment }) [?].
+    // handles with a kind, the name a string index, a dependency); v8: Trap Team's [V], the same with every name in the
+    // types and strings padded to 2 bytes; 9: the later games' as the reader's table describes them (tagged records
+    // with a 16-byte header, sections { id, offset, size, alignment }) [?].
     std::vector<uint8_t> MakeIgz(uint32_t format, uint32_t version = 6, bool linear = false)
     {
-        const bool tagged = version >= 7, v7 = version == 7;
+        const bool tagged = version >= 7, v7 = version == 7 || version == 8,
+                   swapped = v7; // v8 as v7, names padded to 2 bytes
         std::vector<uint8_t> igz(0x800, 0);
         memcpy(igz.data(), "IGZ\x01", 4);
         PutBe32(igz, 4, version);
@@ -225,7 +228,7 @@ namespace
             if (tagged)
             {
                 for (int i = 0; i < 4; i++)
-                    head[i] = uint8_t(tag[v7 ? 3 - i : i]); // v7 stores the tag byte-swapped
+                    head[i] = uint8_t(tag[swapped ? 3 - i : i]); // v7 and v8 store the tag byte-swapped
                 PutBe32(head, 4, count), PutBe32(head, 8, uint32_t(16 + payload.size())), PutBe32(head, 12, 16);
             }
             else
@@ -234,7 +237,8 @@ namespace
             fixups.insert(fixups.end(), head.begin(), head.end());
             fixups.insert(fixups.end(), payload.begin(), payload.end());
         };
-        std::string types("igObject\0igImage2\0", 18);
+        std::string types =
+            version == 8 ? std::string("igObject\0\0igImage2\0\0", 20) : std::string("igObject\0igImage2\0", 18);
         std::vector<uint8_t> typeBytes(types.begin(), types.end());
         typeBytes.resize(20, 0);
         record(0, "TMET", 2, typeBytes);
@@ -246,9 +250,9 @@ namespace
         const uint32_t pixels =
             linear ? 2 * 32 * 16 : 0x200; // two rows of 32 blocks, or a tiled 32x32-block tile's first part
         std::vector<uint8_t> handles;
-        PutBe32(handles, 0, pixels | (v7 ? 0x50u << 24 : 0)),
+        PutBe32(handles, 0, pixels | (swapped ? 0x50u << 24 : 0)),
             PutBe32(handles, 4, 0x100); // at pool 0 + 0x100; v7: kind 0x50
-        record(0xA, v7 ? "TMHN" : "RHND", 1, handles);
+        record(0xA, swapped ? "TMHN" : "RHND", 1, handles);
         if (v7)
         {
             std::string strings = std::string(name) + '\0';
@@ -272,7 +276,7 @@ namespace
 
         // Sections: tagged { id, offset, size, alignment } at 0x10, v7 { ?, offset, size, alignment } at 0x14; v6 { offset,
         // size, alignment, id } at 0x10.
-        const size_t table = v7 ? 0x14 : 0x10, word = tagged ? 4 : 0;
+        const size_t table = swapped ? 0x14 : 0x10, word = tagged ? 4 : 0;
         fixups.resize(std::max<size_t>(fixups.size(), 0x1C), 0);
         PutBe32(igz, table + word, 0x800), PutBe32(igz, table + 4 + word, uint32_t(fixups.size()));
         PutBe32(igz, table + 0x10 + word, uint32_t(0x800 + fixups.size())),
@@ -283,12 +287,12 @@ namespace
     }
 
     // An IGA archive: entry 0 stored ("plain.txt"), entry 1 one LZMA chunk ("packed.txt"), entry 2 a stored IGZ. v8:
-    // Giants' layout [V]; v10: Swap Force's [V] (big-endian, 16-byte entries, chunks 0x800-aligned); v11: as the reader's
-    // table describes it [?] (name table at 0x28, 64-bit).
+    // Giants' layout [V]; v10: Swap Force's [V] (big-endian, 16-byte entries { ?, offset, size, mode }, chunks
+    // 0x800-aligned); v11: Trap Team's [V] (name table at 0x28, 64-bit; 16-byte entries { offset, ?, size, mode }).
     std::vector<uint8_t> MakeIga(const std::vector<uint8_t>& igz, uint32_t version = 8)
     {
         const bool big = version == 10;
-        const uint32_t count = 3, header = version == 8 ? 0x34 : 0x38, entrySize = big ? 16 : 12;
+        const uint32_t count = 3, header = version == 8 ? 0x34 : 0x38, entrySize = version == 8 ? 12 : 16;
         const size_t align = big ? 0x800 : 0x100;
         auto Put32 = [big](std::vector<uint8_t>& bytes, size_t at, uint32_t value) {
             big ? PutBe32(bytes, at, value) : PutLe32(bytes, at, value);
@@ -322,8 +326,18 @@ namespace
         std::string plain = "Stored as is";
         size_t at = 0x400;
         auto entry = [&](uint32_t i, uint32_t offset, uint32_t size, uint32_t flags) {
-            size_t slot = header + 4 * count + entrySize * i + entrySize - 12;
-            Put32(archive, slot, offset), Put32(archive, slot + 4, size), Put32(archive, slot + 8, flags);
+            // The word that is no offset, size or mode is filled with a value that would break a reader taking it for one.
+            size_t slot = header + 4 * count + entrySize * i;
+            if (version == 11)
+                Put32(archive, slot, offset), Put32(archive, slot + 4, 0xFFFFFF00), Put32(archive, slot + 8, size),
+                    Put32(archive, slot + 12, flags);
+            else
+            {
+                slot += entrySize - 12;
+                Put32(archive, slot, offset), Put32(archive, slot + 4, size), Put32(archive, slot + 8, flags);
+                if (version == 10)
+                    Put32(archive, slot - 4, 0xFFFFFF00);
+            }
         };
         entry(0, uint32_t(at), uint32_t(plain.size()), 0xFFFFFFFF);
         archive.insert(archive.end(), plain.begin(), plain.end());
@@ -339,6 +353,40 @@ namespace
         entry(2, uint32_t(at), uint32_t(igz.size()), 0xFFFFFFFF);
         archive.insert(archive.end(), igz.begin(), igz.end());
         return archive;
+    }
+
+    // A real IGA archive given at run time (TRAPTEAM_ARC: any .arc or .bld of Trap Team's disc, IGA v11): it opens as
+    // a verified v11, every entry has a name and unpacks to its size, and an IGZ or FSB5 starts what it holds.
+    void TestRealIga(const char* path)
+    {
+        std::vector<uint8_t> bytes;
+        if (FILE* f = fopen(path, "rb"))
+        {
+            fseek(f, 0, SEEK_END);
+            bytes.resize(size_t(ftell(f)));
+            fseek(f, 0, SEEK_SET);
+            bytes.resize(fread(bytes.data(), 1, bytes.size(), f));
+            fclose(f);
+        }
+        auto reader = [&bytes](uint64_t offset, size_t size, uint8_t* to) {
+            if (offset + size > bytes.size())
+                return false;
+            memcpy(to, bytes.data() + offset, size);
+            return true;
+        };
+        auto archive = art::alchemy::IgaArchive::Open(reader, bytes.size());
+        CHECK(archive && archive->Version() == 11 && archive->Verified() && archive->Count() > 0);
+        if (!archive)
+            return;
+        size_t good = 0;
+        for (size_t i = 0; i < archive->Count(); i++)
+        {
+            std::vector<uint8_t> data = archive->Read(i);
+            bool known =
+                data.size() >= 4 && (memcmp(data.data(), "IGZ\x01", 4) == 0 || memcmp(data.data(), "FSB5", 4) == 0);
+            good += !archive->Name(i).empty() && data.size() == archive->Size(i) && known;
+        }
+        CHECK(good == archive->Count());
     }
 
     void TestAlchemy()
@@ -390,11 +438,11 @@ namespace
         CHECK(!art::alchemy::IgzFile::Parse(std::vector<uint8_t>(0x900, 0)));
         CHECK(archive->Version() == 8 && archive->Verified() && file->Version() == 6 && file->Verified());
 
-        // Every version of the reader's tables reads its own fixture: IGA v8 [V], v10 [V], v11; IGZ v6 [V], v7, v8, v9.
+        // Every version of the reader's tables reads its own fixture: IGA v8 [V], v10 [V], v11 [V]; IGZ v6 [V], v7, v8, v9.
         // The [?] versions only check that the reader follows its table: the table itself is from public descriptions.
         auto versions = art::alchemy::IgaVersions();
         CHECK(versions.size() == 3 && versions[0].version == 8 && versions[0].verified && versions[1].version == 10 &&
-              versions[1].verified && !versions[2].verified);
+              versions[1].verified && versions[2].version == 11 && versions[2].verified);
         for (const art::alchemy::FormatVersion& igaVersion : versions)
             for (const art::alchemy::FormatVersion& igzVersion : art::alchemy::IgzVersions())
             {
@@ -441,7 +489,7 @@ namespace
         }
 
         // The games' manifests (games/<id>/art.json, built in): a game whose manifest exists is known.
-        CHECK(art::Known("ssa") && art::Known("giants") && art::Known("swapforce") && !art::Known("trap_team"));
+        CHECK(art::Known("ssa") && art::Known("giants") && art::Known("swapforce") && art::Known("trapteam"));
     }
 
     // --- Lux -------------------------------------------------------------------------------------------------------
@@ -691,7 +739,10 @@ namespace
             if (!own && collection::GameKindPicturePath(game, toy->category).empty())
                 drawn++, fprintf(stderr, "  only a drawn icon for %s\n", toy->name.c_str());
         }
-        CHECK(drawn == 0);
+        // [TrapTeam] 28 toys have only a drawn icon from this disc: the 8 Giants and 2 items whose only picture here is a
+        // later repose, the 16 swappers' bottoms (the collection shows tops), Fiery Forge and Arkeyan Crossbow (one
+        // alternate each): their own game's disc gives them a picture (docs/runtime/host/game_art.md).
+        CHECK(drawn == (strcmp(game, "trapteam") == 0 ? 28 : 0));
 
         // Every picture of a variant the catalogue maps (portraits, artworks) is on the disc; the best picture of each
         // toy and variant is its own artwork when the game has one (Giants: 99, about 1000x960).
@@ -770,6 +821,18 @@ namespace
             size(best, w, h);
             CHECK(best.ends_with("artworks/zooks2_fullscreen_materials.png") && w == 640 && h == 320);
             return; // no upgrades manifest for Swap Force yet
+        }
+        if (strcmp(game, "trapteam") == 0)
+        {
+            // [TrapTeam] 347 toy and trap pictures (128 px), 92 villain pictures; a trap has a picture whatever its shape.
+            CHECK(got.portraits == 441);
+            const collection::Toy* trap = catalogue.Find(210);
+            size(collection::PortraitPath(game, *trap, 0x3008), w, h);
+            CHECK(trap != nullptr && w == 128 && h == 128);
+            for (const collection::Villain& villain : catalogue.FindGame(game)->villains)
+                CHECK(!collection::VillainPicturePath(game, villain).empty() &&
+                      !collection::VillainPicturePath(game, villain, false).empty());
+            return; // no upgrades in the manifest
         }
         // The upgrades (game_text.cpp): every Skylander's list, read once; Spyro's as both games show it [V] (runs of
         // 2026-10-26: the figure with bits 2 and 6 and 9 shows Long Range Raze, the second path's first upgrade and the
@@ -855,10 +918,52 @@ void TestDiscLanguages()
     V europe = { "/archives/a_it.pak", "/archives/a_es.pak", "/archives/b_es.pak", "/other/c_en.pak" };
     CHECK((art::LanguagesOnDisc("swapforce", europe).text == V{ "es", "it" }));
     CHECK(art::LanguagesOnDisc("swapforce", { "/archives/a_xx.pak", "/archives/a.pak" }).voice.empty());
+    // The other languages of the engine's list are named too, in the list's order; a code it has not got is ignored.
+    V east = { "/archives/a_ru.pak", "/archives/a_pl.pak", "/archives/a_ja.pak", "/archives/a_en.pak",
+        "/archives/a_qq.pak", "/archives/a_staging.pak", "/archives/_.pak" };
+    CHECK((art::LanguagesOnDisc("swapforce", east).text == V{ "en", "pl", "ru", "ja" }));
 
     // Giants: not in file names; all twelve whatever the list.
     art::DiscLanguages giants = art::LanguagesOnDisc("giants", {});
     CHECK(giants.text.size() == 12 && giants.text == giants.voice && giants.text[4] == "es-419");
+
+    // Trap Team: the file names are the same on every disc; the languages are the entries of two kinds of archive.
+    V names = { "/character/Init_Setup.bld", "/character/001_a.arc", "/character/000_b.arc", "/character/002_c.arc",
+        "/permanent/global.bld", "/default.xex" };
+    auto line = [](const char* folder, int number) {
+        return std::string("c:/tfb/build/360/levels/champion_audio/whirlwind/") + folder + "vo_whirlwind_" +
+               std::to_string(number) + ".wav/0x1234.wav.hz.wav.enc";
+    };
+    std::map<std::string, V> archives;
+    auto tt = [&](const V& files) {
+        return art::LanguagesOnDisc("trapteam", files, [&](const std::string& path) {
+            auto it = archives.find(path);
+            return it == archives.end() ? V{} : it->second;
+        });
+    };
+    // English and German: the packs, the English lines outside any folder next to the German ones in "german/".
+    archives = { { "character/init_setup.bld", { "ENGLISH.pak", "GERMAN.pak", "level.bld" } },
+        { "character/000_b.arc", { line("", 1), line("german/", 1), line("german/", 2), line("", 2),
+                                     "c:/tfb/build/360/models/x.png/0x1.png.igb.tex.igz" } } };
+    CHECK((tt(names).text == V{ "en", "de" }) && (tt(names).voice == V{ "en", "de" }));
+    // French and Dutch: the same file names; the few lines outside a folder do not make English.
+    archives = { { "character/init_setup.bld", { "FRENCH.pak", "DUTCH.pak", "level.bld" } },
+        { "character/000_b.arc", { line("", 3), line("french/", 1), line("dutch/", 1), line("dutch/", 2) } } };
+    CHECK((tt(names).text == V{ "fr", "nl" }) && (tt(names).voice == V{ "fr", "nl" }));
+    // The archives are read in the order of their paths: the first without a language folder is passed over.
+    archives["character/000_b.arc"] = { "c:/tfb/build/360/models/x.png/0x1.png.igb.tex.igz" };
+    archives["character/001_a.arc"] = { line("spanish/", 1), line("spanish_mexican/", 1), line("italian/", 1) };
+    CHECK((tt(names).voice == V{ "es", "es-419", "it" }));
+    // A disc with one language and no folder: the unmarked lines are its voices. Packs in global.bld when Init_Setup has none.
+    archives = { { "character/init_setup.bld", { "level.bld" } }, { "permanent/global.bld", { "ENGLISH.pak" } },
+        { "character/000_b.arc", { line("", 1) } } };
+    CHECK((tt(names).text == V{ "en" }) && (tt(names).voice == V{ "en" }));
+    // An unknown pack name is ignored; no pack at all, no archive reader, or an unknown game: unknown.
+    archives = { { "character/init_setup.bld", { "KLINGON.pak", "pak", ".pak" } } };
+    CHECK(tt(names).text.empty() && tt(names).voice.empty());
+    CHECK(art::LanguagesOnDisc("trapteam", names).text.empty());
+    archives = { { "character/init_setup.bld", { "FRENCH.pak" } } };
+    CHECK((tt(names).text == V{ "fr" }) && tt(names).voice.empty()); // packs but no voice line seen
     CHECK(art::LanguagesOnDisc("trapteam", us).text.empty());
 
     CHECK(art::JoinLanguages({ "en", "fr" }) == "en,fr" && art::JoinLanguages({}).empty());
@@ -872,6 +977,8 @@ int main(int argc, char** argv)
     TestDxt();
     TestArgbAndL8();
     TestAlchemy();
+    if (const char* arc = getenv("TRAPTEAM_ARC"); arc != nullptr && *arc)
+        TestRealIga(arc);
     TestLux();
     TestIco();
     TestDiscLanguages();
@@ -895,6 +1002,8 @@ int main(int argc, char** argv)
         TestDisc("giants", iso, 123);
     if (const char* iso = getenv("SWAPFORCE_ISO"); iso != nullptr && *iso)
         TestDisc("swapforce", iso, 208);
+    if (const char* iso = getenv("TRAPTEAM_ISO"); iso != nullptr && *iso)
+        TestDisc("trapteam", iso, 347);
     if (keep)
         printf("kept in %s\n", datadir::Text(scratch).c_str());
     else if (temporary)

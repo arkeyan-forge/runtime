@@ -15,6 +15,8 @@ if(SSA_GAME STREQUAL "giants")
     set(SSA_RUNTIME_NAME SGRecomp)
 elseif(SSA_GAME STREQUAL "swapforce")
     set(SSA_RUNTIME_NAME SSFRecomp)
+elseif(SSA_GAME STREQUAL "trapteam")
+    set(SSA_RUNTIME_NAME TTRecomp)
 else()
     set(SSA_RUNTIME_NAME SSARecomp)
 endif()
@@ -72,6 +74,7 @@ add_executable(SSARecomp
     kernel/files.cpp
     kernel/imports_giants.cpp
     kernel/imports_swapforce.cpp
+    kernel/imports_trapteam.cpp
     kernel/input.cpp
     kernel/memory.cpp
     kernel/module.cpp
@@ -156,6 +159,10 @@ target_link_libraries(SSARecomp PRIVATE SSARecompLib SSARecompGpu SSAXenonUtils 
 # ppc_context.h and ppc_config.h are XenonRecomp's output: system headers here, so their warnings stay out of ours. System
 # directories come after every -I one, so XenonUtils (which has its own ppc_context.h) is one too, after the game's.
 target_include_directories(SSARecomp SYSTEM PRIVATE ${SSA_PPC_DIR} ${SSA_XENON_UTILS})
+# Linux's C library has its own byteswap.h, found before a SYSTEM directory.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_compile_options(SSARecomp PRIVATE "SHELL:-iquote ${SSA_XENON_UTILS}")
+endif()
 
 # The launcher window: SDL_Renderer drawing, a small TrueType atlas (stb_truetype, MIT/public domain) and two
 # OFL fonts. It links into both the game and the launcher test (the test links it even though it never opens a window,
@@ -209,6 +216,10 @@ target_include_directories(SSATexturePackTest PRIVATE . ${CMAKE_SOURCE_DIR}/thir
 add_executable(SSAGuestFormatTest kernel/guest_format_test.cpp kernel/guest_format.cpp)
 target_include_directories(SSAGuestFormatTest PRIVATE .)
 target_link_libraries(SSAGuestFormatTest PRIVATE SSAXenonUtils)
+
+# The frame rate limiter's schedule and wait, with a fake clock: ./SSAFrameLimiterTest
+add_executable(SSAFrameLimiterTest kernel/frame_limiter_test.cpp)
+target_include_directories(SSAFrameLimiterTest PRIVATE .)
 
 # Settings parser test (launcher.ini, environment, command line; no game data needed): ./SSASettingsTest
 add_executable(SSASettingsTest host/settings_test.cpp host/settings.cpp host/pad_map.cpp)
@@ -273,6 +284,10 @@ add_executable(SSARenderScaleTest d3d/render_scale_test.cpp)
 add_executable(SSAPortalTest host/portal_emulated.cpp host/portal_identity.cpp host/portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/ssa/ssa_portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/giants/giants_portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/swapforce/swapforce_portal_prompt.cpp host/portal_test.cpp host/figures/figure_data.cpp)
 target_include_directories(SSAPortalTest PRIVATE . ${CMAKE_SOURCE_DIR}/games/ssa ${CMAKE_SOURCE_DIR}/games/giants ${CMAKE_SOURCE_DIR}/games/swapforce)
 target_link_libraries(SSAPortalTest PRIVATE SDL3::SDL3-static)
+
+# The portal speaker's ADPCM decoder against a test-only encoder (no game data needed): ./SSAPortalAdpcmTest
+add_executable(SSAPortalAdpcmTest host/portal_adpcm.cpp host/portal_adpcm_test.cpp)
+target_include_directories(SSAPortalAdpcmTest PRIVATE .)
 
 # Real portal I/O off the title's threads, with a fake device that stalls (no game data needed): ./SSAPortalAsyncTest
 add_executable(SSAPortalAsyncTest host/portal_async.cpp host/portal_async_test.cpp)
@@ -365,7 +380,7 @@ if(SSA_UWP)
         host/collection/catalogue.cpp host/collection/collection.cpp host/collection/icons.cpp
         PROPERTIES COMPILE_OPTIONS "${SSA_UWP_DESKTOP_FAMILY}")
     set_source_files_properties(gpu/gpu.cpp DIRECTORY gpu PROPERTIES COMPILE_OPTIONS "${SSA_UWP_DESKTOP_FAMILY}")
-    set_target_properties(SSAPortalTest SSAFigureTest SSAArtTest SSACollectionTest SSASettingsTest SSARecompGpuTest PROPERTIES EXCLUDE_FROM_ALL ON)
+    set_target_properties(SSAPortalTest SSAPortalAdpcmTest SSAFigureTest SSAArtTest SSACollectionTest SSASettingsTest SSARecompGpuTest PROPERTIES EXCLUDE_FROM_ALL ON)
 endif()
 
 # The game's version in its window title (games/<id>/game.txt, read by the top CMakeLists.txt): main.cpp only, so a new

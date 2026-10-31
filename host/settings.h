@@ -1,5 +1,6 @@
 #pragma once
 
+#include "gpu/edge_smoothing.h"
 #include "host/launcher.h"
 #include "host/pad_map.h"
 #include <cstdint>
@@ -24,7 +25,7 @@ struct RuntimeSettings
     bool vsync = true;
     bool fullscreen = false;      // desktop fullscreen (no mode change)
     uint32_t anisotropy = 1;      // 1, 2, 4, 8, 16
-    uint32_t fpsLimit = 30;       // 30 or 60 (experimental)
+    uint32_t fpsLimit = 30;       // 30, 60, 120, 144, 240 or 0 (no limit); above 60: host-paced
     bool aspectAuto = true; // [video] aspect: auto follows a window wider than 16:9 (Hor+ camera, wide scene and
     // frame, HUD centred); 16:9 keeps the game's 16:9 picture, with bars on a wider window
     bool showFps = false; // [<game>.video] show_fps: the frame rate in a corner (the F3 menu's FPS counter)
@@ -34,6 +35,9 @@ struct RuntimeSettings
     bool texturePacks = true; // replace textures with the files of the game's textures folder, when there is one
     bool originalResolution = false; // [<game>.video] or [video] original_resolution: the game's own smaller 3D scene,
     // stretched to the frame (Swap Force's 1040x620); default the scene at the frame's size
+    edgesmoothing::Mode edgeSmoothing =
+        edgesmoothing::Auto; // [<game>.video] or [video] edge_smoothing: the game's FXAA pass,
+    // game (its own), light, off; auto (not chosen): light from resolution scale 2, game at 1. Only games with a known FXAA pass.
     std::string inputDevice = "auto"; // auto, keyboard, gamepad
     std::string gamepad; // SDL GUID, empty: the first one connected
     std::string keys[22]; // SDL key name per g_keyActions entry

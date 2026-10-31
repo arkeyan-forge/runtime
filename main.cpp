@@ -262,6 +262,15 @@ int main(int argc, char** argv)
     if (discPath.empty())
         return 1;
 
+    // SKY_NO_FPS_CAP=1 (test aid): the game's cap is not applied, to measure above it (docs/porting/debugging.md).
+    if (skyenv::Get("SKY_NO_FPS_CAP") == nullptr)
+        if (uint32_t capped = gamemenu::CapFrameRate(settings.fpsLimit, ::game::Current().maxFpsLimit);
+            capped != settings.fpsLimit)
+        {
+            fprintf(stderr, "[settings] fps_limit=%u: this game is capped at %u FPS, using %u\n", settings.fpsLimit,
+                ::game::Current().maxFpsLimit, capped);
+            settings.fpsLimit = capped;
+        }
     if (!settings.language.empty())
     {
         bool known = SetTextLanguage(settings.language);
@@ -317,7 +326,8 @@ int main(int argc, char** argv)
         gpu::g_settings = { .resolutionScale = settings.resolutionScale,
             .anisotropy = settings.anisotropy,
             .vsync = settings.vsync,
-            .fpsLimit = settings.fpsLimit };
+            .fpsLimit = settings.fpsLimit,
+            .edgeSmoothing = settings.edgeSmoothing };
         // The game's name and its version (games/<id>/game.txt): "Skylanders: Spyro's Adventure v0.9.1".
         const std::string title = std::string(g_gameInfo.name) + " v" + SSA_GAME_VERSION;
         window = CreateDisplayWindow(title.c_str(), 1280, 720, settings.fullscreen);

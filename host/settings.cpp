@@ -76,6 +76,13 @@ namespace
             return true;
         }
 
+        bool EdgeSmoothing(const std::string& source, const std::string& value)
+        {
+            if (!edgesmoothing::Parse(value, s.edgeSmoothing))
+                return Warn(source, "edge_smoothing", value, "auto, game, light or off");
+            return true;
+        }
+
         bool Anisotropy(const std::string& source, const std::string& value)
         {
             uint32_t n;
@@ -87,14 +94,28 @@ namespace
 
         bool FpsLimit(const std::string& source, const std::string& value)
         {
+            if (value == "display") // the launcher's default: the display's refresh rate, up to 60 until 120 is proven
+            {
+                s.fpsLimit = 60;
+                return true;
+            }
             uint32_t n;
             if (!ParseNumber(value, n))
                 return Warn(source, "fps_limit", value, "a number (0: none)");
-            // The title shows a frame every 1 or 2 vertical blanks (60 Hz): 30 and 60 are the only rates.
-            uint32_t fps = n == 0 || n >= 60 ? 60 : 30;
+            // 30 and 60 are the game's own pacing; above 60 the host paces the frames. 0: no limit. Another number is
+            // lowered to the rate below it.
+            constexpr uint32_t Rates[] = { 240, 144, 120, 60 };
+            uint32_t fps = n == 0 ? 0 : 30;
+            for (uint32_t rate : Rates)
+                if (n != 0 && n >= rate)
+                {
+                    fps = rate;
+                    break;
+                }
             if (n != fps)
                 warnings.push_back(
-                    fmt::format("{}: fps_limit={}: the game runs at 30 or 60 FPS, using {}", source, value, fps));
+                    fmt::format("{}: fps_limit={}: the frame rate is 30, 60, 120, 144, 240 or 0 (no limit), using {}",
+                        source, value, fps));
             s.fpsLimit = fps;
             return true;
         }
@@ -203,6 +224,8 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
             set.Bool(file, "texture_packs", value, s.texturePacks);
         else if (key == "original_resolution")
             set.Bool(file, "original_resolution", value, s.originalResolution);
+        else if (key == "edge_smoothing")
+            set.EdgeSmoothing(file, value);
     };
     for (const auto& [key, value] : section("video"))
         video(key, value);
@@ -356,6 +379,12 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
                 return false;
             set.Bool(cli, "original_resolution", value, s.originalResolution);
         }
+        else if (option == "--edge-smoothing")
+        {
+            if (!take())
+                return false;
+            set.EdgeSmoothing(cli, value);
+        }
         else if (option == "--input")
         {
             if (!take())
@@ -458,6 +487,10 @@ std::string SettingsHelp(const char* program)
         "  --original-resolution <0|1> Swap Force: the console's 3D at 81 % of the frame, stretched (default 0: the "
         "3D\n"
         "                              at the frame's size)\n"
+        "  --edge-smoothing <auto|game|light|off>\n"
+        "                              the game's FXAA pass (Swap Force, Trap Team): game keeps it, light filters\n"
+        "                              only strong edges, off draws a plain copy (default auto: light from\n"
+        "                              resolution scale 2, game at 1)\n"
         "  --input <auto|keyboard|gamepad>\n"
         "                              what the game listens to (default auto: keyboard and gamepad)\n"
         "  --gamepad <guid>            the gamepad to use (see --list-gamepads; default the first one)\n"
@@ -516,6 +549,9 @@ std::string DescribeSettings(const RuntimeSettings& s)
                padDescription) +
            (s.aspectAuto ? "" : ", aspect 16:9") + (s.textureDump ? ", texture dump" : "") +
            (s.texturePacks ? "" : ", texture packs off") + (s.originalResolution ? ", original resolution" : "") +
+           (s.edgeSmoothing != edgesmoothing::Auto
+                   ? fmt::format(", edge smoothing {}", edgesmoothing::Name(s.edgeSmoothing))
+                   : "") +
            (s.nightmareFromStart ? ", nightmare from the start" : "") + (s.showFps ? ", fps counter" : "") +
            (s.volume != 100 ? fmt::format(", volume {}", s.volume) : "");
 }

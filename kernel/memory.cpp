@@ -1,4 +1,5 @@
 #include "memory.h"
+#include "kernel/alloc_log.h"
 #include <algorithm>
 #include <atomic>
 #include <cstdio>
@@ -130,12 +131,15 @@ PPC_FUNC(__imp__NtAllocateVirtualMemory)
     if (address == 0)
     {
         fprintf(stderr, "[kernel] NtAllocateVirtualMemory: out of memory (base 0x%08X size 0x%08X)\n", requested, size);
+        AllocLog(
+            ctx, "NtAllocateVirtualMemory (base, size, type; status)", requested, size, allocationType, StatusNoMemory);
         ctx.r3.u64 = StatusNoMemory;
         return;
     }
 
     g_memory.Write<uint32_t>(baseAddressPointer, address);
     g_memory.Write<uint32_t>(regionSizePointer, size);
+    AllocLog(ctx, "NtAllocateVirtualMemory (base, size, type; base)", requested, size, allocationType, address);
     ctx.r3.u64 = StatusSuccess;
 }
 
@@ -185,6 +189,7 @@ PPC_FUNC(__imp__MmAllocatePhysicalMemoryEx)
     if (address == 0)
     {
         fprintf(stderr, "[kernel] MmAllocatePhysicalMemoryEx: out of memory (size 0x%08X)\n", size);
+        AllocLog(ctx, "MmAllocatePhysicalMemoryEx (size, protect, alignment)", size, protect, alignment, 0);
         ctx.r3.u64 = 0;
         return;
     }
@@ -192,6 +197,7 @@ PPC_FUNC(__imp__MmAllocatePhysicalMemoryEx)
         fprintf(stderr, "[kernel] MmAllocatePhysicalMemoryEx: 0x%08X exceeds max address 0x%08X\n",
             address & PhysicalMask, maxAddress);
 
+    AllocLog(ctx, "MmAllocatePhysicalMemoryEx (size, protect, alignment)", size, protect, alignment, address);
     ctx.r3.u64 = address;
 }
 
@@ -220,6 +226,7 @@ PPC_FUNC(__imp__MmQueryAllocationSize)
 {
     uint32_t size = 0;
     FindAllocation(ctx.r3.u32, &size);
+    AllocLog(ctx, "MmQueryAllocationSize (address; size)", ctx.r3.u32, 0, 0, size);
     ctx.r3.u64 = size;
 }
 
@@ -227,7 +234,9 @@ PPC_FUNC(__imp__MmQueryAddressProtect)
 {
     uint32_t address = ctx.r3.u32;
     bool image = address >= PPC_IMAGE_BASE && address < PPC_IMAGE_BASE + PPC_IMAGE_SIZE;
-    ctx.r3.u64 = image || FindAllocation(address, nullptr) != 0 ? PageReadWrite : 0;
+    uint32_t protect = image || FindAllocation(address, nullptr) != 0 ? PageReadWrite : 0;
+    AllocLog(ctx, "MmQueryAddressProtect (address; protect)", address, 0, 0, protect);
+    ctx.r3.u64 = protect;
 }
 
 // NtQueryVirtualMemory(address, MEMORY_BASIC_INFORMATION* out, debug memory flag): base address, allocation base,
@@ -263,6 +272,7 @@ PPC_FUNC(__imp__NtQueryVirtualMemory)
         used ? type : 0 };
     for (int i = 0; i < 7; i++)
         g_memory.Write<uint32_t>(info + 4 * i, words[i]);
+    AllocLog(ctx, "NtQueryVirtualMemory (address; region size, state)", address, words[3], words[4], StatusSuccess);
     ctx.r3.u64 = StatusSuccess;
 }
 
@@ -315,5 +325,7 @@ PPC_FUNC(__imp__MmQueryStatistics)
     title(9, 0x100); // page table
     title(10, 0x100); // cache
     g_memory.Write<uint32_t>(stats + StatisticsSize - 4, TotalPages - 1); // highest physical page
+    AllocLog(ctx, "MmQueryStatistics (; total pages, available pages)", 0, TotalPages,
+        TotalPages - KernelPages - usedPages, StatusSuccess);
     ctx.r3.u64 = StatusSuccess;
 }

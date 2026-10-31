@@ -67,6 +67,8 @@ namespace gpu
         bool gpuThread = true; // the GPU thread (worker.cpp); off: the callers record and submit (SKY_GPU_THREAD=0)
         bool pipelineLibrary = true; // D3D12: the persistent pipeline cache (d3d12_pipeline_cache.cpp)
         uint32_t fpsLimit = 30; // the game's frame rate (fps_limit), for the [perf] log's GPU-bound hint
+        uint32_t edgeSmoothing =
+            0; // edgesmoothing::Mode of the game's FXAA pass (gpu/edge_smoothing.h); changed while playing
     };
     extern Settings g_settings;
     void Shutdown();

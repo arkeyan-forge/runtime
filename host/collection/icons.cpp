@@ -384,6 +384,14 @@ namespace collection
         return FirstCached(*game, names);
     }
 
+    std::string VillainPicturePath(const std::string& gameId, const Villain& villain, bool captured)
+    {
+        const Game* game = Catalogue::Get().FindGame(gameId);
+        if (game == nullptr)
+            return {};
+        return FirstCached(*game, { std::to_string(villain.id) + (captured ? "_villaincaptured" : "_villainescaped") });
+    }
+
     std::string GameKindPicturePath(const std::string& gameId, Category category)
     {
         const Game* game = Catalogue::Get().FindGame(gameId);

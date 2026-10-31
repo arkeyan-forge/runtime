@@ -4,6 +4,7 @@
 #include "host/portal.h"
 #include "host/portal_identity.h"
 #include <array>
+#include <chrono>
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -69,6 +70,13 @@ public:
     const PortalModel& Model() const { return m_model; }
     bool Write(const uint8_t* command, size_t size) override;
     size_t Read(uint8_t* report, size_t capacity) override;
+    // The least time between two unprompted status reports of an active portal (a real one sends them at its own pace;
+    // 0, the default, answers every read). A title that reads until nothing is left never ends on an endless stream.
+    void SetStatusInterval(std::chrono::milliseconds interval)
+    {
+        std::lock_guard lock(m_mutex);
+        m_statusInterval = interval;
+    }
 
     // `path` is where writes are saved; empty keeps them in memory. Takes `wanted` if it is free, else the first free
     // slot. Returns the slot, or -1 if all are taken.
@@ -110,6 +118,8 @@ private:
     Slot m_slots[SlotCount];
     std::deque<Report> m_responses;
     bool m_active = false;
+    std::chrono::milliseconds m_statusInterval{ 0 };
+    std::chrono::steady_clock::time_point m_lastStatus{};
     uint8_t m_statusCounter = 0;
     Light m_light;
     uint64_t m_lightCommands = 0;

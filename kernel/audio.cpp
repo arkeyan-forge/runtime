@@ -6,7 +6,7 @@
 #include "thread.h"
 #include <algorithm>
 #include <bit>
-#include <byteswap.h>
+#include "byteswap.h"
 #include <chrono>
 #include <mutex>
 #include <thread>

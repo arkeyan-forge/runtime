@@ -730,7 +730,47 @@ namespace glyphs
                         std::copy_n(&glyph.pixels[(size_t(y) * glyph.width + x) * 4], 4,
                             &canvas.pixels[(size_t(cell.y0 + y) * width + cell.x0 + x) * 4]);
             }
-            return Levels(std::move(canvas), levels);
+            std::vector<std::vector<uint32_t>> out = Levels(std::move(canvas), levels);
+            // Outside the cells every level stays the game's, its colour under alpha 0 too: Trap Team's hints take their
+            // white from this atlas, and the canvas is premultiplied.
+            std::vector<uint32_t> plain = base;
+            for (uint32_t level = 0; level < levels; level++)
+            {
+                uint32_t w = std::max(width >> level, 1u), h = std::max(height >> level, 1u);
+                if (level > 0)
+                {
+                    uint32_t aboveWidth = std::max(width >> (level - 1), 1u),
+                             aboveHeight = std::max(height >> (level - 1), 1u);
+                    std::vector<uint32_t> smaller(size_t(w) * h);
+                    for (uint32_t y = 0; y < h; y++)
+                        for (uint32_t x = 0; x < w; x++)
+                        {
+                            uint32_t sum[4] = {};
+                            for (uint32_t dy = 0; dy < 2; dy++)
+                                for (uint32_t dx = 0; dx < 2; dx++)
+                                {
+                                    uint32_t texel = plain[size_t(std::min(y * 2 + dy, aboveHeight - 1)) * aboveWidth +
+                                                           std::min(x * 2 + dx, aboveWidth - 1)];
+                                    for (int c = 0; c < 4; c++)
+                                        sum[c] += (texel >> (c * 8)) & 0xFF;
+                                }
+                            for (int c = 0; c < 4; c++)
+                                smaller[size_t(y) * w + x] |= (sum[c] / 4) << (c * 8);
+                        }
+                    plain = std::move(smaller);
+                }
+                for (uint32_t y = 0; y < h; y++)
+                    for (uint32_t x = 0; x < w; x++)
+                    {
+                        bool touched = false;
+                        for (const Cell& cell : atlas.cells)
+                            touched = touched || (((x + 1) << level) > cell.x0 && (x << level) <= cell.x1 + 1u &&
+                                                     ((y + 1) << level) > cell.y0 && (y << level) <= cell.y1 + 1u);
+                        if (!touched)
+                            out[level][size_t(y) * w + x] = plain[size_t(y) * w + x];
+                    }
+            }
+            return out;
         }
 
         // What a keycap shows for a bound key: its name on the current keyboard layout, shortened.

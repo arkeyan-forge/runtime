@@ -116,8 +116,18 @@ namespace
         CHECK(!Has(root)); // nothing is created
         unsetenv("SKYLANDERS_DATA");
         CHECK(Root().filename() == "Skylanders");
+        // Portable mode: portable.txt in the folder makes <folder>/data the root; the program's own folder is found.
+        fs::path portable = g_scratch / "portable";
+        fs::create_directories(portable);
+        CHECK(PortableRoot(portable).empty());
+        Write(portable / "portable.txt", "");
+        CHECK(PortableRoot(portable) == portable / "data");
+        CHECK(PortableRoot({}).empty());
+        CHECK(!ProgramFolder().empty() && !fs::exists(ProgramFolder() / "portable.txt"));
+        CHECK(!ApplyPortable() && getenv("SKYLANDERS_DATA") == nullptr);
         CHECK(GameFolderName("ssa") == "SSA" && GameFolderName("giants") == "Giants");
         CHECK(GameFolderName("swapforce") == "SwapForce" && Game("swapforce") == Root() / "SwapForce");
+        CHECK(GameFolderName("trapteam") == "TrapTeam" && Game("trapteam") == Root() / "TrapTeam");
     }
 
     void TestMac()
@@ -288,12 +298,44 @@ namespace
     }
 }
 
-int main()
+// A fresh copy of this program in a scratch folder: with portable.txt beside it, ApplyPortable() makes <folder>/data the root, and
+// the games it starts inherit that (SKYLANDERS_DATA); without it, nothing changes.
+void TestPortableCopy(const char* self)
 {
+    fs::path folder = g_scratch / "copy";
+    fs::create_directories(folder);
+    fs::copy_file(self, folder / "probe", fs::copy_options::overwrite_existing);
+    auto probe = [&] {
+        std::string command = "env -u SKYLANDERS_DATA '" + (folder / "probe").string() + "' --portable-probe";
+        FILE* pipe = popen(command.c_str(), "r");
+        char line[4096] = {};
+        if (pipe == nullptr || fgets(line, sizeof(line), pipe) == nullptr)
+            line[0] = 0;
+        if (pipe != nullptr)
+            pclose(pipe);
+        std::string text(line);
+        while (!text.empty() && (text.back() == '\n' || text.back() == '\r'))
+            text.pop_back();
+        return text;
+    };
+    CHECK(probe().find("portable ") != 0);
+    Write(folder / "portable.txt", "");
+    std::error_code error;
+    CHECK(probe() == "portable " + (fs::weakly_canonical(folder, error) / "data").string());
+}
+
+int main(int argc, char** argv)
+{
+    if (argc > 1 && std::string(argv[1]) == "--portable-probe")
+    {
+        printf(ApplyPortable() ? "portable %s\n" : "not portable %s\n", Root().string().c_str());
+        return 0;
+    }
     g_scratch = fs::temp_directory_path() / ("SSADatadirTest-" + std::to_string(getpid()));
     fs::remove_all(g_scratch);
     fs::create_directories(g_scratch);
     TestPaths();
+    TestPortableCopy(argv[0]);
     TestMac();
     TestWindows();
     TestExistingTarget();

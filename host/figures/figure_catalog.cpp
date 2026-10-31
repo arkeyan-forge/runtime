@@ -46,6 +46,8 @@ namespace figures
                     info.element = toy->element <= collection::Element::Undead ? Element(toy->element) : Element::None;
                     info.kind = toy->category == collection::Category::MagicItem     ? ToyKind::MagicItem
                                 : toy->category == collection::Category::Adventure   ? ToyKind::Adventure
+                                : toy->category == collection::Category::Trap        ? ToyKind::Trap
+                                : toy->category == collection::Category::TrapMaster  ? ToyKind::TrapMaster
                                 : toy->category == collection::Category::Mini        ? ToyKind::Sidekick
                                 : toy->edition == collection::VariantKind::Legendary ? ToyKind::Legendary
                                                                                      : ToyKind::Character;

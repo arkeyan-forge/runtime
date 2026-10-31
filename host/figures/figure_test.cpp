@@ -12,6 +12,10 @@
 //   SSAFigureTest --roundtrip <before> <after>
 //                                              a game ran with the figure: what it wrote and what it must not have touched
 //                                              (every block outside the first pair, byte for byte; both pairs' checksums)
+//   SSAFigureTest --roundtrip-later <before> <after>
+//                                              the same after Giants or Swap Force, which may write the extra areas:
+//                                              the identity stays, both pairs' checksums stay valid, and a written
+//                                              figure gets its extra area
 // Exit code 0 = pass.
 #include "host/collection/catalogue.h"
 #include "host/figures/figure_catalog.h"
@@ -361,6 +365,66 @@ namespace
         CHECK(figures::FindToy(505, "giants")->kind == figures::ToyKind::Sidekick);
     }
 
+    // Trap Team [TrapTeam]: each kind made, read back, checksums valid; a trap with and without a villain; the cap.
+    void TestTrapTeam()
+    {
+        CHECK(figures::LevelCap("trapteam") == 20 && figures::LevelCap("superchargers") == 20 &&
+              figures::LevelCap("unknown") == 20 && figures::LevelCap("giants") == 15 &&
+              figures::LevelCap("ssa") == 10);
+
+        struct Made
+        {
+            uint16_t type, variant;
+            figures::ToyKind kind;
+            bool progress;
+        };
+        const Made kinds[] = {
+            { 210, 0x3014, figures::ToyKind::Trap, false }, // a trap (Magic Trap, Rune Rocket)
+            { 220, 0x301E, figures::ToyKind::Trap, false }, // the Kaos Trap
+            { 450, 0, figures::ToyKind::TrapMaster, true }, // Gusto
+            { 502, 0, figures::ToyKind::Sidekick, true }, // a mini (Bop)
+            { 9, 0x3810, figures::ToyKind::Character, true }, // Eon's Elite Eruptor
+        };
+        for (const Made& made : kinds)
+        {
+            const figures::ToyInfo* toy = figures::FindToy(made.type, "trapteam");
+            CHECK(toy != nullptr && toy->kind == made.kind && figures::HasProgress(*toy) == made.progress);
+            FigureData tag = figures::CreateFigure(made.type, made.variant);
+            CHECK(figures::ToyType(tag) == made.type && figures::Variant(tag) == made.variant);
+            CHECK((tag[0x1E] | tag[0x1F] << 8) == FigureChecksum(tag.data(), 0x1E));
+            figures::FigureStats stats;
+            CHECK(figures::ReadStats(tag, stats) == figures::AreaState::Blank);
+            if (!made.progress)
+                continue;
+            // Level 20 is reachable and reads back with valid area checksums.
+            figures::SetExperienceFor(stats, figures::LevelCap("trapteam"), figures::LevelExperience[19]);
+            figures::WriteStats(tag, stats);
+            figures::FigureStats back;
+            CHECK(figures::ReadStats(tag, back) == figures::AreaState::Valid &&
+                  figures::LevelForExperience(figures::TotalExperience(back), figures::LevelCap("trapteam")) == 20 &&
+                  figures::ToyType(tag) == made.type && figures::Variant(tag) == made.variant);
+        }
+        CHECK(figures::FindToy(210, "trapteam") != nullptr && figures::FindToy(210, "giants") == nullptr);
+
+        // A trap without a villain is a blank tag; with one, the villain reads back from the one named place.
+        FigureData empty = figures::CreateTrap(211, 0x3002);
+        FigureData blank = figures::CreateFigure(211, 0x3002);
+        CHECK(memcmp(empty.data() + 0x10, blank.data() + 0x10, 0x0E) == 0 &&
+              memcmp(empty.data() + 0x20, blank.data() + 0x20, 0x10) == 0);
+        figures::FigureStats stats;
+        CHECK(figures::ReadStats(empty, stats) == figures::AreaState::Blank && stats.villain == 0);
+        FigureData held = figures::CreateTrap(211, 0x3002, 9); // Gulper (lead from the fan port)
+        CHECK(figures::ToyType(held) == 211 && figures::Variant(held) == 0x3002 &&
+              (held[0x1E] | held[0x1F] << 8) == FigureChecksum(held.data(), 0x1E));
+        CHECK(figures::ReadStats(held, stats) == figures::AreaState::Valid && stats.villain == 9 &&
+              figures::ReadExtraState(held) == figures::AreaState::Valid);
+        // Taking the villain out leaves a valid trap; a character's extra area is untouched by it.
+        stats.villain = 0;
+        figures::WriteStats(held, stats);
+        figures::FigureStats freed;
+        CHECK(figures::ReadStats(held, freed) == figures::AreaState::Valid && freed.villain == 0);
+    }
+
     void TestCatalog()
     {
         std::set<uint16_t> types;
@@ -693,13 +757,54 @@ namespace
     // --roundtrip <before> <after>: Spyro's Adventure ran with the figure in between. Everything outside the first pair of
     // areas (blocks 0-7, 17-35, 45-63: the identity, the extra areas, the trailers) must be byte for byte the same on the
     // tag; the first pair must be valid, and the bytes the game changed in it are listed (decrypted, newest area).
-    int RoundTrip(const char* before, const char* after)
+    int RoundTrip(const char* before, const char* after, bool later)
     {
         FigureData a, b;
         CHECK(LoadFigure(before, a) && LoadFigure(after, b));
         figures::FigureStats first, second;
         figures::AreaState stateA = figures::ReadStats(a, first), stateB = figures::ReadStats(b, second);
         CHECK(stateA != figures::AreaState::Damaged && stateB != figures::AreaState::Damaged);
+        bool written = stateB == figures::AreaState::Valid &&
+                       (stateA != figures::AreaState::Valid || first.sequence != second.sequence);
+        if (later)
+        {
+            // Giants and Swap Force write the extra areas (and Swap Force block 6): the identity stays, both pairs stay
+            // readable, and a figure they wrote gets its extra area. The bytes of the first pair are only listed.
+            bool identity = memcmp(a.data(), b.data(), 2 * FigureBlockSize) == 0;
+            CHECK(identity);
+            CHECK(figures::ToyType(a) == figures::ToyType(b) && figures::Variant(a) == figures::Variant(b));
+            CHECK((b[0x1E] | b[0x1F] << 8) == FigureChecksum(b.data(), 0x1E));
+            figures::AreaState extraA = figures::ReadExtraState(a), extraB = figures::ReadExtraState(b);
+            CHECK(extraA != figures::AreaState::Damaged && extraB != figures::AreaState::Damaged);
+            CHECK(!written || extraB == figures::AreaState::Valid);
+            CHECK(extraA != figures::AreaState::Valid || extraB == figures::AreaState::Valid);
+            std::string changed;
+            if (written && stateA == figures::AreaState::Valid)
+            {
+                FigureData pa = figures::Decrypt(a), pb = figures::Decrypt(b);
+                auto newest = [](const FigureData& plain, uint8_t sequence) {
+                    bool second = plain[0x24 * FigureBlockSize + 0x09] == sequence;
+                    return plain.data() + (second ? 0x24 : 0x08) * FigureBlockSize;
+                };
+                const uint8_t* x = newest(pa, first.sequence);
+                const uint8_t* y = newest(pb, second.sequence);
+                for (size_t i = 0; i < 9 * FigureBlockSize; i++)
+                    if (i % 0x40 < 0x30 && x[i] != y[i]) // the trailer (block 3 and 7 of the area) is not data
+                    {
+                        char text[24];
+                        snprintf(text, sizeof(text), " %02zX", i);
+                        changed += text;
+                    }
+            }
+            const char* extra = extraB == figures::AreaState::Valid ? "valid" : "blank";
+            printf("round trip: toy %u:%04X; first pair %s (seq %u -> %u); XP %u -> %u, gold %u -> %u; changed "
+                   "offsets:%s; identity: identical; extra areas: %s%s\n",
+                figures::ToyType(b), figures::Variant(b), written ? "written" : "not written", first.sequence,
+                second.sequence, first.experience, second.experience, first.gold, second.gold,
+                changed.empty() ? " none" : changed.c_str(), extra,
+                ExtraBytes(a) == ExtraBytes(b) ? " (unchanged)" : " (written)");
+            return g_failures == 0 ? 0 : 1;
+        }
         auto inFirstPair = [](size_t block) { return (block >= 8 && block <= 16) || (block >= 36 && block <= 44); };
         size_t outside = 0;
         for (size_t block = 0; block < 64; block++)
@@ -709,8 +814,6 @@ namespace
         CHECK(outside == 0);
         CHECK(ExtraBytes(a) == ExtraBytes(b) && figures::ReadExtraState(a) == figures::ReadExtraState(b));
         CHECK(figures::ToyType(a) == figures::ToyType(b) && figures::Variant(a) == figures::Variant(b));
-        bool written = stateB == figures::AreaState::Valid &&
-                       (stateA != figures::AreaState::Valid || first.sequence != second.sequence);
         std::string changed;
         bool unexpected = false;
         if (written && stateA == figures::AreaState::Valid)
@@ -753,9 +856,12 @@ int main(int argc, char** argv)
     if (argc == 4 && strcmp(argv[1], "--same-extra") == 0)
         return SameExtra(argv[2], argv[3]);
     if (argc == 4 && strcmp(argv[1], "--roundtrip") == 0)
-        return RoundTrip(argv[2], argv[3]);
+        return RoundTrip(argv[2], argv[3], false);
+    if (argc == 4 && strcmp(argv[1], "--roundtrip-later") == 0)
+        return RoundTrip(argv[2], argv[3], true);
     TestCrypto();
     TestTag();
+    TestTrapTeam();
     TestCatalog();
     TestGiants();
     TestRoundTrips();

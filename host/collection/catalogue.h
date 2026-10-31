@@ -95,6 +95,16 @@ namespace collection
         std::vector<Category> accepts; // the toy families that go there
     };
 
+    // A villain a trap can hold (Trap Team): the game's own table. Its pictures are "<id>_villaincaptured" and
+    // "<id>_villainescaped" in the game's portraits folder.
+    struct Villain
+    {
+        uint16_t id = 0;
+        std::string name, model;
+        Element element = Element::None;
+        int vault = 0; // its place in the game's villain vault
+    };
+
     struct Game
     {
         std::string id, name;
@@ -118,6 +128,8 @@ namespace collection
         std::map<uint32_t, std::string> halves;
         // The hats the game has, by the number a figure stores (0: none), with their English names. JSON: "hats".
         std::map<uint16_t, std::string> hats;
+        std::vector<Villain>
+            villains; // JSON "villains": Trap Team's 46, from its own table (tools/trapteam_catalogue.py)
         std::string runtime; // the runtime's executable name ("SSARecomp"); its data is in datadir::Game(id)
         std::vector<Seat> seats; // in the order the menus show them
     };

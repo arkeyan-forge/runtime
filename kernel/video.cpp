@@ -1,5 +1,6 @@
 #include "kernel/video.h"
 #include "game.h"
+#include "kernel/frame_limiter.h"
 #include "host/toybox.h"
 #include "memory.h"
 #include "platform/platform.h"
@@ -13,6 +14,7 @@
 #include <deque>
 #include <mutex>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 #include "../host/env.h"
@@ -38,6 +40,10 @@ namespace
     uint64_t g_lastFlip;
 
     uint32_t g_fpsLimit = 30;
+    FrameLimiter g_limiter; // above 60 (and unlimited): the host paces the frames, the blanks stay 60 Hz
+    constexpr uint64_t SpinNanoseconds = 1'500'000; // a sleep wakes up up to about a millisecond late
+
+    bool FasterThanBlanks(uint32_t fps) { return fps == 0 || fps > 60; }
 
     // fps_limit 60 when the frames do not fit in a blank: shown every 2 blanks (steady 30 FPS) until they fit again.
     // At 60 a late frame is shown at once (WaitForFlip), so a game at 45 FPS runs at a steady ~22 ms a frame while the
@@ -164,9 +170,30 @@ static void CrashTest()
     *static_cast<volatile int*>(nullptr) = 1;
 }
 
+// SKY_CLOCK_STEP=<guest address>: a float the title keeps its frame step in, in 60ths of a second (Lux's F, sub_827F6628): its
+// sum over the flips against the wall time, logged every 5 s, says how many seconds of game pass in a second (1.00 is right).
+static void ClockCheck()
+{
+    static const char* value = skyenv::Get("SKY_CLOCK_STEP");
+    if (value == nullptr)
+        return;
+    static const uint32_t address = uint32_t(strtoul(value, nullptr, 16));
+    static double game = 0;
+    static auto start = std::chrono::steady_clock::now();
+    game += double(g_memory.Read<float>(address)) / 60.0;
+    double wall = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    if (wall >= 5.0)
+    {
+        fprintf(stderr, "[clock] %.3f s of game in %.3f s: %.3f s/s\n", game, wall, game / wall);
+        game = 0;
+        start = std::chrono::steady_clock::now();
+    }
+}
+
 void WaitForFlip(uint32_t presentInterval)
 {
     CrashTest();
+    ClockCheck();
     static uint32_t seen[8];
     static uint32_t seenCount;
     if (std::find(seen, seen + seenCount, presentInterval) == seen + seenCount && seenCount < 8)
@@ -190,6 +217,18 @@ void WaitForFlip(uint32_t presentInterval)
     std::unique_lock lock(g_mutex);
     if (!g_vblanksRunning)
         return;
+    // fps_limit above 60 or 0: no wait for a blank (the guest's stay 60 Hz, in wall time), the frame is shown one period
+    // after the previous one (g_limiter). Frames that are late are shown at once.
+    if (FasterThanBlanks(g_fpsLimit))
+    {
+        g_lastFlip = g_vblanks;
+        uint64_t due = g_limiter.Due(uint64_t(std::chrono::steady_clock::now().time_since_epoch().count()));
+        lock.unlock();
+        FrameLimiter::WaitUntil(
+            due, SpinNanoseconds, [] { return uint64_t(std::chrono::steady_clock::now().time_since_epoch().count()); },
+            [](uint64_t ns) { std::this_thread::sleep_for(std::chrono::nanoseconds(ns)); });
+        return;
+    }
     // fps_limit 60: halve the rate while the frames miss their blank (g_halfRate).
     if (g_fpsLimit == 60 && vblanks == 1)
     {
@@ -251,9 +290,21 @@ void WaitForInterruptHandled(uint64_t since)
     g_vblankSignal.wait_for(lock, 2 * VBlankPeriod, [&] { return g_interruptsHandled != since; });
 }
 
-void SetFrameRateLimit(uint32_t fps) { g_fpsLimit = fps; }
+void SetFrameRateLimit(uint32_t fps)
+{
+    std::lock_guard lock(g_mutex);
+    g_fpsLimit = fps;
+    g_limiter.SetRate(fps);
+}
 
 uint32_t FrameRateLimit() { return g_fpsLimit; }
+
+float FrameScale()
+{
+    constexpr uint32_t Fastest = 240; // "unlimited" is scaled as the fastest limit
+    uint32_t fps = g_fpsLimit == 0 ? Fastest : std::min(g_fpsLimit, Fastest);
+    return fps <= 30 ? 1.0f : 30.0f / float(fps);
+}
 
 void QueueGraphicsInterrupt(uint32_t source, std::function<void()> prepare)
 {

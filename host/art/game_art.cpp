@@ -347,6 +347,8 @@ namespace art
             // every square picture of the archive's entry under `folder`, named as on the disc.
             Source portraits;
             std::vector<Materials> portraitMaterials; // [Alchemy] instead of the archive's entry: materials, by folder
+            std::vector<Materials>
+                portraitStreams; // [Alchemy] instead: streamed pictures (one IGZ per entry), by folder
             std::vector<std::string> pictures;
             bool images = false;
             std::string folder;
@@ -398,6 +400,7 @@ namespace art
                     m.images = json["portraits"]["images"].AsBool();
                     m.folder = json["portraits"]["folder"].AsString();
                     m.portraitMaterials = ReadMaterials(json["portraits"]["materials"]);
+                    m.portraitStreams = ReadMaterials(json["portraits"]["streams"]);
                     m.artworks = ReadSource(json["artworks"]);
                     m.artworksFolder = json["artworks"]["folder"].AsString();
                     m.artworkMaterials = ReadMaterials(json["artworks"]["materials"]);
@@ -593,6 +596,44 @@ namespace art
             return present;
         }
 
+        // [Alchemy] Streamed pictures: every entry of each source's archive whose name has `folder` then a ".png" is one
+        // picture (its own IGZ), written as the last part of that path ("traps/square/216_12291.png/0x....igz" gives
+        // "216_12291.png"; Trap Team's toys sit in year folders, the file name is the toy type, variant and name).
+        int AlchemyStreamed(
+            const std::vector<Materials>& sources, const Disc& disc, const std::filesystem::path& folder)
+        {
+            int present = CountPngs(folder);
+            for (const Materials& source : sources)
+            {
+                auto archive = OpenArchive(disc, source.archive);
+                if (!archive)
+                {
+                    fprintf(stderr, "[art] cannot read %s of the disc\n", source.archive.c_str());
+                    continue;
+                }
+                const std::string under = Lower(source.folder);
+                for (size_t i = 0; i < archive->Count(); i++)
+                {
+                    std::string name = Lower(archive->Name(i));
+                    size_t at = name.find(under),
+                           end = at == std::string::npos ? at : name.find(".png", at + under.size());
+                    if (end == std::string::npos)
+                        continue;
+                    name = name.substr(at + under.size(), end - at - under.size());
+                    std::filesystem::path path = folder / (name.substr(name.find_last_of('/') + 1) + ".png");
+                    if (Exists(path))
+                        continue;
+                    std::optional<alchemy::IgzFile> scene = alchemy::IgzFile::Parse(archive->Read(i));
+                    std::vector<alchemy::IgzFile::Picture> pictures =
+                        scene ? scene->Pictures() : std::vector<alchemy::IgzFile::Picture>{};
+                    Image image;
+                    if (!pictures.empty() && alchemy::DecodePicture(*scene, pictures[0], image) && SavePng(image, path))
+                        present++;
+                }
+            }
+            return present;
+        }
+
         // [Alchemy] Every square picture of the entry under the manifest's folder (Giants' collection screen: all
         // Skylanders and their decos, sidekicks and items), named as on the disc ("eruptor_lightcore.png"). Done when
         // every portrait the catalogue's "portraits" names is there.
@@ -604,6 +645,8 @@ namespace art
                 return present;
             if (!m.portraitMaterials.empty())
                 return AlchemyMaterials(m.portraitMaterials, disc, folder);
+            if (!m.portraitStreams.empty())
+                return AlchemyStreamed(m.portraitStreams, disc, folder);
             auto archive = OpenArchive(disc, m.portraits.archive);
             std::optional<alchemy::IgzFile> scene = archive ? OpenScene(*archive, m.portraits.entry) : std::nullopt;
             if (!scene)
@@ -641,38 +684,14 @@ namespace art
                 return AlchemyMaterials(m.artworkMaterials, disc, folder);
             if (m.artworks.archive.empty() || m.artworksFolder.empty())
                 return present;
-            auto archive = OpenArchive(disc, m.artworks.archive);
-            if (!archive)
-            {
-                fprintf(stderr, "[art] cannot read %s of the disc\n", m.artworks.archive.c_str());
-                return present;
-            }
-            const std::string under = Lower(m.artworksFolder);
-            for (size_t i = 0; i < archive->Count(); i++)
-            {
-                std::string name = Lower(archive->Name(i));
-                size_t at = name.find(under), end = at == std::string::npos ? at : name.find(".png", at + under.size());
-                if (end == std::string::npos)
-                    continue;
-                std::filesystem::path path =
-                    folder / (name.substr(at + under.size(), end - at - under.size()) + ".png");
-                if (Exists(path))
-                    continue;
-                std::optional<alchemy::IgzFile> scene = alchemy::IgzFile::Parse(archive->Read(i));
-                std::vector<alchemy::IgzFile::Picture> pictures =
-                    scene ? scene->Pictures() : std::vector<alchemy::IgzFile::Picture>{};
-                Image image;
-                if (!pictures.empty() && alchemy::DecodePicture(*scene, pictures[0], image) && SavePng(image, path))
-                    present++;
-            }
-            return present;
+            return AlchemyStreamed({ { m.artworks.archive, m.artworksFolder, "" } }, disc, folder);
         }
 
         int ReadPortraits(const Manifest& m, const Disc& disc, const std::filesystem::path& folder)
         {
             if (!m.portraits.stream.empty())
                 return LuxPortraits(m, disc, folder);
-            if (!m.portraits.archive.empty() || !m.portraitMaterials.empty())
+            if (!m.portraits.archive.empty() || !m.portraitMaterials.empty() || !m.portraitStreams.empty())
                 return AlchemyPortraits(m, disc, folder);
             return CountPngs(folder);
         }

@@ -89,6 +89,11 @@ namespace game
         // any other file), so the Toy Box knows a new level began (NoteFileOpen; a figure out of health can play again).
         // nullptr: the game says it itself (Swap Force: engines/alchemy/zone.cpp calls LevelStarted).
         std::string (*LevelOfFile)(std::string_view path) = nullptr;
+
+        // The highest [video] fps_limit the game is given (0: no cap); a higher one, and no limit, are lowered to it, with a log line.
+        // Giants: 60. Its summon cutscene lasts 10 % less at 120 than at 30, every run (docs/runtime/xbox360/video_vblank.md, "Above 60,
+        // measured"): a fade or a wait counted in frames, not found yet.
+        uint32_t maxFpsLimit = 0;
     };
 
     // The adapter of the game being built, defined by games/<id>/adapter.cpp.

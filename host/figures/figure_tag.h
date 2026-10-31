@@ -54,6 +54,7 @@ namespace figures
         uint32_t swapForceExperience =
             0; // extra area +0x08 (LE32): Swap Force's part (levels 16-20, up to 101000) [V];
         // never counted by Spyro's Adventure or Giants
+        uint16_t villain = 0; // extra area +TrapVillainOffset (LE16): the villain a Trap Team trap holds, 0: empty [?]
         uint8_t wowPow = 0; // Giants' Wow Pow bought (Series 2 figures), 0 or 1: extra area +0x06 bit 0, where the
         // game writes it when Persephone sells it [V] (figures.md, "Upgrades")
         std::array<uint8_t, 8> owner{}; // 0x18, the first owner's id, written by the title
@@ -92,8 +93,21 @@ namespace figures
     constexpr uint32_t MaxSwapForceExperience = 101000; // the extra area's second part (level 20 = 197500 in all)
     extern const uint32_t LevelExperience[MaxLevelSwapForce];
     int LevelForExperience(uint32_t experience, int maxLevel = MaxLevel);
-    // The level cap of a game by its catalogue id ("ssa": 10, "swapforce": 20, "giants" and any other: 15).
+    // The level cap of a game by its catalogue id ("ssa": 10, "giants": 15, "swapforce": 20) or its folder name. Trap Team
+    // ("trapteam") and the later games ("superchargers", "imaginators"): 20 [?], the public figure; the
+    // 20-level table is Swap Force's own [V]. An unknown id gets 20 too (the top of the table, never Giants' 15, which
+    // would hide the levels of a newer game).
     int LevelCap(const std::string& game);
+
+    // Where a Trap Team trap keeps its villain: the extra area, this offset, LE16 (the villain's number, 0: none). [?]
+    // A guess from the layout (unused bytes of the extra area), NOT from a dump: one capture of a trap with a villain
+    // corrects it here and nowhere else.
+    constexpr size_t TrapVillainOffset = 0x10;
+    // False while TrapVillainOffset is a guess: the Toy Box shows which villain a trap holds only when this is true, so no
+    // figure is ever shown holding a villain the tag does not say it holds.
+    constexpr bool TrapVillainVerified = false;
+    // A never-played trap of the given toy type and shape (variant), holding `villain` (0: empty). Complete dump.
+    FigureData CreateTrap(uint16_t toyType, uint16_t variant = 0, uint16_t villain = 0);
 
     // All the experience a figure has (the three parts), and setting it (the first 33000 go to the first area, the next
     // 63500 to Giants' part, the rest to Swap Force's).

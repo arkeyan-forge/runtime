@@ -7,7 +7,7 @@
 #include <map>
 #include <mutex>
 #include <type_traits>
-#include <byteswap.h>
+#include "byteswap.h" // XenonUtils' (the C library of Linux has one too: runtime/CMakeLists.txt)
 
 // The guest's 32-bit address space, reserved as one host block: guest address A lives at base + A.
 struct GuestMemory

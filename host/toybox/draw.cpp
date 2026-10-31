@@ -432,6 +432,8 @@ namespace toybox
             FigurePortrait(*card.second, at, size, grey);
         }
 
+        bool PictureAt(const std::string& path, ImVec2 center, int box, bool backing);
+
         // The figure's best picture when it is an artwork (the game's large, not square picture of the variant): fitted into
         // a square of `box` pixels on a rounded backing. False when there is none (the round portrait is drawn instead).
         bool ArtworkPicture(const Toy* toy, uint16_t variant, ImVec2 center, int box, bool backing = true)
@@ -440,6 +442,14 @@ namespace toybox
                 return false;
             std::string path = collection::BestPicturePath(SSA_GAME_ID, *toy, variant);
             if (path.find("/artworks/") == std::string::npos)
+                return false;
+            return PictureAt(path, center, box, backing);
+        }
+
+        // A picture file fitted into a square of `box` pixels at `center`, on a rounded backing. False when it is missing.
+        bool PictureAt(const std::string& path, ImVec2 center, int box, bool backing)
+        {
+            if (path.empty())
                 return false;
             auto found = g_artworks.find(path);
             if (found == g_artworks.end())
@@ -1324,6 +1334,48 @@ namespace toybox
             return text;
         }
 
+        // Trap Team: the villains a trap of this element can hold, the game's own table (Game::villains), with the
+        // pictures of its villain vault. Which one a trap holds is read from the tag only once its place is verified
+        // (figures::TrapVillainVerified); until then the list is all the sheet says.
+        void DrawTrapVillains(const Model& model, const Figure& f, float x, float y, float width)
+        {
+            const Game* game = Catalogue::Get().FindGame(model.game);
+            std::vector<const collection::Villain*> villains;
+            for (const collection::Villain& villain :
+                game != nullptr ? game->villains : std::vector<collection::Villain>{})
+                if (villain.element == f.toy->element)
+                    villains.push_back(&villain);
+            if (villains.empty())
+                return;
+            const collection::Villain* held = nullptr;
+            for (const collection::Villain* villain : villains)
+                if (figures::TrapVillainVerified && f.stats.villain == villain->id)
+                    held = villain;
+            Text(g_bold, 14, ImVec2(x, y), Look::TextSoft,
+                held != nullptr ? std::string(L("Holds ", "Contient ")) + held->name
+                                : std::string(L("Can hold ", "Peut contenir ")) + std::to_string(villains.size()) +
+                                      L(" villains", " méchants"));
+            y += 28;
+            const float box = 64, gap = 8;
+            float left = x + (width - (villains.size() * box + (villains.size() - 1) * gap)) / 2;
+            for (const collection::Villain* villain : villains)
+            {
+                ImVec2 center(left + box / 2, y + box / 2);
+                bool escaped = held != nullptr && villain != held;
+                PictureAt(collection::VillainPicturePath(model.game, *villain, !escaped), center, int(box), true);
+                left += box + gap;
+            }
+            y += box + 8;
+            std::string names;
+            for (const collection::Villain* villain : villains)
+                names += (names.empty() ? "" : ", ") + villain->name;
+            for (const std::string& l : Wrap(g_bold, 13, names, width, 3))
+            {
+                Text(g_bold, 13, ImVec2(x, y), Look::TextDimmer, l);
+                y += 18;
+            }
+        }
+
         void DrawFigureInfo(Model& model, const Figure& f)
         {
             ImVec2 min(32, 88), max(520, 664);
@@ -1430,6 +1482,8 @@ namespace toybox
                 }
                 y += 4;
             }
+            if (f.toy != nullptr && f.toy->category == Category::Trap)
+                DrawTrapVillains(model, f, x, y, w);
         }
 
         void DrawFigure(Model& model)
@@ -2269,10 +2323,12 @@ namespace toybox
         void DrawMenu(Model& model)
         {
             Fill(ImVec2(0, 0), ImVec2(CanvasWidth, CanvasHeight), Look::Night, 0.55f);
-            ImVec2 min(320, 56), max(960, 676);
+            std::vector<MenuRow> rows = model.MenuRows();
+            // Eleven rows (a game with an FXAA pass has the edge smoothing one) need a taller panel, so that the last row clears the hints.
+            const bool tall = rows.size() > 10;
+            ImVec2 min(320, tall ? 28 : 56), max(960, tall ? 700 : 676);
             Panel(min, max, 0.97f);
             Title(L("GAME MENU", "MENU DU JEU"), ImVec2(min.x + 28, min.y + 20), 30);
-            std::vector<MenuRow> rows = model.MenuRows();
             bool anyNextStart = false;
             for (size_t i = 0; i < rows.size(); i++)
             {

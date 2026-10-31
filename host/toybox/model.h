@@ -274,7 +274,9 @@ namespace toybox
         float holdProgress = 0;
 
         // --- The F3 menu ---------------------------------------------------------------------------------------------------
-        static constexpr int MenuRowCount = 10;
+        static constexpr int MenuRowCount =
+            11; // the most rows; a game without a known FXAA pass has no edge smoothing row
+        int MenuRowTotal() const; // the rows shown
         int menuRow = 0;
         std::vector<MenuRow> MenuRows() const;
         void OpenMenu();

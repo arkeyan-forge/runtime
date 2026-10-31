@@ -10,7 +10,7 @@
 #include "host/env.h"
 #include "memory.h"
 #include <algorithm>
-#include <byteswap.h>
+#include "byteswap.h"
 #include <cmath>
 #include <cstdio>
 #include <cstring>

@@ -18,8 +18,12 @@ void WaitForFlip(uint32_t presentInterval);
 uint64_t InterruptsHandled();
 void WaitForInterruptHandled(uint64_t since);
 
-// 30 (the game's own pacing) or 60: the frames the title asks to show every 2 blanks are shown at every blank.
+// 30 (the game's own pacing), 60 (the frames the title asks to show every 2 blanks are shown at every blank), or above
+// 60 / 0 (no limit): the frames are not held to the blanks, which stay 60 Hz, but paced by the host's limiter.
 void SetFrameRateLimit(uint32_t fps);
 
 // The limit set by SetFrameRateLimit.
 uint32_t FrameRateLimit();
+
+// 30 / the frame rate limit (at most 1; no limit counts as 240): the factor for a per-frame step the game tuned for 30 FPS.
+float FrameScale();

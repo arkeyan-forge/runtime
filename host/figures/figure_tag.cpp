@@ -191,7 +191,7 @@ namespace figures
 
     int LevelCap(const std::string& game)
     {
-        return game == "ssa" ? MaxLevel : game == "swapforce" ? MaxLevelSwapForce : MaxLevelGiants;
+        return game == "ssa" ? MaxLevel : game == "giants" ? MaxLevelGiants : MaxLevelSwapForce;
     }
 
     uint32_t TotalExperience(const FigureStats& stats)
@@ -295,6 +295,18 @@ namespace figures
         return tag;
     }
 
+    FigureData CreateTrap(uint16_t toyType, uint16_t variant, uint16_t villain)
+    {
+        FigureData tag = CreateFigure(toyType, variant);
+        if (villain != 0)
+        {
+            FigureStats stats;
+            stats.villain = villain;
+            WriteStats(tag, stats);
+        }
+        return tag;
+    }
+
     AreaState ReadStats(const FigureData& tag, FigureStats& stats)
     {
         FigureData plain = Decrypt(tag);
@@ -340,6 +352,7 @@ namespace figures
                 stats.hat = extra[5];
             stats.swapForceExperience = Le32(extra + 8);
             stats.wowPow = extra[6] & 1;
+            stats.villain = Le16(extra + TrapVillainOffset);
         }
         return AreaState::Valid;
     }
@@ -396,7 +409,7 @@ namespace figures
         // A hat only Giants shows (not the first area's own) needs the extra area too.
         bool writeExtra = newestExtra >= 0 || !ExtraBlank(extraA) || !ExtraBlank(extraB) ||
                           stats.giantsExperience != 0 || (stats.hat != 0 && stats.hat != stats.ssaHat) ||
-                          stats.swapForceExperience != 0 || stats.wowPow != 0;
+                          stats.swapForceExperience != 0 || stats.wowPow != 0 || stats.villain != 0;
 
         uint8_t* a = area;
         a[0] = uint8_t(stats.experience);
@@ -440,6 +453,7 @@ namespace figures
                 extra[5] = uint8_t(std::min<uint16_t>(stats.hat, 0xFF));
             Put32(extra + 8, stats.swapForceExperience);
             extra[6] = uint8_t((extra[6] & 0xFE) | (stats.wowPow & 1));
+            Put16(extra + TrapVillainOffset, stats.villain);
             uint8_t sequence = newestExtra >= 0 ? extra[2] : stats.extraSequence;
             for (int i = 0; i < 2; i++)
             {

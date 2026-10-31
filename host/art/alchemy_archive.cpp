@@ -292,11 +292,13 @@ namespace art::alchemy
     namespace
     {
         // [Alchemy] Where each IGA version keeps its tables. The file starts "IGA\x1a", u32 version, u32 table size,
-        // u32 entry count; then the header's other fields, u32 name hashes[n] and the entries { u32 offset, u32 size,
-        // u32 mode } (v10: a leading u32 first). v8 is Giants' [V: every archive of its disc]. v10 is Swap Force's [V:
-        // every archive of its disc]: big-endian throughout (the magic reads "\x1aAGI"), header 0x38, the name table's
-        // position at 0x2C and size at 0x30, 16-byte entries, chunks 0x800-aligned (games/swapforce/docs/art.md). v11
-        // (the later games) is from public format descriptions, never seen here [?]: the name table's position 64-bit.
+        // u32 entry count; then the header's other fields, u32 name hashes[n] and the entries (entrySize bytes each, with
+        // the words { offset, size, mode } at the layout's indexes). v8 is Giants' [V: every archive of its disc]. v10 is
+        // Swap Force's [V: every archive of its disc]: big-endian throughout (the magic reads "\x1aAGI"), header 0x38, the
+        // name table's position at 0x2C and size at 0x30, 16-byte entries { ?, offset, size, mode }, chunks 0x800-aligned
+        // (games/swapforce/docs/art.md). v11 is Trap Team's [V: all 1916 archives of its disc, listed and unpacked]: little-
+        // endian, header 0x38, the name table's position (64-bit) at 0x28 and size at 0x30, 16-byte entries { offset, ?,
+        // size, mode }, chunks 0x100-aligned; the second word is no offset or size we need [?].
         struct IgaLayout
         {
             uint32_t version;
@@ -305,14 +307,15 @@ namespace art::alchemy
             uint32_t namesSize; // ... and of its size
             bool namesAt64; // the position is 64-bit (little-endian)
             bool bigEndian; // every header and table field (not the chunks' u16 sizes)
-            uint32_t entrySize; // bytes per entry; { offset, size, mode } are its last three words
+            uint32_t entrySize; // bytes per entry
+            uint32_t offsetWord, sizeWord, modeWord; // the entry's words (4 bytes each) holding these
             uint32_t chunkAlign; // compressed chunks start at multiples of this
             bool verified;
         };
         constexpr IgaLayout IgaLayouts[] = {
-            { 8, 0x34, 0x1C, 0x20, false, false, 12, 0x100, true },
-            { 10, 0x38, 0x2C, 0x30, false, true, 16, 0x800, true },
-            { 11, 0x38, 0x28, 0x30, true, false, 12, 0x100, false },
+            { 8, 0x34, 0x1C, 0x20, false, false, 12, 0, 1, 2, 0x100, true },
+            { 10, 0x38, 0x2C, 0x30, false, true, 16, 1, 2, 3, 0x800, true },
+            { 11, 0x38, 0x28, 0x30, true, false, 16, 0, 2, 3, 0x100, true },
         };
     }
 
@@ -349,7 +352,7 @@ namespace art::alchemy
         const size_t stride = 4 + layout->entrySize;
         if (count == 0 || count > 0x100000 || layout->header + stride * uint64_t(count) > length)
             return std::nullopt;
-        // u32 hashes[n], then n entries ending in { u32 offset, u32 size, u32 mode }.
+        // u32 hashes[n], then the n entries.
         std::vector<uint8_t> tables(stride * size_t(count));
         if (!reader(layout->header, tables.size(), tables.data()))
             return std::nullopt;
@@ -362,8 +365,9 @@ namespace art::alchemy
         archive.m_entries.resize(count);
         for (uint32_t i = 0; i < count; i++)
         {
-            const uint8_t* entry = &tables[4 * size_t(count) + layout->entrySize * size_t(i) + layout->entrySize - 12];
-            archive.m_entries[i] = { u32(entry), u32(entry + 4), u32(entry + 8), {} };
+            const uint8_t* entry = &tables[4 * size_t(count) + layout->entrySize * size_t(i)];
+            archive.m_entries[i] = { u32(entry + 4 * layout->offsetWord), u32(entry + 4 * layout->sizeWord),
+                u32(entry + 4 * layout->modeWord), {} };
         }
         // The name table: u32 offsets[n] from the table's start, then the NUL-terminated names.
         if (namesSize >= 4 * uint64_t(count) && namesSize < 0x4000000 && namesAt + namesSize <= length)
@@ -466,7 +470,8 @@ namespace art::alchemy
         // 0x14 as { ?, offset, size, alignment }, records named by a four-character tag stored byte-swapped ("TMET"
         // reads "TEMT") with a 16-byte header { tag, count, length, data start }, memory handles in TMHN as { kind << 24
         // | size, pool << 27 | offset }, a pointer's pool in its top 5 bits, igImage2's name an index in the strings
-        // (TSTR), its other fields where v6 has them. v8 and v9 (the later games) are from public format descriptions,
+        // (TSTR), its other fields where v6 has them. v8 is Trap Team's [V: its disc, 2026-10-30]: as v7, but every name in
+        // the types and strings records is padded to 2 bytes. v9 (the later games) is from public format descriptions,
         // never seen here [?]: tags not swapped, sections { id, offset, size, alignment } at 0x10, handles in RHND.
         struct IgzLayout
         {
@@ -481,6 +486,7 @@ namespace art::alchemy
             uint32_t handleSizeBits; // a memory handle's size is its first word's low bits (the kind above)
             bool nameIsString; // igImage2's name is an index in the strings (else a pointer)
             uint32_t imageName, imageWidth, imageFormat, imageHandle, imageSize; // igImage2's fields
+            uint32_t stringAlign; // each name in the types and strings records is padded to a multiple of this
             bool verified;
         };
         enum Table
@@ -505,27 +511,30 @@ namespace art::alchemy
         constexpr uint32_t None = 0xFFFFFFFF; // a table this version does not have
         constexpr IgzLayout IgzLayouts[] = {
             { 6, 0x10, 0, 1, false, true, 12, 16, 20, { 0, 2, 5, 0xA, None, None }, 24, 28, false, 0x08, 0x30, 0x3C,
-                0x48, 0x60, true },
+                0x48, 0x60, 1, true },
             { 7, 0x14, 1, 2, true, false, 4, 8, 12,
                 { Swapped("TMET"), Swapped("EXID"), Swapped("RVTB"), Swapped("TMHN"), Swapped("TSTR"),
                     Swapped("TDEP") },
-                27, 24, true, 0x08, 0x30, 0x3C, 0x48, 0x60, true },
-            { 8, 0x10, 1, 2, true, false, 4, 8, 12,
-                { Tag("TMET"), Tag("EXID"), Tag("RVTB"), Tag("RHND"), Tag("TSTR"), Tag("TDEP") }, 27, 28, false, 0x08,
-                0x30, 0x3C, 0x48, 0x60, false },
+                27, 24, true, 0x08, 0x30, 0x3C, 0x48, 0x60, 1, true },
+            { 8, 0x14, 1, 2, true, false, 4, 8, 12,
+                { Swapped("TMET"), Swapped("EXID"), Swapped("RVTB"), Swapped("TMHN"), Swapped("TSTR"),
+                    Swapped("TDEP") },
+                27, 24, true, 0x08, 0x30, 0x3C, 0x48, 0x60, 2, true },
             { 9, 0x10, 1, 2, true, false, 4, 8, 12,
                 { Tag("TMET"), Tag("EXID"), Tag("RVTB"), Tag("RHND"), Tag("TSTR"), Tag("TDEP") }, 27, 28, false, 0x08,
-                0x30, 0x3C, 0x48, 0x60, false },
+                0x30, 0x3C, 0x48, 0x60, 1, false },
         };
 
         // The NUL-terminated strings of a record, `count` of them.
-        std::vector<std::string> StringList(const IgzFile& file, size_t start, size_t end, uint32_t count)
+        std::vector<std::string> StringList(
+            const IgzFile& file, size_t start, size_t end, uint32_t count, uint32_t align)
         {
             std::vector<std::string> out;
             for (size_t p = start; out.size() < count && p < end;)
             {
                 out.push_back(file.String(p));
                 p += out.back().size() + 1;
+                p = start + (p - start + align - 1) / align * align;
             }
             return out;
         }
@@ -589,10 +598,10 @@ namespace art::alchemy
         }
         // The class names, one NUL-terminated string each: an object's first word is its index here.
         if (const Fixup* types = file.FindFixup(Types))
-            file.m_types = StringList(file, types->start, types->end, types->count);
+            file.m_types = StringList(file, types->start, types->end, types->count, layout.stringAlign);
         // v7: the strings the objects name by index (TSTR).
         if (const Fixup* strings = file.FindFixup(Strings))
-            file.m_strings = StringList(file, strings->start, strings->end, strings->count);
+            file.m_strings = StringList(file, strings->start, strings->end, strings->count, layout.stringAlign);
         if (file.m_types.empty() || file.FindFixup(Objects) == nullptr)
             return std::nullopt;
         return file;
@@ -719,8 +728,8 @@ namespace art::alchemy
         std::vector<std::string> out;
         if (const Fixup* dependencies = FindFixup(Table::Dependencies))
         {
-            std::vector<std::string> strings =
-                StringList(*this, dependencies->start, dependencies->end, 2 * dependencies->count);
+            std::vector<std::string> strings = StringList(*this, dependencies->start, dependencies->end,
+                2 * dependencies->count, IgzLayouts[m_layout].stringAlign);
             for (size_t i = 1; i < strings.size(); i += 2)
                 out.push_back(strings[i]);
         }
