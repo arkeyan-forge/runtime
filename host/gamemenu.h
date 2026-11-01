@@ -23,6 +23,7 @@ namespace gamemenu
         bool vsync = true;
         bool skipIntroMovies = false;
         uint32_t edgeSmoothing = 0; // edgesmoothing::Mode as chosen (0: not chosen, by the resolution scale)
+        bool fpsAutoFallback = true;
         bool edgeSmoothingShown = false; // the game has a known FXAA pass; without one the setting does nothing
     };
 
@@ -54,6 +55,7 @@ namespace gamemenu
     bool SetShowFps(bool on);
     bool SetFullscreen(bool on);
     bool SetFpsLimit(uint32_t fps);
+    bool SetFpsAutoFallback(bool on);
     bool SetScale(uint32_t scale);
     bool SetAnisotropy(uint32_t level);
     bool SetVsync(bool on);

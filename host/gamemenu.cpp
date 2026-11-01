@@ -63,7 +63,7 @@ void gamemenu::Init(const RuntimeSettings& settings, SDL_Window* window, const c
     g_window = window;
     g_version = gameVersion != nullptr ? gameVersion : "";
     g_values = { settings.volume, settings.showFps, settings.fullscreen, settings.fpsLimit, settings.resolutionScale,
-        settings.anisotropy, settings.vsync, settings.skipIntroMovies, settings.edgeSmoothing,
+        settings.anisotropy, settings.vsync, settings.skipIntroMovies, settings.edgeSmoothing, settings.fpsAutoFallback,
         ::game::HostKernelPixelShader != 0 };
     HostAudioSetVolume(settings.volume);
 }
@@ -101,6 +101,14 @@ bool gamemenu::SetFpsLimit(uint32_t fps)
     SetFrameRateLimit(g_values.fpsLimit);
     Logged("fps_limit", std::to_string(g_values.fpsLimit));
     return SaveVideo("fps_limit", std::to_string(g_values.fpsLimit));
+}
+
+bool gamemenu::SetFpsAutoFallback(bool on)
+{
+    g_values.fpsAutoFallback = on;
+    ::SetFpsAutoFallback(on);
+    Logged("fps_auto_fallback", on ? "1" : "0");
+    return SaveVideo("fps_auto_fallback", on ? "1" : "0");
 }
 
 bool gamemenu::SetScale(uint32_t scale)

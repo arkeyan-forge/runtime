@@ -1,6 +1,8 @@
 #include "kernel/video.h"
 #include "game.h"
 #include "kernel/frame_limiter.h"
+#include "host/settings.h"
+#include "host/settings_fallback.h"
 #include "host/toybox.h"
 #include "memory.h"
 #include "platform/platform.h"
@@ -45,27 +47,8 @@ namespace
 
     bool FasterThanBlanks(uint32_t fps) { return fps == 0 || fps > 60; }
 
-    // fps_limit 60 when the frames do not fit in a blank: shown every 2 blanks (steady 30 FPS) until they fit again.
-    // At 60 a late frame is shown at once (WaitForFlip), so a game at 45 FPS runs at a steady ~22 ms a frame while the
-    // display's vsync shows each frame for 1 or 2 refreshes: the picture moves by equal steps shown for unequal times,
-    // a judder that made Swap Force's fast scenes (the tutorial's lava canyon and crystal tunnel) look epileptic. The
-    // engines step by the time they measure, so at 2 blanks each frame is 33 ms of game time shown for 33 ms.
-    struct HalfRate
-    {
-        static constexpr uint32_t Window = 30;     // frames looked at
-        static constexpr uint32_t MissesToHalve = 3; // late frames in the window that halve the rate
-        // Frames in a row ready within one blank of the previous flip that bring 60 back: 10 s at 30 FPS, doubled (up to
-        // 5 min) each time 60 fails again within 2 s, since a frame that fits at 30 FPS may not at 60 (more GPU work per
-        // second). Counted in blanks, not host time: at interval 1 Swap Force waits for a blank in its own code.
-        static constexpr uint32_t FitsToRestore = 300, MaxFitsToRestore = 9000, ShortSixty = 120;
-        bool active = false;
-        std::array<bool, Window> missed = {};
-        uint32_t next = 0;
-        uint32_t fits = 0;
-        uint32_t fitsToRestore = FitsToRestore;
-        uint32_t framesAtSixty = 0;
-        uint32_t logged = 0;
-    } g_halfRate;
+    // Engines step by measured time: holding the flip for two blanks gives a steady 30 FPS.
+    FrameRateFallback g_halfRate;
 
     // SKY_VBLANK_LOG=1: every 600 vertical blanks, how late the interrupt thread delivered them and how long the guest's
     // interrupt callback took (median, p95, max), to tell the emulated blanks' jitter from the game's.
@@ -192,6 +175,19 @@ static void ClockCheck()
 
 void WaitForFlip(uint32_t presentInterval)
 {
+    // Test aid: delay real presents before sampling the actual vblank counter, never fabricate misses.
+    static const uint32_t lateMs = [] {
+        const char* value = skyenv::Get("SKY_FPS_TEST_LATE_MS");
+        return value ? uint32_t(std::clamp(atoi(value), 0, 100)) : 0u;
+    }();
+    if (lateMs != 0)
+    {
+        static uint32_t samples = 0;
+        if (samples++ % 120 == 0)
+            fprintf(stderr, "[video-test] delaying presents %u ms; fps limit %u; auto fallback %s\n", lateMs,
+                FrameRateLimit(), FpsAutoFallback() ? "on" : "off");
+        std::this_thread::sleep_for(std::chrono::milliseconds(lateMs));
+    }
     CrashTest();
     ClockCheck();
     static uint32_t seen[8];
@@ -229,44 +225,23 @@ void WaitForFlip(uint32_t presentInterval)
             [](uint64_t ns) { std::this_thread::sleep_for(std::chrono::nanoseconds(ns)); });
         return;
     }
-    // fps_limit 60: halve the rate while the frames miss their blank (g_halfRate).
+    // fps_limit 60: halve the rate while the frames miss their blank, unless the player turned it off (g_halfRate).
     if (g_fpsLimit == 60 && vblanks == 1)
     {
-        HalfRate& h = g_halfRate;
-        if (!h.active)
+        const auto change = g_halfRate.Sample(FpsAutoFallback(), g_vblanks > g_lastFlip + 1);
+        static bool told = false;
+        static uint32_t logged = 0;
+        if (change == FrameRateFallback::Change::Halved)
         {
-            h.missed[h.next] = g_vblanks > g_lastFlip + 1; // its blank has gone by
-            h.next = (h.next + 1) % HalfRate::Window;
-            h.framesAtSixty++;
-            if (uint32_t(std::count(h.missed.begin(), h.missed.end(), true)) >= HalfRate::MissesToHalve)
-            {
-                h.active = true;
-                h.fits = 0;
-                h.fitsToRestore = h.framesAtSixty < HalfRate::ShortSixty
-                                      ? std::min(h.fitsToRestore * 2, HalfRate::MaxFitsToRestore)
-                                      : HalfRate::FitsToRestore;
-                static bool told =
-                    false; // once per run, in the corner, in the game's text language (the Toy Box's toast)
-                if (!std::exchange(told, true))
-                    ToyboxNotice("30 FPS: 60 not held", "30 FPS : 60 non tenu");
-                if (h.logged++ < 20)
-                    fprintf(stderr, "[video] fps limit 60: frames miss their 16.7 ms blank, shown at 30 FPS until they "
-                                    "fit again\n");
-            }
+            if (!std::exchange(told, true))
+                ToyboxNotice("30 FPS: 60 not held", "30 FPS : 60 non tenu");
+            if (logged++ < 20)
+                fprintf(stderr,
+                    "[video] fps limit 60: frames miss their 16.7 ms blank, shown at 30 FPS until they fit again\n");
         }
-        else
-        {
-            h.fits = g_vblanks <= g_lastFlip + 1 ? h.fits + 1 : 0;
-            if (h.fits >= h.fitsToRestore)
-            {
-                h.active = false;
-                h.missed = {};
-                h.framesAtSixty = 0;
-                if (h.logged++ < 20)
-                    fprintf(stderr, "[video] fps limit 60: frames fit in a blank again, back to 60 FPS\n");
-            }
-        }
-        if (h.active)
+        else if (change == FrameRateFallback::Change::Restored && logged++ < 20)
+            fprintf(stderr, "[video] fps limit 60: frames fit in a blank again, back to 60 FPS\n");
+        if (g_halfRate.active)
             vblanks = 2;
     }
     // A frame that missed its vertical blank is shown at once, where the console would wait for the next one: there is
@@ -293,6 +268,7 @@ void WaitForInterruptHandled(uint64_t since)
 void SetFrameRateLimit(uint32_t fps)
 {
     std::lock_guard lock(g_mutex);
+    g_halfRate = {};
     g_fpsLimit = fps;
     g_limiter.SetRate(fps);
 }

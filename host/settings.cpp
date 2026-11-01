@@ -2,6 +2,7 @@
 #include "host/env.h"
 #include <SDL3/SDL.h>
 #include <charconv>
+#include <atomic>
 #include <fmt/format.h>
 
 const KeyAction g_keyActions[22] = {
@@ -32,6 +33,7 @@ const KeyAction g_keyActions[22] = {
 namespace
 {
     bool g_skipIntroMovies = false;
+    std::atomic<bool> g_fpsAutoFallback{ true };
 
     bool ParseNumber(const std::string& text, uint32_t& value)
     {
@@ -212,6 +214,8 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
             set.Bool(file, "fullscreen", value, s.fullscreen);
         else if (key == "anisotropy")
             set.Anisotropy(file, value);
+        else if (key == "fps_auto_fallback")
+            set.Bool(file, "fps_auto_fallback", value, s.fpsAutoFallback);
         else if (key == "fps_limit")
             set.FpsLimit(file, value);
         else if (key == "skip_intro_movies")
@@ -461,8 +465,12 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
         }
     }
     g_skipIntroMovies = s.skipIntroMovies;
+    SetFpsAutoFallback(s.fpsAutoFallback);
     return true;
 }
+
+bool FpsAutoFallback() { return g_fpsAutoFallback.load(); }
+void SetFpsAutoFallback(bool enabled) { g_fpsAutoFallback.store(enabled); }
 
 bool SkipIntroMovies() { return g_skipIntroMovies; }
 
@@ -547,6 +555,7 @@ std::string DescribeSettings(const RuntimeSettings& s)
                keys.empty() ? "default" : keys, s.glyphs, s.language.empty() ? "game" : s.language,
                s.voiceLanguage.empty() ? "game" : s.voiceLanguage, s.toyboxAutoOpen ? "" : ", toybox auto-open off",
                padDescription) +
+           fmt::format(", fps auto fallback {}", s.fpsAutoFallback ? "on" : "off") +
            (s.aspectAuto ? "" : ", aspect 16:9") + (s.textureDump ? ", texture dump" : "") +
            (s.texturePacks ? "" : ", texture packs off") + (s.originalResolution ? ", original resolution" : "") +
            (s.edgeSmoothing != edgesmoothing::Auto

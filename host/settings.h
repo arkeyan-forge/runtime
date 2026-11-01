@@ -25,6 +25,7 @@ struct RuntimeSettings
     bool vsync = true;
     bool fullscreen = false;      // desktop fullscreen (no mode change)
     uint32_t anisotropy = 1;      // 1, 2, 4, 8, 16
+    bool fpsAutoFallback = true; // [<game>.video] fps_auto_fallback: allow the automatic 60 -> 30 drop
     uint32_t fpsLimit = 30;       // 30, 60, 120, 144, 240 or 0 (no limit); above 60: host-paced
     bool aspectAuto = true; // [video] aspect: auto follows a window wider than 16:9 (Hor+ camera, wide scene and
     // frame, HUD centred); 16:9 keeps the game's 16:9 picture, with bars on a wider window
@@ -74,3 +75,7 @@ std::string DescribeSettings(const RuntimeSettings& settings);
 // Whether the last ParseSettings turned on [video] skip_intro_movies. The Bink hook (Movie_Update) uses it to end the
 // start-up logos only; story movies always play.
 bool SkipIntroMovies();
+
+// Shared with the live F3 setting; safe to read from the render thread.
+bool FpsAutoFallback();
+void SetFpsAutoFallback(bool enabled);

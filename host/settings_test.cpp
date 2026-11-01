@@ -4,6 +4,7 @@
 #include "host/gamemenu.h"
 #include "host/pad_map.h"
 #include "host/settings.h"
+#include "host/settings_fallback.h"
 #include <cstdio>
 #include <cstdlib>
 #include <map>
@@ -95,6 +96,72 @@ int main()
     CHECK(run.settings.anisotropy == 1 && run.settings.fpsLimit == 30 && run.settings.inputDevice == "auto");
     CHECK(!run.settings.skipIntroMovies);
     CHECK(!SkipIntroMovies());
+    CHECK(run.settings.fpsAutoFallback && FpsAutoFallback());
+    for (const char* game : { "ssa", "giants", "swapforce", "trapteam" })
+    {
+        RuntimeSettings settings;
+        std::vector<std::string> warnings;
+        std::string error;
+        char program[] = "runtime";
+        char* argv[] = { program };
+        LauncherConfig fallbackConfig{ { "video", { { "fps_auto_fallback", "1" } } },
+            { std::string(game) + ".video", { { "fps_auto_fallback", "0" }, { "fps_limit", "60" } } } };
+        CHECK(ParseSettings(
+            fallbackConfig, game, [](const char*) -> const char* { return nullptr; }, 1, argv, settings, warnings,
+            error));
+        CHECK(!settings.fpsAutoFallback && !FpsAutoFallback() && settings.fpsLimit == 60 && warnings.empty());
+    }
+    run = Parse(
+        { { "video", { { "fps_auto_fallback", "0" } } }, { "ssa.video", { { "fps_auto_fallback", "1" } } } }, {}, {});
+    CHECK(run.settings.fpsAutoFallback && FpsAutoFallback());
+    run = Parse({ { "ssa.video", { { "fps_auto_fallback", "invalid" } } } }, {}, {});
+    CHECK(run.settings.fpsAutoFallback && run.warnings.size() == 1);
+    CHECK(DescribeSettings(run.settings).find("fps auto fallback on") != std::string::npos);
+
+    // Three misses in the rolling 30-frame window, recovery, short returns and disabling while active.
+    {
+        using Change = FrameRateFallback::Change;
+        FrameRateFallback startup;
+        startup.Sample(true, true);
+        startup.Sample(true, true);
+        CHECK(startup.Sample(true, true) == Change::Halved && startup.fitsToRestore == 600);
+        FrameRateFallback fallback;
+        for (int i = 0; i < 120; i++)
+            CHECK(fallback.Sample(true, false) == Change::None);
+        CHECK(fallback.Sample(true, true) == Change::None);
+        for (int i = 0; i < 28; i++)
+            CHECK(fallback.Sample(true, false) == Change::None);
+        CHECK(fallback.Sample(true, true) == Change::None);
+        // The oldest miss has now left the window.
+        CHECK(fallback.Sample(true, true) == Change::None);
+        CHECK(fallback.Sample(true, true) == Change::Halved && fallback.active);
+        CHECK(fallback.fitsToRestore == 300);
+        for (int i = 0; i < 299; i++)
+            CHECK(fallback.Sample(true, false) == Change::None);
+        CHECK(fallback.Sample(true, true) == Change::None); // a late frame breaks the consecutive fits
+        for (int i = 0; i < 299; i++)
+            CHECK(fallback.Sample(true, false) == Change::None);
+        CHECK(fallback.Sample(true, false) == Change::Restored && !fallback.active);
+        for (int cycle = 0; cycle < 6; cycle++)
+        {
+            fallback.Sample(true, true);
+            fallback.Sample(true, true);
+            CHECK(fallback.Sample(true, true) == Change::Halved);
+            CHECK(fallback.fitsToRestore == std::min(300u << (cycle + 1), 9000u));
+            for (uint32_t i = 1; i < fallback.fitsToRestore; i++)
+                CHECK(fallback.Sample(true, false) == Change::None);
+            CHECK(fallback.Sample(true, false) == Change::Restored);
+        }
+        for (int i = 0; i < 120; i++)
+            fallback.Sample(true, false);
+        fallback.Sample(true, true);
+        fallback.Sample(true, true);
+        CHECK(fallback.Sample(true, true) == Change::Halved && fallback.fitsToRestore == 300);
+        CHECK(fallback.Sample(false, true) == Change::None && !fallback.active);
+        for (int i = 0; i < 100; i++)
+            CHECK(fallback.Sample(false, true) == Change::None && !fallback.active);
+        CHECK(fallback.Sample(true, true) == Change::None); // re-enabling starts fresh
+    }
     CHECK(run.settings.glyphs == "auto");
     CHECK(run.settings.gamepad.empty() && run.settings.language.empty() && run.settings.arguments.empty());
     CHECK(run.settings.keys[KeyIndex("a")] == "Space" && run.settings.keys[KeyIndex("dpad_right")] == "Right");

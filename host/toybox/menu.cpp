@@ -18,6 +18,7 @@ namespace toybox
             FpsCounter,
             Fullscreen,
             FrameRate,
+            AutoFallback,
             Scale,
             Anisotropy,
             EdgeSmoothing,
@@ -38,7 +39,8 @@ namespace toybox
         {
             std::vector<int> shown;
             for (int row = 0; row < Model::MenuRowCount; row++)
-                if (row != EdgeSmoothing || gamemenu::Current().edgeSmoothingShown)
+                if ((row != EdgeSmoothing || gamemenu::Current().edgeSmoothingShown) &&
+                    (row != AutoFallback || gamemenu::Current().fpsLimit == 60))
                     shown.push_back(row);
             return shown;
         }
@@ -64,6 +66,8 @@ namespace toybox
         rows[Fullscreen] = { Kind::Toggle, L("Fullscreen", "Plein écran"), OnOff(v.fullscreen), 0, false };
         rows[FrameRate] = { Kind::Choice, L("Frame rate", "Images par seconde"),
             v.fpsLimit == 0 ? std::string(L("Unlimited", "Illimité")) : std::to_string(v.fpsLimit), 0, false };
+        rows[AutoFallback] = { Kind::Toggle, L("Drop to 30 FPS when needed", "Passer à 30 FPS si besoin"),
+            OnOff(v.fpsAutoFallback), 0, false };
         rows[Scale] = { Kind::Choice, L("Resolution scale", "Échelle de résolution"),
             v.scale == 0 ? std::string(L("Auto", "Auto")) : "x" + std::to_string(v.scale), 0, true };
         rows[Anisotropy] = { Kind::Choice, L("Texture filtering", "Filtrage des textures"),
@@ -133,6 +137,7 @@ namespace toybox
             along(rates, count, v.fpsLimit, gamemenu::SetFpsLimit);
             break;
         }
+        case AutoFallback: flip(v.fpsAutoFallback, gamemenu::SetFpsAutoFallback); break;
         case Scale: along(Scales, 5, v.scale, gamemenu::SetScale); break;
         case Anisotropy: along(Levels, 5, v.anisotropy, gamemenu::SetAnisotropy); break;
         case EdgeSmoothing:

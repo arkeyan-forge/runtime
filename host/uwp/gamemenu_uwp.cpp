@@ -15,6 +15,7 @@ void gamemenu::Init(const RuntimeSettings& settings, SDL_Window*, const char*)
 {
     g_values = { settings.volume, settings.showFps, settings.fullscreen, settings.fpsLimit, settings.resolutionScale,
         settings.anisotropy, settings.vsync, settings.skipIntroMovies };
+    g_values.fpsAutoFallback = settings.fpsAutoFallback;
     HostAudioSetVolume(settings.volume);
 }
 
@@ -39,6 +40,12 @@ bool gamemenu::SetFpsLimit(uint32_t fps)
 {
     g_values.fpsLimit = CapFrameRate(NormalFrameRate(fps), game::Current().maxFpsLimit);
     SetFrameRateLimit(g_values.fpsLimit);
+    return true;
+}
+bool gamemenu::SetFpsAutoFallback(bool on)
+{
+    g_values.fpsAutoFallback = on;
+    ::SetFpsAutoFallback(on);
     return true;
 }
 bool gamemenu::SetScale(uint32_t scale)
