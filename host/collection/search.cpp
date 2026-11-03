@@ -254,7 +254,7 @@ namespace collection
 
     const char* SortId(Sort sort)
     {
-        static const char* const Ids[] = { "recent", "name", "level", "element", "game" };
+        static const char* const Ids[] = { "recent", "name", "level", "element", "game", "favorites" };
         return sort < Sort::Count ? Ids[size_t(sort)] : Ids[0];
     }
 
@@ -268,8 +268,8 @@ namespace collection
 
     std::string SortLabel(Sort sort, bool french)
     {
-        static const char* const English[] = { "Recent", "Name", "Level", "Element", "Game" };
-        static const char* const France[] = { "Récents", "Nom", "Niveau", "Élément", "Jeu" };
+        static const char* const English[] = { "Recent", "Name", "Level", "Element", "Game", "Favorites" };
+        static const char* const France[] = { "Récents", "Nom", "Niveau", "Élément", "Jeu", "Favoris" };
         return sort < Sort::Count ? (french ? France : English)[size_t(sort)] : "";
     }
 
@@ -338,6 +338,8 @@ namespace collection
                     if (gameRank(a) != gameRank(b))
                         return gameRank(a) < gameRank(b);
                     break;
+                case Sort::Favorites: // the Recent order otherwise: the sort is stable
+                    return list[a].favourite && !list[b].favourite;
                 default: break;
                 }
                 return names[a] < names[b];

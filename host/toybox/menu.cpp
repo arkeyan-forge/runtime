@@ -414,7 +414,7 @@ namespace toybox
         if (waiting != Waiting::None)
             return; // toybox.cpp hands the key, the button or the click to TakeKey / TakePadButton / TakeMouse
         const int rowCount = int(InputRows().size()), lineCount = rowCount + ExtraCount;
-        auto notify = [this](const std::string& text) { Toast(text, 4); };
+        auto notify = [this](const std::string& text) { Toast(text, 5); };
         m_dirty = true;
         switch (command)
         {
@@ -472,7 +472,7 @@ namespace toybox
                     ChangeCommands([&](LauncherConfig& config) { commands::Reset(config, game, InputRows()); });
                 fprintf(stderr, "[gamemenu] commands reset to the defaults\n");
                 if (saved)
-                    Toast(L("Commands reset", "Commandes réinitialisées"), 4);
+                    Toast(L("Commands reset", "Commandes réinitialisées"), 5);
                 else
                     SaveFailed(notify);
                 break;
@@ -527,7 +527,7 @@ namespace toybox
             fprintf(stderr, "[gamemenu] %s = %s\n", line.c_str(), keyName);
         }
         if (!saved)
-            SaveFailed([this](const std::string& text) { Toast(text, 4); });
+            SaveFailed([this](const std::string& text) { Toast(text, 5); });
         waiting = Waiting::None;
         settle = true;
         m_dirty = true;
@@ -551,7 +551,7 @@ namespace toybox
         else
             fprintf(stderr, "[gamemenu] pad_%s = %s\n", g_padButtons[button], row.pad);
         if (!saved)
-            SaveFailed([this](const std::string& text) { Toast(text, 4); });
+            SaveFailed([this](const std::string& text) { Toast(text, 5); });
         waiting = Waiting::None;
         settle = true;
         m_dirty = true;
@@ -574,7 +574,7 @@ namespace toybox
         else
             fprintf(stderr, "[gamemenu] mouse_%s = %s\n", row.action, mouse::Name(mouse::Button(button)));
         if (!saved)
-            SaveFailed([this](const std::string& text) { Toast(text, 4); });
+            SaveFailed([this](const std::string& text) { Toast(text, 5); });
         waiting = Waiting::None;
         settle = true;
         m_dirty = true;

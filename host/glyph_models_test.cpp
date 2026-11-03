@@ -1,7 +1,7 @@
 // The models that show a button over a glyph texture (host/glyphs.h, Model): a draw is skipped only when its index count
 // and the hash of its indices are a listed model's letters, and only while a style other than the Xbox 360's draws the
-// glyph; the texture matrix is set to the identity only for the model's shader with the glyph bound. No SDL, no GPU, no
-// game data: ./SSAGlyphModelsTest
+// glyph; the texture matrix is set to the identity only for the model's shader with the glyph bound; a keycap's label
+// (KeycapLabel). No SDL, no GPU, no game data: ./SSAGlyphModelsTest
 #include "host/glyphs.h"
 #define XXH_INLINE_ALL
 #include <xxhash.h>
@@ -60,6 +60,17 @@ int main()
     EXPECT(UvMatrix(textures, 0xABCD, plain) == -1); // the card not drawn as a glyph (Xbox 360 style)
     EXPECT(UvMatrix(textures, 0xABCD, {}) == -1);
     EXPECT(UvMatrix({}, 0xABCD, bound) == -1);
+
+    // Keycaps: a French number row shows its digit, not the symbol it types without Shift (the 3 key: '"').
+    EXPECT(KeycapLabel("\"", "3", "3") == "3");
+    EXPECT(KeycapLabel("&", "1", "1") == "1");
+    EXPECT(KeycapLabel("\xC3\xA9", "2", "2") == "2"); // é
+    EXPECT(KeycapLabel("3", "#", "3") == "3"); // US: the digit already
+    EXPECT(KeycapLabel("O", "O", "O") == "O");
+    EXPECT(KeycapLabel("Backspace", "Backspace", "Backspace") == "Bksp");
+    EXPECT(KeycapLabel("Keypad 5", "Keypad 5", "Keypad 5") == "Num5");
+    EXPECT(KeycapLabel("", "", "Tab") == "Tab"); // no name on the layout: the setting's
+    EXPECT(KeycapLabel(nullptr, nullptr, "Tab") == "Tab");
 
     printf("glyph models test: %d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;

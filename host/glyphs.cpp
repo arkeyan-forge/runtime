@@ -782,32 +782,12 @@ namespace glyphs
             return out;
         }
 
-        // What a keycap shows for a bound key: its name on the current keyboard layout, shortened.
+        // What a keycap shows for a bound key: its name on the current keyboard layout, shortened (KeycapLabel).
         std::string KeyLabel(const std::string& settingName)
         {
             SDL_Scancode scancode = SDL_GetScancodeFromName(settingName.c_str());
-            const char* name = SDL_GetKeyName(SDL_GetKeyFromScancode(scancode, SDL_KMOD_NONE, false));
-            std::string label = name != nullptr && *name != '\0' ? name : settingName;
-            static const std::pair<const char*, const char*> Short[] = {
-                { "Return", "Enter" },
-                { "Backspace", "Bksp" },
-                { "Escape", "Esc" },
-                { "Left Shift", "Shift" },
-                { "Right Shift", "Shift" },
-                { "Left Ctrl", "Ctrl" },
-                { "Right Ctrl", "Ctrl" },
-                { "Left Alt", "Alt" },
-                { "Right Alt", "Alt" },
-                { "Left GUI", "Cmd" },
-                { "Right GUI", "Cmd" },
-                { "CapsLock", "Caps" },
-            };
-            for (const auto& [from, to] : Short)
-                if (label == from)
-                    return to;
-            if (label.starts_with("Keypad "))
-                return "Num" + label.substr(7);
-            return label;
+            return KeycapLabel(SDL_GetKeyName(SDL_GetKeyFromScancode(scancode, SDL_KMOD_NONE, false)),
+                SDL_GetKeyName(SDL_GetKeyFromScancode(scancode, SDL_KMOD_SHIFT, false)), settingName);
         }
 
         void Select(Style style)

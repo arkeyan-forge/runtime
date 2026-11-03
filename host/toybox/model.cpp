@@ -2205,7 +2205,7 @@ namespace toybox
             if (s.physical && s.physicalKnown && s.physicalType == figures[figure].type)
             {
                 trapPick = 0;
-                Toast(L("Take the trap off the portal first", "Retirez d'abord le piège du portail"), 4);
+                Toast(L("Take the trap off the portal first", "Retirez d'abord le piège du portail"), 5);
                 return;
             }
         }

@@ -1019,7 +1019,7 @@ void ToyboxUpdate()
         if (g_noticePending)
         {
             g_noticePending = false;
-            model.Notice(toybox::French() ? g_notice.second : g_notice.first, 4);
+            model.Notice(toybox::French() ? g_notice.second : g_notice.first, 5);
         }
         if (g_achievementPending)
         {

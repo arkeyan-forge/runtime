@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <functional>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace gpu
@@ -134,4 +135,9 @@ namespace glyphs
     // others): the float constant of the model's texture matrix to set to the identity (Model::uvMatrix), or -1.
     int UvMatrix(uint64_t vertexShader, std::span<const uint64_t> glyphHashes);
     int UvMatrix(std::span<const Texture> textures, uint64_t vertexShader, std::span<const uint64_t> glyphHashes);
+
+    // What a keycap shows for a bound key named `plain` on the keyboard's layout (`shifted` with Shift held; `settingName`,
+    // the setting's own name, when the layout gives none): shortened ("Bksp", "Num5"), and a number-row key's digit where
+    // the layout types a symbol without Shift (French: "3", not '"').
+    std::string KeycapLabel(const char* plain, const char* shifted, const std::string& settingName);
 }

@@ -341,7 +341,7 @@ namespace toybox
         uint32_t lightRgb = 0; // the portal's light as the game last set it, in 4 steps per channel (0xRRGGBB); 0 = off
         std::string fps; // the FPS counter's text ("30 FPS"), empty: off; set by toybox.cpp, drawn in the corner
         std::string
-            toast; // shown 3 s (5 s for long ones), in the Toy Box and over the game; slides in, fades out (look.h)
+            toast; // shown 5 s (6 s for long ones), in the Toy Box and over the game; slides in, fades out (look.h)
         uint64_t toastSince = 0, toastUntil = 0; // shown from, until; then its fade out
         std::string
             toastCaption; // an achievement's line over the text ("ACHIEVEMENT UNLOCKED · 20 POINTS"); empty: a notice
@@ -463,7 +463,7 @@ namespace toybox
         bool MoveGrid(Grid& grid, Command command); // false when the move would leave the grid
         void HomeStep(int step, bool wrap); // Up / Down (Tab) between Home's rows
         void JumpSection(Grid& grid, int step);
-        void Toast(const std::string& text, uint64_t seconds = 3);
+        void Toast(const std::string& text, uint64_t seconds = 5);
         void Ask(Dialog dialog);
 
         void RunHome(Command command);

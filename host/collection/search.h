@@ -33,9 +33,10 @@ namespace collection
         Level,
         Element,
         Game,
+        Favorites, // favorites first, then the Recent order
         Count
     };
-    const char* SortId(Sort sort);          // "recent", "name", "level", "element", "game"
+    const char* SortId(Sort sort);          // "recent", "name", "level", "element", "game", "favorites"
     Sort ParseSort(const std::string& id);  // Recent when unknown
     // The sort's name in the apps' menus and tags ("Recent" / "Récents"), the same words in both apps.
     std::string SortLabel(Sort sort, bool french = false);
