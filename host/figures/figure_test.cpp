@@ -474,6 +474,46 @@ namespace
         CHECK(figures::ReadTrapStats(empty, stats) == AreaState::Valid && stats.villainCount == 6);
     }
 
+    // A capture as the game wrote it in play (2026-11-02, Sheep Creep into an empty Life Trap): the empty trap the game
+    // initialised has copy B only (sequence 1, count 0, packed 0x130 = C2 FF 01 80 FF); the capture writes copy A with
+    // sequence 2, count 1, the villain at TrapVillainOffset and packed 0x132 = A3 (meaning unknown), copy B untouched.
+    void TestTrapCapture()
+    {
+        using figures::AreaState;
+        FigureData plain = figures::Decrypt(figures::CreateTrap(217, 0x3003));
+        const uint8_t tail[] = { 0xC2, 0xFF, 0x01, 0x80, 0xFF };
+        TrapByte(plain, 1, 9) = 1;
+        for (size_t i = 0; i < sizeof(tail); i++)
+            TrapByte(plain, 1, 0x130 + i) = tail[i];
+        SealTestTrap(plain, 1, false);
+        figures::TrapStats stats;
+        FigureData empty = figures::Encrypt(plain);
+        CHECK(figures::ReadTrapStats(empty, stats) == AreaState::Valid && stats.villainCount == 0 &&
+              stats.selectedVillain == 0 && stats.sequence == 1);
+
+        for (size_t i = 0; i < 16 * 21; i++)
+            TrapByte(plain, 0, i) = TrapByte(plain, 1, i);
+        TrapByte(plain, 0, 1) = 1;
+        TrapByte(plain, 0, 9) = 2;
+        TrapByte(plain, 0, figures::TrapVillainOffset) = 20;
+        TrapByte(plain, 0, 0x132) = 0xA3;
+        SealTestTrap(plain, 0, false);
+        CHECK(plain[0x81] == 1 && plain[0x89] == 2 && plain[0x90] == 20 && plain[0x250] == 0);
+        FigureData captured = figures::Encrypt(plain);
+        CHECK(figures::ReadTrapStats(captured, stats) == AreaState::Valid && stats.villainCount == 1 &&
+              stats.selectedVillain == 20 && stats.villains[0].id == 20 && !stats.villains[0].questComplete &&
+              stats.sequence == 2);
+        figures::FigureStats view;
+        CHECK(figures::ReadStats(captured, view) == AreaState::Valid && view.villain == 20 && !view.villainEvolved);
+
+        // The same capture made offline lands on the same bytes and keeps the unknown tail.
+        CHECK(figures::ReadTrapStats(empty, stats) == AreaState::Valid && figures::SelectTrapVillain(stats, 20));
+        CHECK(figures::WriteTrapStats(empty, stats));
+        FigureData edited = figures::Decrypt(empty);
+        CHECK(edited[0x81] == 1 && edited[0x89] == 2 && edited[0x90] == 20 && edited[0x250] == 20);
+        CHECK(TrapByte(edited, 0, 0x130) == 0xC2 && TrapByte(edited, 0, 0x132) == 0x01);
+    }
+
     void TestTrapCodec()
     {
         using figures::AreaState;
@@ -1149,6 +1189,7 @@ int main(int argc, char** argv)
     TestTag();
     TestTrapTeam();
     TestTrapCodec();
+    TestTrapCapture();
     TestTrapSelect();
     TestCatalog();
     TestGiants();

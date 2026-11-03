@@ -6,6 +6,7 @@
 AsyncPortal::AsyncPortal(std::unique_ptr<PortalBackend> device, bool connected, Timing timing)
     : m_device(std::move(device)), m_name(m_device->Name()), m_timing(timing), m_connected(connected)
 {
+    m_takesSound = connected && m_device->TakesSound();
     m_thread = std::thread([this] { Run(); });
 }
 
@@ -22,7 +23,21 @@ bool AsyncPortal::Write(const uint8_t* command, size_t size)
         return false;
     {
         std::lock_guard lock(m_mutex);
-        m_commands.emplace_back(command, command + size);
+        m_commands.push_back({ Report(command, command + size) });
+        if (m_commands.size() > QueueLimit)
+            m_commands.pop_front();
+    }
+    m_wake.notify_all();
+    return true;
+}
+
+bool AsyncPortal::WriteSound(const uint8_t* block, size_t size)
+{
+    if (!m_connected)
+        return false;
+    {
+        std::lock_guard lock(m_mutex);
+        m_commands.push_back({ Report(block, block + size), true });
         if (m_commands.size() > QueueLimit)
             m_commands.pop_front();
     }
@@ -83,6 +98,7 @@ void AsyncPortal::Run()
                 m_commands.clear();
                 m_reports.clear();
                 m_delay = std::chrono::milliseconds(0);
+                m_takesSound = m_device->TakesSound();
                 m_connected = true;
                 if (!failing)
                     fprintf(stderr, "[portal] %s: connected\n", m_name);
@@ -97,7 +113,7 @@ void AsyncPortal::Run()
             continue;
         }
 
-        Report command;
+        Command command;
         {
             std::lock_guard lock(m_mutex);
             if (!m_commands.empty())
@@ -106,9 +122,15 @@ void AsyncPortal::Run()
                 m_commands.pop_front();
             }
         }
-        if (!command.empty())
+        // A speaker block the device refuses only stops its sound (the backend says so); commands decide the connection.
+        if (command.sound)
         {
-            if (!m_device->Write(command.data(), command.size()))
+            m_device->WriteSound(command.bytes.data(), command.bytes.size());
+            m_takesSound = m_device->TakesSound();
+        }
+        else if (!command.bytes.empty())
+        {
+            if (!m_device->Write(command.bytes.data(), command.bytes.size()))
             {
                 lose("a write failed");
                 continue;

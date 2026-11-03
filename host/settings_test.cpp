@@ -1,6 +1,7 @@
 // Checks the settings parser: launcher.ini, SKY_* variables (and the older SSA_* names) and the command line, and their precedence.
 // usage: SSASettingsTest
 #include "host/env.h"
+#include "host/debug_screen.h"
 #include "host/gamemenu.h"
 #include "host/pad_map.h"
 #include "host/settings.h"
@@ -260,12 +261,17 @@ int main()
     CHECK(run.ok && DescribeSettings(run.settings).find("edge smoothing light") != std::string::npos);
     CHECK(DescribeSettings(Parse({}, {}, {}).settings).find("edge smoothing") == std::string::npos);
     // Not chosen: light from resolution scale 2, game at 1; a choice stays whatever the scale.
-    CHECK(edgesmoothing::Resolve(edgesmoothing::Auto, 1) == edgesmoothing::Game);
-    CHECK(edgesmoothing::Resolve(edgesmoothing::Auto, 2) == edgesmoothing::Light);
-    CHECK(edgesmoothing::Resolve(edgesmoothing::Auto, 4) == edgesmoothing::Light);
-    CHECK(edgesmoothing::Resolve(edgesmoothing::Game, 4) == edgesmoothing::Game);
-    CHECK(edgesmoothing::Resolve(edgesmoothing::Light, 1) == edgesmoothing::Light);
-    CHECK(edgesmoothing::Resolve(edgesmoothing::Off, 2) == edgesmoothing::Off);
+    CHECK(edgesmoothing::Resolve(edgesmoothing::Auto, 1, false) == edgesmoothing::Game);
+    CHECK(edgesmoothing::Resolve(edgesmoothing::Auto, 2, false) == edgesmoothing::Light);
+    CHECK(edgesmoothing::Resolve(edgesmoothing::Auto, 4, false) == edgesmoothing::Light);
+    CHECK(edgesmoothing::Resolve(edgesmoothing::Game, 4, false) == edgesmoothing::Game);
+    CHECK(edgesmoothing::Resolve(edgesmoothing::Light, 1, false) == edgesmoothing::Light);
+    CHECK(edgesmoothing::Resolve(edgesmoothing::Off, 2, false) == edgesmoothing::Off);
+    // The title and the menus keep the game's pass at any scale unless a mode was chosen (Trap Team's logo).
+    CHECK(edgesmoothing::Resolve(edgesmoothing::Auto, 2, true) == edgesmoothing::Game);
+    CHECK(edgesmoothing::Resolve(edgesmoothing::Auto, 1, true) == edgesmoothing::Game);
+    CHECK(edgesmoothing::Resolve(edgesmoothing::Light, 2, true) == edgesmoothing::Light);
+    CHECK(edgesmoothing::Resolve(edgesmoothing::Off, 2, true) == edgesmoothing::Off);
 
     // The game's own [<game>.video] wins over [video] for every video key (a game started without the launcher's PLAY).
     run =
@@ -288,6 +294,23 @@ int main()
           DescribeSettings(run.settings).find("volume 90") != std::string::npos);
     run = Parse({ { "audio", { { "volume", "150" } } } }, {}, {});
     CHECK(run.ok && run.warnings.size() == 1 && run.settings.volume == 100);
+    // portal_sound: on by default; [audio], then the game's own [<game>.audio]; a bad value warns and keeps it on.
+    CHECK(Parse({}, {}, {}).settings.portalSound);
+    run = Parse({ { "audio", { { "portal_sound", "1" } } }, { "ssa.audio", { { "portal_sound", "0" } } },
+                    { "giants.audio", { { "portal_sound", "1" } } } },
+        {}, {});
+    CHECK(run.ok && run.warnings.empty() && !run.settings.portalSound &&
+          DescribeSettings(run.settings).find("portal sound off") != std::string::npos);
+    run = Parse({ { "ssa.audio", { { "portal_sound", "yes" } } } }, {}, {});
+    CHECK(run.ok && run.warnings.size() == 1 && run.settings.portalSound);
+    // reduce_motion: off by default; [video] or the game's own [<game>.video]; a bad value warns and keeps the default.
+    run = Parse({}, {}, {});
+    CHECK(!run.settings.reduceMotion && DescribeSettings(run.settings).find("reduced motion") == std::string::npos);
+    run = Parse({ { "ssa.video", { { "reduce_motion", "1" } } } }, {}, {});
+    CHECK(run.ok && run.warnings.empty() && run.settings.reduceMotion &&
+          DescribeSettings(run.settings).find("reduced motion") != std::string::npos);
+    run = Parse({ { "video", { { "reduce_motion", "maybe" } } } }, {}, {});
+    CHECK(run.ok && run.warnings.size() == 1 && !run.settings.reduceMotion);
     // Keys: [input], then the game's own [<game>.input] (another game's section is ignored).
     run = Parse({ { "input", { { "key_y", "G" } } }, { "ssa.input", { { "key_y", "H" } } } }, {}, {});
     CHECK(run.ok && run.warnings.empty() && run.settings.keys[KeyIndex("y")] == "H" &&
@@ -388,6 +411,40 @@ int main()
           run.settings.rumble[1] == "off");
     CHECK(!Parse({}, {}, { "--pad", "lb" }).ok);
 
+    // The mouse (host/mouse.h): off by default, a file without its lines reads as before; the switch and mouse_ lines in the
+    // game's section only; a bad name warns. The Toy Box keys in [input]; Tab opens it too until key_toybox is set.
+    {
+        Run plain = Parse(pads, {}, {});
+        CHECK(!plain.settings.mouse.enabled && plain.settings.toyboxKeys[0] == "F6" &&
+              plain.settings.toyboxKeys[1] == "F7" && plain.settings.toyboxKeys[2] == "F8" && plain.settings.toyboxTab);
+        bool none = true;
+        for (bool set : plain.settings.mouse.set)
+            none = none && !set;
+        CHECK(none);
+        LauncherConfig mice;
+        mice["input"] = { { "mouse", "1" }, { "key_toybox", "O" }, { "key_toybox_clear", "P" } };
+        mice["ssa.input"] = { { "mouse", "1" }, { "mouse_y", "Mouse Middle" }, { "mouse_a", "none" },
+            { "mouse_b", "Wheel Up" } };
+        mice["giants.input"] = { { "mouse_x", "Mouse 4" } };
+        run = Parse(mice, {}, {});
+        CHECK(run.ok && run.warnings.empty() && run.settings.mouse.enabled);
+        CHECK(run.settings.mouse.set[KeyIndex("y")] && run.settings.mouse.stored[KeyIndex("y")] == mouse::Middle);
+        CHECK(run.settings.mouse.set[KeyIndex("a")] && run.settings.mouse.stored[KeyIndex("a")] == mouse::None);
+        CHECK(run.settings.mouse.stored[KeyIndex("b")] == mouse::WheelUp && !run.settings.mouse.set[KeyIndex("x")]);
+        CHECK(run.settings.toyboxKeys[0] == "O" && !run.settings.toyboxTab && run.settings.toyboxKeys[1] == "F7" &&
+              run.settings.toyboxKeys[2] == "P");
+        LauncherConfig onlyShared;
+        onlyShared["input"] = { { "mouse", "1" } }; // the switch is per game: [input] does not turn it on
+        run = Parse(onlyShared, {}, {});
+        CHECK(!run.settings.mouse.enabled);
+        LauncherConfig badMice;
+        badMice["ssa.input"] = { { "mouse", "maybe" }, { "mouse_y", "Mouse 9" }, { "mouse_nothing", "Mouse Left" } };
+        badMice["input"] = { { "key_toybox", "NotAKey" } };
+        run = Parse(badMice, {}, {});
+        CHECK(run.warnings.size() == 4 && !run.settings.mouse.enabled && run.settings.toyboxKeys[0] == "F6" &&
+              run.settings.toyboxTab);
+    }
+
     {
         PadMap map;
         GamepadState pad;
@@ -447,6 +504,72 @@ int main()
     CHECK(SettingsHelp("SSARecomp").find("--anisotropy") != std::string::npos);
     CHECK(
         DescribeSettings(Parse({}, {}, { "--scale", "2" }).settings).find("scale 2 (2240x1408)") != std::string::npos);
+
+    // Debug screen: off by default, per-game persistence, strict booleans and isolation.
+    CHECK(!Parse({}, {}, {}).settings.debugScreen);
+    CHECK(Parse({ { "ssa.video", { { "debug_screen", "1" } } } }, {}, {}).settings.debugScreen);
+    CHECK(!Parse({ { "giants.video", { { "debug_screen", "1" } } } }, {}, {}).settings.debugScreen);
+    CHECK(!Parse({ { "video", { { "debug_screen", "1" } } }, { "ssa.video", { { "debug_screen", "0" } } } }, {}, {})
+            .settings.debugScreen);
+    run = Parse({ { "ssa.video", { { "debug_screen", "bad" } } } }, {}, {});
+    CHECK(!run.settings.debugScreen && run.warnings.size() == 1);
+    using namespace debugscreen;
+    Rate rate;
+    CHECK(rate.Update(0, 10) && rate.fps == 0 && !rate.ready);
+    CHECK(!rate.Update(RefreshNs - 1, 25));
+    CHECK(rate.Update(RefreshNs, 25) && rate.fps == 30 && rate.ready);
+    CHECK(rate.Update(2 * RefreshNs, 25) && rate.fps == 0);
+    CHECK(rate.Update(3 * RefreshNs, 1) && rate.fps == 0); // renderer reset
+    CHECK(rate.Update(1, 1) && rate.fps == 0); // clock reset
+    CHECK(LowOnePercent({}) == 0);
+    std::array<uint64_t, 200> durations;
+    durations.fill(10'000'000);
+    CHECK(LowOnePercent(durations) == 100);
+    durations[0] = 100'000'000;
+    durations[1] = 50'000'000;
+    CHECK(std::abs(LowOnePercent(durations) - 1000.0 / 75.0) < 0.00001);
+    CHECK(LowOnePercent(std::span(durations).first(100)) == 10);
+    CHECK(LowOnePercent(std::span(durations).first(99)) == 10);
+    CHECK(std::abs(LowOnePercent(std::span(durations).first(101)) - 1000.0 / 75.0) < 0.00001);
+    CHECK(durations[0] == 100'000'000 && durations[1] == 50'000'000); // sorting preserves graph order
+    durations.fill(0);
+    CHECK(LowOnePercent(durations) == 0);
+    std::array<uint64_t, MaxFrames + 1> bounded;
+    bounded.fill(10'000'000);
+    bounded[0] = 1'000'000'000;
+    CHECK(LowOnePercent(bounded) == 100); // the old sample lies outside the bounded history
+
+    char text[32];
+    Bytes(text, sizeof(text), 3ull << 29);
+    CHECK(std::string_view(text) == "1.50 GiB");
+    Bytes(text, sizeof(text), 100ull << 20);
+    CHECK(std::string_view(text) == "100 MiB");
+    Bytes(text, sizeof(text), 0, false);
+    CHECK(std::string_view(text) == "n/a");
+    Label(text, sizeof(text), "folder/private");
+    CHECK(std::string_view(text) == "n/a");
+    Label(text, 5, "abcdef");
+    CHECK(std::string_view(text) == "abcd");
+    Label(text, sizeof(text), "a\nb");
+    CHECK(std::string_view(text) == "a b");
+    Label(text, 2, "écran");
+    CHECK(std::string_view(text).empty());
+    Label(text, 3, "écran");
+    CHECK(std::string_view(text) == "é");
+    Label(text, sizeof(text), "C:\\private\\data");
+    CHECK(std::string_view(text) == "n/a");
+    Label(text, sizeof(text), "Skylanders: Trap Team");
+    CHECK(std::string_view(text) == "Skylanders: Trap Team");
+    Label(text, sizeof(text), "@");
+    CHECK(std::string_view(text) == "n/a");
+    Panel panel;
+    panel.Add(Group::Game, "Game", "Example");
+    panel.Add(Group::Game, "Version", "1");
+    panel.Add(Group::Frame, "FPS", "30");
+    CHECK(panel.count == 3 && panel.StartsGroup(0) && !panel.StartsGroup(1) && panel.StartsGroup(2));
+    for (int row = 0; row < 50; row++)
+        panel.Add(Group::Frame, "FPS", "30");
+    CHECK(panel.count == panel.rows.size());
 
     printf("settings test: %d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;

@@ -17,6 +17,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <fstream>
 #include <map>
 #include <optional>
@@ -79,8 +80,10 @@ namespace art
         std::vector<uint8_t> ReadAll(const Disc& disc, const std::string& path)
         {
             uint64_t size = disc.size(path);
+            if (size == 0 || size > (512ull << 20)) // before allocating: the size comes from the disc's directory
+                return {};
             std::vector<uint8_t> bytes(static_cast<size_t>(size));
-            if (size == 0 || size > (512ull << 20) || !disc.read(path, 0, bytes.size(), bytes.data()))
+            if (!disc.read(path, 0, bytes.size(), bytes.data()))
                 return {};
             return bytes;
         }
@@ -843,6 +846,7 @@ namespace art
     }
 
     int ExtractScenes(std::string_view game, const Disc& disc, const std::atomic<bool>* stop)
+    try
     {
         const Manifest* where = FindManifest(game);
         std::filesystem::path cache = CacheFolder(game);
@@ -859,6 +863,11 @@ namespace art
             present += entry.path().extension() == ".png";
         return present;
     }
+    catch (const std::exception& failure) // a malformed disc: no art, the caller goes on
+    {
+        fprintf(stderr, "[art] %.*s: scenes not read (%s)\n", int(game.size()), game.data(), failure.what());
+        return 0;
+    }
 
     std::string PickScene(const std::vector<std::string>& names, std::string_view last, uint32_t random)
     {
@@ -870,6 +879,7 @@ namespace art
     }
 
     bool ReadLogo(std::string_view game, const Disc& disc, Image& logo)
+    try
     {
         const Manifest* where = FindManifest(game);
         if (where == nullptr)
@@ -880,8 +890,14 @@ namespace art
         ReadPictures(logoOnly, disc, logo, background);
         return !logo.rgba.empty();
     }
+    catch (const std::exception& failure) // a malformed disc: no art, the caller goes on
+    {
+        fprintf(stderr, "[art] %.*s: logo not read (%s)\n", int(game.size()), game.data(), failure.what());
+        return false;
+    }
 
     Extraction Extract(std::string_view game, const Disc& disc, const std::vector<uint8_t>& titleIconPng, int parts)
+    try
     {
         Extraction result;
         const Manifest* where = FindManifest(game); // the game's art.json
@@ -948,5 +964,10 @@ namespace art
             result.upgrades = std::filesystem::is_regular_file(file, exists);
         }
         return result;
+    }
+    catch (const std::exception& failure) // a malformed disc: no art, the caller goes on
+    {
+        fprintf(stderr, "[art] %.*s: art not read (%s)\n", int(game.size()), game.data(), failure.what());
+        return {};
     }
 }

@@ -3,6 +3,7 @@
 #include "game.h"
 #include "host/gamemenu.h"
 #include "host/audio.h"
+#include "host/portal.h"
 #include "host/settings.h"
 #include "kernel/video.h"
 
@@ -11,12 +12,18 @@ namespace
     gamemenu::Values g_values;
 }
 
-void gamemenu::Init(const RuntimeSettings& settings, SDL_Window*, const char*)
+void gamemenu::Init(const RuntimeSettings& settings, SDL_Window*, const char* version)
 {
     g_values = { settings.volume, settings.showFps, settings.fullscreen, settings.fpsLimit, settings.resolutionScale,
         settings.anisotropy, settings.vsync, settings.skipIntroMovies };
     g_values.fpsAutoFallback = settings.fpsAutoFallback;
+    g_values.debugScreen = settings.debugScreen;
+    InitDebugScreen(g_gameInfo.name, version);
+    g_values.reduceMotion = settings.reduceMotion;
+    g_values.portalSound = settings.portalSound;
+    g_values.portalSoundShown = PortalGameHasSpeaker();
     HostAudioSetVolume(settings.volume);
+    PortalSetSound(settings.portalSound);
 }
 
 const gamemenu::Values& gamemenu::Current() { return g_values; }
@@ -26,9 +33,20 @@ bool gamemenu::SetVolume(uint32_t percent)
     HostAudioSetVolume(g_values.volume);
     return true;
 }
+bool gamemenu::SetPortalSound(bool on)
+{
+    g_values.portalSound = on;
+    PortalSetSound(on);
+    return true;
+}
 bool gamemenu::SetShowFps(bool on)
 {
     g_values.showFps = on;
+    return true;
+}
+bool gamemenu::SetDebugScreen(bool on)
+{
+    g_values.debugScreen = on;
     return true;
 }
 bool gamemenu::SetFullscreen(bool on)

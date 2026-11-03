@@ -7,6 +7,9 @@
 // (host/gamemenu.h); it takes the input as the Toy Box does.
 // Drawn with Dear ImGui on the CPU (host/imgui_software.h) into one image that gpu::SetOverlay blends over the game.
 #include "host/input.h"
+#include <cstdint>
+#include <string>
+#include <vector>
 
 struct SDL_Window;
 union SDL_Event; // no SDL header: the UWP host includes this file and SDL's headers refuse its API family
@@ -24,6 +27,24 @@ void ToyboxFilterGamepad(GamepadState& state);
 // Main thread, once per frame: runs SKY_TOYBOX_SCRIPT and redraws the menu when it changed.
 void ToyboxUpdate();
 
+// The F3 menu's Commands page waits for a pad button: the main loop then gives ToyboxFilterGamepad the pad as it is (no
+// remapping, no keyboard), so the button pressed is the physical one.
+bool ToyboxWaitsForPadButton();
+
+// The F3 menu, the Toy Box or its wheel is open (including while the Commands page waits for a key or a button): the
+// game does not hold the pointer and gets no click.
+bool ToyboxOverlayOpen();
+// The Commands page waits for a mouse button or a wheel tick: the next click or tick is the page's.
+bool ToyboxWaitsForMouseButton();
+// The Toy Box's keys (SDL scancode names, RuntimeSettings::toyboxKeys: open it, add the next figure, clear the portal) and
+// whether Tab opens it too (toyboxTab). Main thread; the Commands page sets them again when it changes them.
+void ToyboxSetKeys(const std::string (&keys)[3], bool tab);
+// The current wheel hold key, as printed on the player's keyboard (also used by the Toy Box's hints).
+std::string ToyboxWheelKeyName();
+
+// The keyboard as the game's input reads it: SDL_GetKeyboardState, plus the keys SKY_TOYBOX_SCRIPT holds ("hold=K").
+const bool* ToyboxKeyboardState();
+
 // [portal] toybox_auto_open (default on): when the game asks for a figure (its "place a Skylander on the portal" screen),
 // the Toy Box opens by itself on that player's seat; it closes again when the prompt goes away. Emulated portal only.
 void ToyboxSetAutoOpen(bool enabled);
@@ -31,6 +52,14 @@ void ToyboxSetAutoOpen(bool enabled);
 // Any thread: a short message over the game (the Toy Box's toast, 4 s), in English or French by the game's text language.
 // Nothing is shown when the Toy Box is unavailable (no window, or its fonts did not load).
 void ToyboxNotice(const char* english, const char* french);
+
+// Any thread: an achievement unlocked, as a toast with its picture for 6 s: its name (in the game's text language), its
+// points and its picture as the title's PNG (empty: none). Decoded on the main thread, once.
+void ToyboxAchievement(const std::string& name, uint32_t points, std::vector<uint8_t> png);
+
+// SKY_TOYBOX_SCRIPT's "achievement" (test aid) calls `preview`: the achievements' side (kernel/xam_achievements.cpp)
+// announces the title's first achievement as if unlocked, without saving it.
+void ToyboxSetAchievementPreview(void (*preview)());
 
 // A level started (game.cpp NoteLevel): the figures that ran out of health can play again.
 void ToyboxLevelStarted();

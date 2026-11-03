@@ -490,6 +490,26 @@ namespace
 
         // The games' manifests (games/<id>/art.json, built in): a game whose manifest exists is known.
         CHECK(art::Known("ssa") && art::Known("giants") && art::Known("swapforce") && art::Known("trapteam"));
+
+        // A malformed archive: entry sizes and offsets past its end are refused before anything is allocated (they
+        // allocated up to 4 GB, then read zeros), and a compressed entry can't claim more than its chunks can hold.
+        auto corrupt = [&](uint32_t entry, uint32_t word, uint32_t value) {
+            std::vector<uint8_t> bad = MakeIga(igz);
+            PutLe32(bad, 0x34 + 4 * 3 + 12 * entry + 4 * word, value);
+            auto readBad = [bad](uint64_t offset, size_t size, uint8_t* to) {
+                if (offset + size > bad.size())
+                    return false;
+                memcpy(to, bad.data() + offset, size);
+                return true;
+            };
+            auto opened = art::alchemy::IgaArchive::Open(readBad, bad.size());
+            return opened ? opened->Read(entry) : std::vector<uint8_t>{ 1 };
+        };
+        CHECK(corrupt(0, 1, 0x7FFFFFF0).empty()); // stored, 2 GB
+        CHECK(corrupt(0, 1, 0x100000).empty()); // stored, 1 MB: past the end
+        CHECK(corrupt(0, 0, 0x7FFFFFF0).empty()); // offset past the end
+        CHECK(corrupt(1, 1, 0x10000000).empty()); // LZMA, 256 MB out of a 2 KB archive
+        CHECK(corrupt(1, 1, uint32_t(text.size())).size() == text.size()); // the real size still reads
     }
 
     // --- Lux -------------------------------------------------------------------------------------------------------
@@ -513,6 +533,15 @@ namespace
         CHECK(!art::lux::Inflate(Fixed, 20, out)); // cut short
         const uint8_t NotZlib[] = { 0x1F, 0x8B, 0x08, 0x00 };
         CHECK(!art::lux::Inflate(NotZlib, sizeof(NotZlib), out));
+        // The output is bounded (a crafted stream unpacks to 1000 times its size): literals, copies and stored blocks.
+        out.clear();
+        CHECK(art::lux::Inflate(Fixed, sizeof(Fixed), out, expected.size()));
+        out.clear();
+        CHECK(!art::lux::Inflate(Fixed, sizeof(Fixed), out, expected.size() - 1));
+        out.clear();
+        CHECK(!art::lux::Inflate(Fixed, sizeof(Fixed), out, 5));
+        out.clear();
+        CHECK(!art::lux::Inflate(Stored, sizeof(Stored), out, 2));
 
         // An unpacked UI image stream with one record: an APKF package holding an 8x4 DXT5 picture, tiled, its
         // fetch constant after the BaseFlush/MipFlush words, its pixels where the SYHP chunk says.
@@ -559,7 +588,7 @@ namespace
         CHECK(art::lux::UnpackStream(strm, unpacked) && unpacked == stream);
     }
 
-    // --- The rule: the viewed game's picture, else the other's ------------------------------------------------------
+    // --- The rule: the newest cached picture, independent of the viewed game ------------------------------------------------------
 
     void TestPortraitRule(const std::filesystem::path& scratch)
     {
@@ -577,10 +606,10 @@ namespace
             return;
         auto file = [](const std::string& path) { return std::filesystem::path(path).filename().string(); };
         CHECK(file(collection::PortraitPath("giants", *eruptor)) == "eruptor.png");
-        CHECK(file(collection::PortraitPath("ssa", *eruptor)) == "toy_eruptor_hud.png");
+        CHECK(file(collection::PortraitPath("ssa", *eruptor)) == "eruptor.png");
         CHECK(file(collection::PortraitPath("giants", *eruptor, 0x1206)) == "eruptor_lightcore.png");
         CHECK(
-            file(collection::PortraitPath("ssa", *eruptor, 0x1206)) == "toy_eruptor_hud.png"); // the viewed game first
+            file(collection::PortraitPath("ssa", *eruptor, 0x1206)) == "eruptor_lightcore.png"); // variant before plain
         CHECK(file(collection::PortraitPath("ssa", *jetVac)) == "eagle.png"); // else the other's
         bool fromDisc = false;
         collection::Image lightcore =
@@ -970,8 +999,17 @@ void TestDiscLanguages()
     CHECK((art::SplitLanguages("en,,fr,") == V{ "en", "fr" }) && art::SplitLanguages("").empty());
 }
 
+#ifdef SKY_ACCENTS_TEST
+int TestAccentedRuntimePaths(const std::filesystem::path& scratch);
+int AccentedRuntimeCase();
+#endif
+
 int main(int argc, char** argv)
 {
+#ifdef SKY_ACCENTS_TEST
+    if (argc > 1 && strcmp(argv[1], "--accents-case") == 0)
+        return AccentedRuntimeCase();
+#endif
     bool keep = argc > 1 && strcmp(argv[1], "--keep") == 0;
     TestTiling();
     TestDxt();
@@ -982,6 +1020,12 @@ int main(int argc, char** argv)
     TestLux();
     TestIco();
     TestDiscLanguages();
+
+    // A disc whose directory claims 1 TB for every file: refused before allocating (std::bad_alloc ended the launcher).
+    art::Disc huge{ [](const std::string&) -> uint64_t { return 1ull << 40; },
+        [](const std::string&, uint64_t, size_t, uint8_t*) { return false; } };
+    art::Image noLogo;
+    CHECK(!art::ReadLogo("ssa", huge, noLogo));
 
     // Scratch data folder: SKYLANDERS_DATA if set (the harness sets one), else a temporary one.
     std::filesystem::path scratch;
@@ -995,6 +1039,16 @@ int main(int argc, char** argv)
         SetVariable("SKYLANDERS_DATA", datadir::Text(scratch));
     }
     std::filesystem::create_directories(scratch);
+#ifdef SKY_ACCENTS_TEST
+    g_failures += TestAccentedRuntimePaths(scratch);
+    for (const auto* name : { u8"données-é", u8"データ" })
+    {
+        auto folder = scratch / "accented-portraits" / std::filesystem::path(name);
+        TestPortraitRule(folder);
+        std::filesystem::remove_all(folder);
+        CHECK(!std::filesystem::exists(folder));
+    }
+#endif
     TestPortraitRule(scratch);
     if (const char* iso = getenv("SSA_ISO"); iso != nullptr && *iso)
         TestDisc("ssa", iso, 70);

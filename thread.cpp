@@ -4,6 +4,9 @@
 #include "platform/platform.h"
 #include <atomic>
 #include <cstdio>
+#include <deque>
+#include <map>
+#include <mutex>
 
 namespace
 {
@@ -27,6 +30,68 @@ namespace
     };
 
     std::atomic<uint32_t> g_nextThreadId{ 1 };
+
+    // KPCR fields read by game code through r13.
+    constexpr uint32_t PcrTlsPointer = 0x0;
+    constexpr uint32_t PcrSelf = 0x30;
+    constexpr uint32_t PcrStackBase = 0x70;
+    constexpr uint32_t PcrStackLimit = 0x74;
+    constexpr uint32_t PcrCurrentThread = 0x100;
+    constexpr uint32_t PcrCurrentCpu = 0x10C;
+    constexpr uint32_t PcrSize = 0x2D8;
+
+    constexpr uint32_t KThreadThreadId = 0x14C;
+    constexpr uint32_t KThreadSize = 0xAB0;
+
+    // A thread's guest blocks come from the system heap, which never frees: about 1000 stacks filled it. A thread that
+    // ends gives them back here, and a new thread with the same stack size takes them. Its KTHREAD is reused only after
+    // QuarantinedBlocks other threads of that size have ended: a title may still wait on the KTHREAD of a thread that
+    // just ended (ObReferenceObjectByHandle), and must see that thread, not a new one.
+    struct ThreadBlocks
+    {
+        uint32_t pcr, kthread, tls, stack;
+    };
+    constexpr size_t QuarantinedBlocks = 8;
+    std::mutex g_blocksLock;
+    std::map<uint32_t, std::deque<ThreadBlocks>> g_endedBlocks; // stack size -> blocks, oldest first
+
+    uint32_t TlsSize() { return g_module.tlsDataSize + g_module.tlsSlotCount * 4; }
+
+    ThreadBlocks TakeBlocks(uint32_t stackSize)
+    {
+        ThreadBlocks blocks{};
+        bool reused = false;
+        {
+            std::lock_guard lock(g_blocksLock);
+            auto ended = g_endedBlocks.find(stackSize);
+            if (ended != g_endedBlocks.end() && ended->second.size() > QuarantinedBlocks)
+            {
+                blocks = ended->second.front();
+                ended->second.pop_front();
+                reused = true;
+            }
+        }
+        if (reused)
+        {
+            // As SystemAlloc gives them: zeroed.
+            memset(g_memory.Translate(blocks.pcr), 0, PcrSize);
+            memset(g_memory.Translate(blocks.kthread), 0, KThreadSize);
+            memset(g_memory.Translate(blocks.tls), 0, TlsSize());
+            memset(g_memory.Translate(blocks.stack), 0, stackSize);
+            return blocks;
+        }
+        blocks.pcr = g_memory.SystemAlloc(PcrSize);
+        blocks.kthread = g_memory.SystemAlloc(KThreadSize);
+        blocks.tls = g_memory.SystemAlloc(TlsSize());
+        blocks.stack = g_memory.SystemAlloc(stackSize, 0x1000);
+        return blocks;
+    }
+
+    void GiveBackBlocks(const GuestThreadContext& context)
+    {
+        std::lock_guard lock(g_blocksLock);
+        g_endedBlocks[context.stackSize].push_back({ context.pcr, context.kthread, context.tls, context.stack });
+    }
 
     void HostThreadMain(const StartInfo* info)
     {
@@ -55,7 +120,7 @@ namespace
         uint32_t exitCode;
         try
         {
-            (PPC_LOOKUP_FUNC(g_memory.base, function))(ctx, g_memory.base);
+            CallGuest(ctx, function);
             exitCode = ctx.r3.u32;
         }
         catch (const ThreadExit& exit)
@@ -69,33 +134,27 @@ namespace
             thread.exitCode = exitCode;
             thread.SyncHeader();
             thread.WakeSleepers();
+            // Still under the lock: once a waiter sees the exit, the blocks are free. A later wait on this thread's handle
+            // no longer mirrors its state into the KTHREAD, which another thread may have by then.
+            thread.header = 0;
+            GiveBackBlocks(*thread.context);
         }
     }
-    // KPCR fields read by game code through r13.
-    constexpr uint32_t PcrTlsPointer = 0x0;
-    constexpr uint32_t PcrSelf = 0x30;
-    constexpr uint32_t PcrStackBase = 0x70;
-    constexpr uint32_t PcrStackLimit = 0x74;
-    constexpr uint32_t PcrCurrentThread = 0x100;
-    constexpr uint32_t PcrCurrentCpu = 0x10C;
-    constexpr uint32_t PcrSize = 0x2D8;
-
-    constexpr uint32_t KThreadThreadId = 0x14C;
-    constexpr uint32_t KThreadSize = 0xAB0;
 }
 
-GuestThreadContext::GuestThreadContext(uint32_t stackSize, uint32_t threadId, uint8_t cpu)
+GuestThreadContext::GuestThreadContext(uint32_t stackBytes, uint32_t threadId, uint8_t cpu) : stackSize(stackBytes)
 {
-    pcr = g_memory.SystemAlloc(PcrSize);
-    kthread = g_memory.SystemAlloc(KThreadSize);
+    ThreadBlocks blocks = TakeBlocks(stackSize);
+    pcr = blocks.pcr;
+    kthread = blocks.kthread;
+    tls = blocks.tls;
+    stack = blocks.stack;
 
     // __declspec(thread) data (initialised from .tls) is addressed directly from the TLS pointer;
     // the dynamic slots follow it.
-    uint32_t tls = g_memory.SystemAlloc(g_module.tlsDataSize + g_module.tlsSlotCount * 4);
     memcpy(g_memory.Translate(tls), g_memory.Translate(g_module.tlsRawData), g_module.tlsRawDataSize);
     tlsSlots = tls + g_module.tlsDataSize;
 
-    uint32_t stack = g_memory.SystemAlloc(stackSize, 0x1000);
     uint32_t stackTop = stack + stackSize;
 
     g_memory.Write<uint32_t>(pcr + PcrTlsPointer, tls);
@@ -115,7 +174,7 @@ std::shared_ptr<GuestThread> CreateGuestThread(
 {
     auto thread = std::make_shared<GuestThread>();
     thread->id = g_nextThreadId++;
-    thread->context = new GuestThreadContext(stackSize, thread->id, cpu);
+    thread->context = std::make_unique<GuestThreadContext>(stackSize, thread->id, cpu);
     thread->suspendCount = suspended ? 1 : 0;
 
     // Waits on the KTHREAD (KeWaitForSingleObject) resolve to this object.
@@ -162,7 +221,7 @@ void DeliverUserApcs(PPCContext& ctx, GuestThread& thread)
         ctx.r3.u64 = apc.context;
         ctx.r4.u64 = apc.argument1;
         ctx.r5.u64 = apc.argument2;
-        (PPC_LOOKUP_FUNC(g_memory.base, apc.routine))(ctx, g_memory.base);
+        CallGuest(ctx, apc.routine);
         ctx = saved;
     }
 }

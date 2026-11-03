@@ -51,7 +51,8 @@ namespace
         if (g_loaded)
             return;
         g_loaded = true;
-        g_list = achievements::Read(g_disc.ReadAll("default.xex"), achievements::XdbfLanguage(TextLanguage()), false);
+        // With the pictures: an unlock's toast shows its own (a few kilobytes each, read once).
+        g_list = achievements::Read(g_disc.ReadAll("default.xex"), achievements::XdbfLanguage(TextLanguage()), true);
         g_folder = progress::Folder(SSA_GAME_ID);
         if (!g_folder.empty())
             g_unlocks = progress::ReadUnlocks(g_folder);
@@ -185,14 +186,17 @@ namespace
         }
     };
 
-    void Announce(const achievements::Info& info)
+    void Announce(const achievements::Info& info) { ToyboxAchievement(info.name, info.gamerscore, info.imagePng); }
+
+    // SKY_TOYBOX_SCRIPT's "achievement" (test aid): the title's first achievement announced as if unlocked; nothing is saved.
+    void Preview()
     {
-        std::string english = "Achievement unlocked: " + info.name;
-        std::string french = "Succ\xC3\xA8s d\xC3\xA9"
-                             "bloqu\xC3\xA9 : " +
-                             info.name;
-        ToyboxNotice(english.c_str(), french.c_str());
+        std::lock_guard lock(g_lock);
+        LoadLocked();
+        if (!g_list.items.empty())
+            Announce(g_list.items.front());
     }
+    [[maybe_unused]] const bool g_previewSet = (ToyboxSetAchievementPreview(Preview), true);
 }
 
 // XMsgStartIORequest(app, message, XOVERLAPPED*, buffer, buffer size). Requests to the music player go through the

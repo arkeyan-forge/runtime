@@ -141,6 +141,10 @@ namespace collection
     // Renames the dump (and its metadata and backups). `file` is a bare file name; the extension is kept if missing.
     bool Rename(const std::string& path, const std::string& file, std::string* error = nullptr);
 
+    // A label as it is kept: control characters dropped, the ends trimmed, cut to MaxLabelBytes at a character.
+    constexpr size_t MaxLabelBytes = 64;
+    std::string CleanLabel(const std::string& text);
+    // The label cleaned (CleanLabel); empty clears it.
     bool SetLabel(const std::string& path, const std::string& label);
     bool SetFavourite(const std::string& path, bool favourite);
     // One of the toy's same-tag editions by name (or any text with `kind`); empty clears it.
@@ -150,13 +154,15 @@ namespace collection
     // The figures a game took last, newest first, at most `count` paths.
     std::vector<std::string> Recent(const std::string& game, size_t count);
 
-    // backups/<file>/<UTC date and time>.sky. Returns the backup's path, empty on failure.
+    // backups/<file>/<UTC date and time>.sky. Returns the backup's path, empty on failure. The backups follow the figure:
+    // Rename moves them, Delete takes them to the trash with it and Undelete brings them back.
     std::string Backup(const std::string& path);
-    // Newest first.
+    // Newest first; only the copies of this figure (the same toy type and serial).
     std::vector<std::string> Backups(const std::string& path);
     // Keeps the newest `keep` backups of the dump. Returns how many were removed.
     int PruneBackups(const std::string& path, size_t keep = 10);
-    // Puts a backup's bytes back (the current dump is backed up first). Refused while another process uses it.
+    // Puts a backup's bytes back (the current dump is backed up first). Refused while another process uses it, and for a
+    // backup of another toy type or serial.
     bool Restore(const std::string& path, const std::string& backup, std::string* error = nullptr);
     // Clears both progress areas (the game starts the figure anew); serial, toy and variant stay. Backed up first.
     bool ResetToNew(const std::string& path, std::string* error = nullptr);
@@ -214,9 +220,11 @@ namespace collection
     // starter file name ("<type> <name>.sky"), plain variant, and nothing the player did (no origin, label, favourite,
     // edition). The player's own figures are every other dump.
     bool UntouchedStarter(const Figure& figure);
-    std::vector<std::string> UntouchedStarters();
-    // Moves the untouched starters to the trash (reason "tidy") and remembers it was done. Returns how many.
-    int Tidy();
+    // Those not in `keep` (the paths of the figures on a seat).
+    std::vector<std::string> UntouchedStarters(const std::vector<std::string>& keep = {});
+    // Moves the untouched starters, but those in `keep`, to the trash (reason "tidy") and remembers it was done. Returns
+    // how many.
+    int Tidy(const std::vector<std::string>& keep = {});
     // Whether Tidy ran once in this collection (the one-time message after the update).
     bool TidyDone();
 
@@ -245,15 +253,18 @@ namespace collection
     struct ImportReport
     {
         int added = 0, duplicates = 0, invalid = 0;
+        int sameToy = 0; // among the added: dumps with the serial of another dump already in the collection
         std::vector<std::string> paths; // the new dumps
         std::vector<uint16_t> unknown; // toy types the catalogue does not know, among the new dumps
     };
-    // Dumps (files, or every dump of a folder): each must be a 1 KB tag; byte-for-byte copies of a dump already in the
-    // collection are skipped. New ones get origin "imported".
+    // Dumps (files, or every dump of a folder): each must be a 1 KB tag in a plain file of at most 1 MB; byte-for-byte
+    // copies of a dump already in the collection are skipped. New ones are written whole or not at all and get origin
+    // "imported". A dump with the serial of one already there (the same toy, other progress) is added and counted in sameToy.
     ImportReport Import(const std::vector<std::string>& paths);
     // Keeps a dump of a real toy (what the title read from it): origin "portal"; an identical dump is not copied twice.
     std::string ImportTag(const FigureData& tag, std::string* error = nullptr);
-    // Copies dumps into `folder` (created). Returns how many.
+    // Copies dumps into `folder` (created). A file already there is kept: the same bytes count as copied, else the copy
+    // takes a free name (" (2)"). Returns how many.
     int Export(const std::vector<std::string>& paths, const std::string& folder);
 
     // --- Views and the wheel (collection.json "views") ------------------------------------------------------------------

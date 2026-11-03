@@ -22,6 +22,9 @@ uint8_t* PlatformReserveMemory(size_t size);
 // Makes the page-aligned range inaccessible: any access faults.
 bool PlatformProtectNoAccess(void* address, size_t size);
 
+// Makes the page-aligned range read-only (a write faults), or readable and writable again.
+bool PlatformProtectReadOnly(void* address, size_t size, bool readOnly);
+
 // Runs `body` on a new detached host thread with a stack of `stackSize` bytes.
 void PlatformStartThread(size_t stackSize, std::function<void()> body);
 

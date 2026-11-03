@@ -702,7 +702,8 @@ namespace glyphs
         }
 
         // RGBA8 levels of an atlas: the guest's base level with each cell (and a pixel around it, the original's soft edge)
-        // cleared and redrawn.
+        // cleared and redrawn (`over`, a model's texture: drawn over the game's pixels instead), upside down when the
+        // texture is.
         std::vector<std::vector<uint32_t>> DrawAtlas(const Texture& atlas, Style style,
             const std::vector<uint32_t>& base, uint32_t width, uint32_t height, uint32_t levels)
         {
@@ -718,17 +719,25 @@ namespace glyphs
             {
                 if (cell.x1 >= width || cell.y1 >= height)
                     continue;
-                for (uint32_t y = cell.y0 > 0 ? cell.y0 - 1u : 0u; y <= std::min<uint32_t>(cell.y1 + 1u, height - 1);
-                    y++)
-                    for (uint32_t x = cell.x0 > 0 ? cell.x0 - 1u : 0u; x <= std::min<uint32_t>(cell.x1 + 1u, width - 1);
-                        x++)
-                        std::fill_n(&canvas.pixels[(size_t(y) * width + x) * 4], 4, 0.0f);
+                if (!atlas.over)
+                    for (uint32_t y = cell.y0 > 0 ? cell.y0 - 1u : 0u;
+                        y <= std::min<uint32_t>(cell.y1 + 1u, height - 1); y++)
+                        for (uint32_t x = cell.x0 > 0 ? cell.x0 - 1u : 0u;
+                            x <= std::min<uint32_t>(cell.x1 + 1u, width - 1); x++)
+                            std::fill_n(&canvas.pixels[(size_t(y) * width + x) * 4], 4, 0.0f);
                 Canvas glyph(cell.x1 - cell.x0 + 1u, cell.y1 - cell.y0 + 1u);
                 Paint(glyph, cell.glyph, style, true);
                 for (uint32_t y = 0; y < glyph.height; y++)
+                {
+                    uint32_t row = cell.y0 + (atlas.flipped ? glyph.height - 1 - y : y);
                     for (uint32_t x = 0; x < glyph.width; x++)
-                        std::copy_n(&glyph.pixels[(size_t(y) * glyph.width + x) * 4], 4,
-                            &canvas.pixels[(size_t(cell.y0 + y) * width + cell.x0 + x) * 4]);
+                    {
+                        const float* from = &glyph.pixels[(size_t(y) * glyph.width + x) * 4];
+                        float* to = &canvas.pixels[(size_t(row) * width + cell.x0 + x) * 4];
+                        for (int c = 0; c < 4; c++) // premultiplied "over" (the cleared cell: a copy)
+                            to[c] = from[c] + to[c] * (1 - from[3]);
+                    }
+                }
             }
             std::vector<std::vector<uint32_t>> out = Levels(std::move(canvas), levels);
             // Outside the cells every level stays the game's, its colour under alpha 0 too: Trap Team's hints take their
@@ -1255,5 +1264,15 @@ namespace glyphs
             gpu::UploadTexture(texture, image[level].data(), std::max(width >> level, 1u) * 4, level);
         hostHash = wanted;
         return true;
+    }
+
+    bool HidesDraw(uint32_t count, const void* indices)
+    {
+        return g_fontLoaded && HidesDraw(game::Current().glyphTextures, Current(), count, indices);
+    }
+
+    int UvMatrix(uint64_t vertexShader, std::span<const uint64_t> glyphHashes)
+    {
+        return UvMatrix(game::Current().glyphTextures, vertexShader, glyphHashes);
     }
 }

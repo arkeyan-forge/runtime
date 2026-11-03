@@ -1,4 +1,5 @@
 #include "vfs.h"
+#include "host/collection/portable_pack.h"
 #include <algorithm>
 #include <cstring>
 #include <filesystem>
@@ -69,6 +70,31 @@ bool DiscFileSystem::OpenFolder(const char* path)
     return !error && Find("default.xex") != nullptr;
 }
 
+// The game/ files of a portable's pack, read through one handle like an image; the folders are the files' parents.
+bool DiscFileSystem::OpenPack(const char* path)
+{
+    std::vector<portable::Entry> entries;
+    if (!portable::ReadIndex(FromUtf8(path), entries))
+        return false;
+    m_entries[""] = { 0, 0, true, "", "" };
+    for (const portable::Entry& entry : entries)
+    {
+        if (!entry.name.starts_with(portable::GamePrefix) || entry.size > UINT32_MAX)
+            continue;
+        std::string relative = Normalize(entry.name.substr(std::strlen(portable::GamePrefix)));
+        for (size_t slash = relative.find('/'); slash != std::string::npos; slash = relative.find('/', slash + 1))
+        {
+            std::string folder = relative.substr(0, slash);
+            m_entries.try_emplace(folder, Entry{ 0, 0, true, folder.substr(folder.rfind('/') + 1), "" });
+        }
+        m_entries[relative] = { entry.offset, uint32_t(entry.size), false, relative.substr(relative.rfind('/') + 1),
+            "" };
+    }
+    m_file = PlatformOpenFile(path);
+    m_pack = true;
+    return m_file != InvalidPlatformFile && Find("default.xex") != nullptr;
+}
+
 bool DiscFileSystem::Open(const char* isoPath)
 {
     if (m_file != InvalidPlatformFile)
@@ -76,9 +102,17 @@ bool DiscFileSystem::Open(const char* isoPath)
     m_file = InvalidPlatformFile;
     m_entries.clear();
     m_folder = false;
+    m_pack = false;
     std::error_code directoryError;
     if (fs::is_directory(FromUtf8(isoPath), directoryError))
         return OpenFolder(isoPath);
+    if (OpenPack(isoPath))
+        return true;
+    if (m_file != InvalidPlatformFile)
+        PlatformCloseFile(m_file);
+    m_file = InvalidPlatformFile;
+    m_entries.clear();
+    m_pack = false;
     m_file = PlatformOpenFile(isoPath);
     if (m_file == InvalidPlatformFile)
         return false;
@@ -100,10 +134,14 @@ bool DiscFileSystem::Open(const char* isoPath)
     return false;
 }
 
-void DiscFileSystem::IndexDirectory(uint32_t sector, uint32_t size, const std::string& prefix)
+void DiscFileSystem::IndexDirectory(uint32_t sector, uint32_t size, const std::string& prefix, int depth)
 {
+    // A damaged or crafted image: a directory far larger than any disc's, or one that leads back into itself.
+    if (size > MaxDirectorySize || depth > MaxDirectoryDepth)
+        return;
     std::vector<uint8_t> data(size);
-    PlatformReadFile(m_file, data.data(), size, m_partition + uint64_t(sector) * SectorSize);
+    if (PlatformReadFile(m_file, data.data(), size, m_partition + uint64_t(sector) * SectorSize) != size)
+        return; // past the end of a truncated image
 
     // Entries form a binary tree: left/right subtree offsets in dwords, 0xFFFF marks unused space.
     std::vector<uint32_t> pending{ 0 };
@@ -126,13 +164,15 @@ void DiscFileSystem::IndexDirectory(uint32_t sector, uint32_t size, const std::s
         memcpy(&entrySize, &data[offset + 8], 4);
         uint8_t attributes = data[offset + 12];
         uint8_t nameLength = data[offset + 13];
+        if (offset + 14 + nameLength > size)
+            continue;
 
         std::string name(reinterpret_cast<char*>(&data[offset + 14]), nameLength);
         std::string path = Normalize(prefix + name);
         bool directory = attributes & DirectoryAttribute;
         m_entries[path] = { m_partition + uint64_t(entrySector) * SectorSize, entrySize, directory, name, "" };
         if (directory && entrySize != 0)
-            IndexDirectory(entrySector, entrySize, path + "/");
+            IndexDirectory(entrySector, entrySize, path + "/", depth + 1);
 
         if (left != 0)
             pending.push_back(left * 4u);

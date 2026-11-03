@@ -1,4 +1,5 @@
 #include "host/log.h"
+#include "host/runtime_names.h"
 #include "host/settings.h"
 #include "env.h"
 #include "collection/datadir.h"
@@ -161,7 +162,7 @@ void LogInit()
     {
         std::error_code error;
         std::filesystem::create_directories(folder, error);
-        g_path = datadir::Text(folder / "SSARecomp.log");
+        g_path = datadir::Text(folder / runtime_names::Log);
     }
     if (g_path.empty())
         return;
@@ -195,9 +196,23 @@ void LogInit()
 void LogHeader(const RuntimeSettings& settings)
 {
     fprintf(stderr, "[log] %s\n", g_path.empty() ? "no log file" : g_path.c_str());
-    fprintf(stderr, "[version] SSARecomp %s, build %s\n", SSA_VERSION, SSA_BUILD);
-    fprintf(stderr, "[system] %s\n", OsName().c_str());
-    fprintf(stderr, "[system] CPU %s, %d logical cores, AVX %s, AVX2 %s; %d MB RAM\n", CpuName().c_str(),
+    fprintf(stderr, "[version] ArkeyanRuntime %s, build %s\n", SSA_VERSION, SSA_BUILD);
+    fprintf(stderr, "[system] %s\n", SystemOsName());
+    fprintf(stderr, "[system] CPU %s, %d logical cores, AVX %s, AVX2 %s; %d MB RAM\n", SystemCpuName(),
         SDL_GetNumLogicalCPUCores(), SDL_HasAVX() ? "yes" : "no", SDL_HasAVX2() ? "yes" : "no", SDL_GetSystemRAM());
     fprintf(stderr, "[settings] %s\n", DescribeSettings(settings).c_str());
+}
+
+const char* LogBuild() { return SSA_BUILD; }
+
+const char* SystemOsName()
+{
+    static const std::string name = OsName();
+    return name.c_str();
+}
+
+const char* SystemCpuName()
+{
+    static const std::string name = CpuName();
+    return name.c_str();
 }

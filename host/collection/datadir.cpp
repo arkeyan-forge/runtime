@@ -132,7 +132,7 @@ namespace datadir
         return folder / "data";
     }
 
-    fs::path ProgramFolder()
+    fs::path ProgramPath()
     {
         fs::path program;
 #if defined(_WIN32)
@@ -154,7 +154,14 @@ namespace datadir
         if (program.empty())
             return {};
         std::error_code error;
-        program = fs::weakly_canonical(program, error);
+        return fs::weakly_canonical(program, error);
+    }
+
+    fs::path ProgramFolder()
+    {
+        const fs::path program = ProgramPath();
+        if (program.empty())
+            return {};
         fs::path folder = program.parent_path();
         // <folder>/Launcher.app/Contents/MacOS/Launcher: beside the .app.
         if (folder.filename() == "MacOS" && folder.parent_path().filename() == "Contents" &&

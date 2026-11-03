@@ -44,3 +44,30 @@ extern "C" void SsaBadIndirectCall(PPCContext& ctx, uint8_t* base, uint32_t targ
     }
     ctx.r3.u64 = 0;
 }
+
+bool GuestCodeAddress(uint32_t target)
+{
+    // The rotate moves the two alignment bits to the top, so a misaligned target is out of range too.
+    return __builtin_rotateright32(target - uint32_t(PPC_CODE_BASE), 2) < uint32_t(PPC_CODE_SIZE / 4);
+}
+
+bool CallGuest(PPCContext& ctx, uint32_t target)
+{
+    if (__builtin_expect(GuestCodeAddress(target), 1))
+    {
+        (PPC_LOOKUP_FUNC(g_memory.base, target))(ctx, g_memory.base);
+        return true;
+    }
+
+    static std::mutex lock;
+    static std::unordered_set<uint32_t> seen;
+    bool first;
+    {
+        std::lock_guard guard(lock);
+        first = seen.insert(target).second;
+    }
+    if (first)
+        fprintf(stderr, "[guard] host call to 0x%08X refused: outside the recompiled code\n", target);
+    ctx.r3.u64 = 0;
+    return false;
+}

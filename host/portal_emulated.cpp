@@ -11,6 +11,7 @@ namespace
     // 'A' answer after the activation state: battery level (wired portals report full) and a constant.
     constexpr uint8_t BatteryFull = 0xFF;
     constexpr uint8_t ActivateTrailer = 0x77;
+    constexpr uint8_t SpeakerTrailer = 0x19;
     // Second byte of 'Q'/'W' answers: block count in the high nibble, slot in the low nibble; 0x01 means failure.
     constexpr uint8_t OneBlock = 0x10;
     constexpr uint8_t Failure = 0x01;
@@ -146,6 +147,13 @@ bool EmulatedPortal::Write(const uint8_t* command, size_t size)
         m_lightCommands++;
         return true;
 
+    case 'M':
+        // The speaker, on or off. Trap Team stops reading figures until this is answered, which it asks for as soon
+        // as a trap speaks.
+        response[1] = size > 1 ? command[1] : uint8_t(0);
+        response[3] = SpeakerTrailer;
+        break;
+
     case 'Q':
     case 'W':
     {
@@ -175,7 +183,7 @@ bool EmulatedPortal::Write(const uint8_t* command, size_t size)
     }
 
     default:
-        // Later games' commands (J, L, M, V: lights, speaker) are not known to be used by Spyro's Adventure or Giants:
+        // Later games' commands (J, L, V: lights) are not known to be used by Spyro's Adventure or Giants:
         // logged once each, so that a new one shows up.
         if (!m_unknownSeen[command[0]])
         {

@@ -116,6 +116,8 @@ namespace
     constexpr uint16_t ActivisionVendor = 0x1430;
 
     constexpr uint8_t Xbox360Header[2] = { 0x0B, 0x14 };
+    // The speaker's sound blocks on the Xbox 360 portal: the console's own reports, header included (host/portal_speaker.h).
+    constexpr uint8_t Xbox360SoundHeader[2] = { 0x0B, 0x17 };
 
     // GIP framing: command, options, sequence, LEB128 payload length, payload.
     constexpr uint8_t GipAcknowledge = 0x01;
@@ -218,6 +220,21 @@ namespace
             uint8_t packet[PortalReportSize]{};
             memcpy(packet, Xbox360Header, sizeof(Xbox360Header));
             memcpy(packet + sizeof(Xbox360Header), command, std::min(size, sizeof(packet) - sizeof(Xbox360Header)));
+            return Transfer(m_interface.out, packet, sizeof(packet));
+        }
+
+        // The Xbox 360 portal takes the blocks as the console sends them. The Xbox One portal's sound message is not
+        // known: the computer plays the sound there.
+        bool TakesSound() override { return m_handle != nullptr && m_framing == Framing::Xbox360; }
+
+        bool WriteSound(const uint8_t* block, size_t size) override
+        {
+            if (!TakesSound())
+                return false;
+            uint8_t packet[PortalReportSize]{};
+            memcpy(packet, Xbox360SoundHeader, sizeof(Xbox360SoundHeader));
+            memcpy(packet + sizeof(Xbox360SoundHeader), block,
+                std::min(size, sizeof(packet) - sizeof(Xbox360SoundHeader)));
             return Transfer(m_interface.out, packet, sizeof(packet));
         }
 

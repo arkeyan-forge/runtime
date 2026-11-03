@@ -1,5 +1,5 @@
 // The kernel side of the achievements (kernel/xam_achievements.cpp) without a game: the calls a title makes, run on a fake
-// guest context against the player's disc. A title writes an unlock, the Toy Box notice is raised, the enumeration shows
+// guest context against the player's disc. A title writes an unlock, the Toy Box's toast is raised (name, points, picture), the enumeration shows
 // it; a second process, "after a restart", enumerates it again from the data folder. Scratch folders only (SKY_SAVE_DIR).
 //   SSAAchievementsKernelTest <game disc .iso>             Exit code 0 = pass.
 #include "kernel/objects.h"
@@ -23,7 +23,16 @@ void __imp__XamEnumerate(PPCContext& ctx, uint8_t* base);
 namespace fs = std::filesystem;
 
 std::string g_lastNotice;
+size_t g_lastPicture;
+uint32_t g_lastPoints;
 void ToyboxNotice(const char* english, const char*) { g_lastNotice = english; }
+void ToyboxAchievement(const std::string& name, uint32_t points, std::vector<uint8_t> png)
+{
+    g_lastNotice = name;
+    g_lastPoints = points;
+    g_lastPicture = png.size();
+}
+void ToyboxSetAchievementPreview(void (*)()) {}
 std::string_view TextLanguage() { return "en"; }
 // The test passes no XOVERLAPPED, so no call completes asynchronously.
 std::shared_ptr<GuestThread> CurrentGuestThread(uint32_t) { return nullptr; }
@@ -149,7 +158,8 @@ int main(int argc, char** argv)
               Enumerate(1, 2).front().id == list.items[1].id); // start index and count
 
         WriteUnlock(third);
-        CHECK(g_lastNotice == "Achievement unlocked: " + list.items[2].name);
+        // The toast: the name, the points and the picture of the title's list.
+        CHECK(g_lastNotice == list.items[2].name && g_lastPoints == list.items[2].gamerscore && g_lastPicture > 0);
         g_lastNotice.clear();
         WriteUnlock(third); // again: kept once, no second notice
         CHECK(g_lastNotice.empty());

@@ -11,8 +11,10 @@
 
 namespace art::lux
 {
-    // zlib stream (RFC 1950/1951) -> bytes; false if malformed.
-    bool Inflate(const uint8_t* data, size_t size, std::vector<uint8_t>& out);
+    // zlib stream (RFC 1950/1951) -> bytes; false if malformed or if it would unpack to more than `limit` bytes (a
+    // crafted stream reaches 1000 times its size).
+    constexpr size_t InflateLimit = size_t(512) << 20;
+    bool Inflate(const uint8_t* data, size_t size, std::vector<uint8_t>& out, size_t limit = InflateLimit);
     // "strm" file: 'strm', BE32 file size, BE32 1, BE32 1, BE32 record count, then one zlib stream -> its contents.
     bool UnpackStream(const std::vector<uint8_t>& file, std::vector<uint8_t>& out);
 

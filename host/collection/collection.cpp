@@ -3,21 +3,29 @@
 #include "json.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <filesystem>
 #include <map>
 #include "../env.h"
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+#include <cerrno>
+#include <fcntl.h>
+#include <io.h>
+#include <process.h>
+#include <sys/stat.h>
 #include <windows.h>
 #else
 #include <cerrno>
 #include <csignal>
+#include <fcntl.h>
 #include <unistd.h>
 #endif
 
@@ -87,6 +95,19 @@ namespace collection
 
         bool Exists(const std::string& path) { return SDL_GetPathInfo(path.c_str(), nullptr); }
 
+        // A tag image is 1 KB; some tools keep their own data after it. Nothing bigger than this is a dump.
+        constexpr uint64_t MaxDumpFile = 1 << 20;
+
+        // Whether `path` is a plain file (not a directory, a pipe or a device), and its size.
+        bool PlainFile(const std::string& path, uint64_t& size)
+        {
+            SDL_PathInfo info;
+            if (!SDL_GetPathInfo(path.c_str(), &info) || info.type != SDL_PATHTYPE_FILE)
+                return false;
+            size = uint64_t(info.size);
+            return true;
+        }
+
         bool LoadBytes(const std::string& path, std::string& bytes)
         {
             size_t size = 0;
@@ -98,35 +119,88 @@ namespace collection
             return true;
         }
 
+        // A dump or a copy of one: a plain file of at most `limit` bytes.
+        bool LoadBounded(const std::string& path, std::string& bytes, uint64_t limit = MaxDumpFile)
+        {
+            uint64_t size = 0;
+            return PlainFile(path, size) && size <= limit && LoadBytes(path, bytes);
+        }
+
         bool LoadDump(const std::string& path, FigureData& tag)
         {
-            std::string bytes;
-            if (!LoadBytes(path, bytes) || bytes.size() < tag.size())
+            uint64_t size = 0;
+            if (!PlainFile(path, size) || size < tag.size())
                 return false;
-            memcpy(tag.data(), bytes.data(), tag.size());
-            return true;
-        }
-
-        // In place, the first 1 KB only: some tools keep their own data after the tag image.
-        bool SaveDump(const std::string& path, const FigureData& tag)
-        {
-            SDL_IOStream* file = SDL_IOFromFile(path.c_str(), "r+b");
+            SDL_IOStream* file = SDL_IOFromFile(path.c_str(), "rb");
             if (file == nullptr)
                 return false;
-            bool written = SDL_WriteIO(file, tag.data(), tag.size()) == tag.size();
-            return SDL_CloseIO(file) && written;
+            bool read = SDL_ReadIO(file, tag.data(), tag.size()) == tag.size();
+            SDL_CloseIO(file);
+            return read;
         }
 
-        // Write to a temporary file and rename it over, so readers never see half a file.
+        bool SaveAtomically(const std::string& path, const std::string& text);
+
+        // The first 1 KB only, the rest of the file as it was (some tools keep their own data after the tag image).
+        bool SaveDump(const std::string& path, const FigureData& tag)
+        {
+            std::string bytes;
+            if (!LoadBounded(path, bytes) || bytes.size() < tag.size())
+                return false;
+            memcpy(bytes.data(), tag.data(), tag.size());
+            return SaveAtomically(path, bytes);
+        }
+
+        // Write to a temporary file and rename it over, so readers never see half a file. The temporary is created by this
+        // writer alone: a stale one, a link left in its place or another process's write is never opened.
         bool SaveAtomically(const std::string& path, const std::string& text)
         {
-            std::string temporary = path + ".tmp";
-            if (!SDL_SaveFile(temporary.c_str(), text.data(), text.size()))
+            static std::atomic<unsigned> serial{ 0 };
+            const std::filesystem::path target = datadir::FromText(path);
+            std::filesystem::path temporary;
+            int fd = -1;
+            for (int attempt = 0; attempt < 100 && fd < 0; attempt++)
+            {
+                temporary = target;
+#ifdef _WIN32
+                temporary += ".tmp." + std::to_string(_getpid()) + "." + std::to_string(serial++);
+                fd = _wopen(temporary.c_str(), _O_WRONLY | _O_CREAT | _O_EXCL | _O_BINARY, _S_IREAD | _S_IWRITE);
+#else
+                temporary += ".tmp." + std::to_string(getpid()) + "." + std::to_string(serial++);
+                fd = open(temporary.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
+#endif
+                if (fd < 0 && errno != EEXIST)
+                    return false;
+            }
+            if (fd < 0)
                 return false;
-            if (SDL_RenamePath(temporary.c_str(), path.c_str()))
-                return true;
-            SDL_RemovePath(temporary.c_str());
-            return false;
+#ifdef _WIN32
+            FILE* file = _fdopen(fd, "wb");
+#else
+            FILE* file = fdopen(fd, "wb");
+#endif
+            bool written = false;
+            if (file != nullptr)
+            {
+                written = fwrite(text.data(), 1, text.size(), file) == text.size();
+                written = fclose(file) == 0 && written;
+            }
+#ifdef _WIN32
+            else
+                _close(fd);
+#else
+            else
+                close(fd);
+#endif
+            std::error_code error;
+            if (written)
+                std::filesystem::rename(temporary, target, error);
+            if (!written || error)
+            {
+                std::filesystem::remove(temporary, error);
+                return false;
+            }
+            return true;
         }
 
         Json LoadJson(const std::string& path)
@@ -230,29 +304,61 @@ namespace collection
             return names;
         }
 
-        // "<stem><suffix><ext>" with " (2)", " (3)"... until no such file exists in the collection.
-        std::string FreeName(const std::string& wanted)
+        // "<stem><suffix><ext>" with " (2)", " (3)"... until no such file exists in `folder`.
+        std::string FreeNameIn(const std::string& folder, const std::string& wanted)
         {
             size_t dot = wanted.find_last_of('.');
             std::string stem = dot == std::string::npos ? wanted : wanted.substr(0, dot);
             std::string extension = dot == std::string::npos ? ".sky" : wanted.substr(dot);
             std::string name = stem + extension;
-            for (int n = 2; Exists(PathOf(name)); n++)
+            for (int n = 2; Exists(folder + "/" + name); n++)
                 name = stem + " (" + std::to_string(n) + ")" + extension;
             return name;
         }
 
-        // Characters file systems refuse, and a leading dot, replaced.
+        std::string FreeName(const std::string& wanted) { return FreeNameIn(Folder(), wanted); }
+
+        // Longest file name kept, in bytes: short enough that the trash and the backups (the name twice in a path) stay
+        // under Windows' 260-character paths, with " (2)" or a backup suffix.
+        constexpr size_t MaxNameBytes = 80;
+
+        // Characters file systems refuse, a leading dot, a trailing dot or space, a name Windows reserves, and a length
+        // no file system takes, replaced or cut (the extension and whole UTF-8 characters stay).
         std::string SafeName(std::string name)
         {
             for (char& c : name)
             {
-                if (strchr("/\\:*?\"<>|", c) != nullptr || uint8_t(c) < 0x20)
+                if (strchr("/\\:*?\"<>|", c) != nullptr || uint8_t(c) < 0x20 || uint8_t(c) == 0x7F)
                     c = '_';
             }
+            while (!name.empty() && (name.back() == '.' || name.back() == ' '))
+                name.pop_back();
+            name.erase(0, name.find_first_not_of(' '));
             if (!name.empty() && name[0] == '.')
                 name[0] = '_';
-            return name;
+            size_t dot = name.find_last_of('.');
+            std::string extension =
+                dot == std::string::npos || name.size() - dot > 8 ? std::string() : name.substr(dot);
+            std::string stem = name.substr(0, name.size() - extension.size());
+            static const char* const reserved[] = { "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5",
+                "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8",
+                "LPT9" };
+            std::string head = stem.substr(0, stem.find('.'));
+            while (!head.empty() && head.back() == ' ')
+                head.pop_back();
+            for (const char* word : reserved)
+            {
+                if (Lower(head) == Lower(word))
+                    stem = "_" + stem;
+            }
+            if (stem.size() + extension.size() > MaxNameBytes)
+            {
+                size_t keep = MaxNameBytes - extension.size();
+                while (keep > 0 && (uint8_t(stem[keep]) & 0xC0) == 0x80) // not in the middle of a character
+                    keep--;
+                stem.resize(keep);
+            }
+            return stem + extension;
         }
 
         bool Refuse(std::string* error, const std::string& text)
@@ -262,10 +368,11 @@ namespace collection
             return false;
         }
 
+        // A copy that is whole or absent: the destination is replaced by a rename.
         bool CopyBytes(const std::string& from, const std::string& to)
         {
             std::string bytes;
-            return LoadBytes(from, bytes) && SDL_SaveFile(to.c_str(), bytes.data(), bytes.size());
+            return LoadBounded(from, bytes) && SaveAtomically(to, bytes);
         }
 
         int Order(const Figure& figure)
@@ -376,16 +483,70 @@ namespace collection
         return info;
     }
 
+    namespace
+    {
+        enum class Published
+        {
+            Lost,
+            Won,
+            Unsupported
+        };
+
+        // Gives `target` the content of `temporary` only if `target` does not exist (one process wins), then drops the
+        // temporary. The lock is complete when it appears: a reader never meets a half-written one. A file system with no
+        // such step (no hard links) is Unsupported: the caller falls back to replacing the file.
+        Published PublishNew(const std::filesystem::path& temporary, const std::filesystem::path& target)
+        {
+            std::error_code error;
+            Published result = Published::Won;
+#ifdef _WIN32
+            if (MoveFileExW(temporary.c_str(), target.c_str(), 0) == 0)
+                result = GetLastError() == ERROR_ALREADY_EXISTS || GetLastError() == ERROR_FILE_EXISTS
+                             ? Published::Lost
+                             : Published::Unsupported;
+#else
+            if (link(temporary.c_str(), target.c_str()) != 0)
+                result = errno == EEXIST ? Published::Lost : Published::Unsupported;
+#endif
+            std::filesystem::remove(temporary, error);
+            return result;
+        }
+    }
+
     bool Lock(const std::string& path, const std::string& game)
     {
-        LockInfo current = GetLock(path);
-        if (current.Busy())
-            return false;
         Json lock = Json::Object();
         lock.Set("game", game);
         lock.Set("pid", ProcessId());
         lock.Set("since", Now());
-        return SaveAtomically(path + ".lock", lock.Dump());
+        const std::string lockFile = path + ".lock";
+        static std::atomic<unsigned> serial{ 0 };
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            LockInfo current = GetLock(path);
+            if (current.Busy())
+                return false;
+            if (current.locked)
+            {
+                // Ours: replaced in one step. A dead process's: removed, unless someone has taken it over in the meantime.
+                if (current.mine)
+                    return SaveAtomically(lockFile, lock.Dump());
+                if (GetLock(path).stale)
+                    BreakLock(path);
+            }
+            // Exclusive: if another process took the lock since the check above, this attempt loses and looks again.
+            const std::string temporary =
+                lockFile + ".new." + std::to_string(ProcessId()) + "." + std::to_string(serial++);
+            if (!SaveAtomically(temporary, lock.Dump()))
+                return false;
+            switch (PublishNew(datadir::FromText(temporary), datadir::FromText(lockFile)))
+            {
+            case Published::Won: return true;
+            case Published::Unsupported: return SaveAtomically(lockFile, lock.Dump());
+            case Published::Lost: break;
+            }
+        }
+        return false;
     }
 
     void Unlock(const std::string& path)
@@ -545,7 +706,7 @@ namespace collection
             std::string name = FreeName(SafeName(wanted));
             SDL_CreateDirectory(Folder().c_str());
             std::string path = PathOf(name);
-            if (!SDL_SaveFile(path.c_str(), tag.data(), tag.size()))
+            if (!SaveAtomically(path, std::string(reinterpret_cast<const char*>(tag.data()), tag.size())))
             {
                 fprintf(stderr, "[collection] cannot create %s\n", path.c_str());
                 return {};
@@ -672,27 +833,81 @@ namespace collection
         return WriteStats(path, figure.stats, error);
     }
 
+    namespace
+    {
+        // A folder to another: it moves whole, or, when the other already has files, one by one (a name the other
+        // already holds is kept under a free one). False if a file could not be moved.
+        bool MoveFolder(const std::string& from, const std::string& to)
+        {
+            if (!Exists(from))
+                return true;
+            if (!Exists(to))
+                return SDL_RenamePath(from.c_str(), to.c_str());
+            bool moved = true;
+            int count = 0;
+            if (char** found = SDL_GlobDirectory(from.c_str(), "*", 0, &count))
+            {
+                for (int i = 0; i < count; i++)
+                    moved = SDL_RenamePath(
+                                (from + "/" + found[i]).c_str(), (to + "/" + FreeNameIn(to, found[i])).c_str()) &&
+                            moved;
+                SDL_free(found);
+            }
+            SDL_RemovePath(from.c_str()); // empty now, else left as it is
+            return moved;
+        }
+
+        bool MoveBackups(const std::string& from, const std::string& to)
+        {
+            const std::string root = Folder() + "/backups/";
+            return MoveFolder(root + from, root + to);
+        }
+
+        // The same file under another spelling of its name (a case-only change on a case-insensitive disk).
+        bool SameFile(const std::string& a, const std::string& b)
+        {
+            std::error_code error;
+            return std::filesystem::equivalent(datadir::FromText(a), datadir::FromText(b), error) && !error;
+        }
+    }
+
     bool Rename(const std::string& path, const std::string& file, std::string* error)
     {
         std::string name = SafeName(file);
         if (name.empty())
             return Refuse(error, "empty name");
         if (!IsDumpName(name))
-            name += path.substr(path.find_last_of('.'));
+            name = SafeName(name + path.substr(path.find_last_of('.')));
         std::string target = Directory(path) + "/" + name;
         if (target == path)
             return true;
         if (GetLock(path).Busy())
             return Refuse(error, "in use by " + GetLock(path).game);
-        if (Exists(target))
+        // A name that differs only in case is the same file on a case-insensitive disk: it goes through a temporary name.
+        const bool caseOnly = Lower(name) == Lower(FileName(path)) && SameFile(path, target);
+        if (Exists(target) && !caseOnly)
             return Refuse(error, name + " already exists");
-        if (!SDL_RenamePath(path.c_str(), target.c_str()))
+        if (caseOnly)
+        {
+            std::string middle = Directory(path) + "/" + name + ".rename";
+            if (Exists(middle) || !SDL_RenamePath(path.c_str(), middle.c_str()))
+                return Refuse(error, "cannot rename the file");
+            if (!SDL_RenamePath(middle.c_str(), target.c_str()))
+            {
+                SDL_RenamePath(middle.c_str(), path.c_str());
+                return Refuse(error, "cannot rename the file");
+            }
+        }
+        else if (!SDL_RenamePath(path.c_str(), target.c_str()))
             return Refuse(error, "cannot rename the file");
+        // The backups follow the figure; when they cannot, the rename is undone rather than leaving them behind.
+        if (!caseOnly && !MoveBackups(FileName(path), name))
+        {
+            SDL_RenamePath(target.c_str(), path.c_str());
+            return Refuse(error, "cannot move the backups");
+        }
         if (GetLock(path).mine)
             SDL_RenamePath((path + ".lock").c_str(), (target + ".lock").c_str());
-        std::string backups = Folder() + "/backups/";
-        if (Exists(backups + FileName(path)))
-            SDL_RenamePath((backups + FileName(path)).c_str(), (backups + name).c_str());
         UpdateIndex([&](Json& index) {
             Json entries = index["figures"];
             if (entries.Has(FileName(path)))
@@ -713,8 +928,34 @@ namespace collection
         return true;
     }
 
-    bool SetLabel(const std::string& path, const std::string& label)
+    std::string CleanLabel(const std::string& text)
     {
+        std::string clean;
+        for (char c : text)
+        {
+            if (uint8_t(c) >= 0x20 && uint8_t(c) != 0x7F)
+                clean += c;
+            else if (c == '\t' || c == '\n' || c == '\r')
+                clean += ' ';
+        }
+        size_t first = clean.find_first_not_of(' ');
+        if (first == std::string::npos)
+            return {};
+        clean = clean.substr(first, clean.find_last_not_of(' ') - first + 1);
+        if (clean.size() > MaxLabelBytes)
+        {
+            size_t keep = MaxLabelBytes;
+            while (keep > 0 && (uint8_t(clean[keep]) & 0xC0) == 0x80) // whole characters only
+                keep--;
+            clean.resize(keep);
+            clean = clean.substr(0, clean.find_last_not_of(' ') + 1);
+        }
+        return clean;
+    }
+
+    bool SetLabel(const std::string& path, const std::string& wanted)
+    {
+        const std::string label = CleanLabel(wanted);
         return UpdateFigure(path, [&](Json& entry) {
             if (label.empty())
                 entry.Erase("label");
@@ -791,13 +1032,40 @@ namespace collection
         return CopyBytes(path, backup) ? backup : std::string();
     }
 
+    namespace
+    {
+        // "2026-10-24T101500Z.sky" or "2026-10-24T101500Z-2.sky": the second, and which backup of that second.
+        std::pair<std::string, int> BackupKey(const std::string& file)
+        {
+            size_t z = file.find('Z');
+            if (z == std::string::npos)
+                return { file, 1 };
+            return { file.substr(0, z + 1), file[z + 1] == '-' ? atoi(file.c_str() + z + 2) : 1 };
+        }
+
+        // The same toy: the same type and serial (a name can be reused for another figure, a dump's own bytes cannot).
+        bool SameToy(const FigureData& a, const FigureData& b)
+        {
+            return figures::ToyType(a) == figures::ToyType(b) && memcmp(a.data(), b.data(), 4) == 0;
+        }
+    }
+
+    // Newest first; only the figure's own (a file name freed by a delete and used again does not inherit them).
     std::vector<std::string> Backups(const std::string& path)
     {
         std::string folder = Folder() + "/backups/" + FileName(path);
+        std::vector<std::string> names = DumpNames(folder);
+        std::stable_sort(names.begin(), names.end(),
+            [](const std::string& a, const std::string& b) { return BackupKey(a) > BackupKey(b); });
+        FigureData current;
+        const bool known = LoadDump(path, current);
         std::vector<std::string> backups;
-        for (const std::string& name : DumpNames(folder))
-            backups.push_back(folder + "/" + name);
-        std::sort(backups.rbegin(), backups.rend());
+        for (const std::string& name : names)
+        {
+            FigureData tag;
+            if (!known || (LoadDump(folder + "/" + name, tag) && SameToy(tag, current)))
+                backups.push_back(folder + "/" + name);
+        }
         return backups;
     }
 
@@ -805,9 +1073,11 @@ namespace collection
     {
         if (GetLock(path).Busy())
             return Refuse(error, "in use by " + GetLock(path).game);
-        FigureData tag;
+        FigureData tag, current;
         if (!LoadDump(backup, tag))
             return Refuse(error, "the backup is not a figure dump");
+        if (LoadDump(path, current) && !SameToy(tag, current))
+            return Refuse(error, "the backup is of another figure");
         if (Exists(path) && Backup(path).empty())
             return Refuse(error, "cannot back up the current dump first");
         bool copied = CopyBytes(backup, path);
@@ -1101,21 +1371,21 @@ namespace collection
                !figure.favourite && figure.edition.empty();
     }
 
-    std::vector<std::string> UntouchedStarters()
+    std::vector<std::string> UntouchedStarters(const std::vector<std::string>& keep)
     {
         std::vector<std::string> paths;
         for (const Figure& figure : List())
         {
-            if (UntouchedStarter(figure))
+            if (UntouchedStarter(figure) && std::find(keep.begin(), keep.end(), figure.path) == keep.end())
                 paths.push_back(figure.path);
         }
         return paths;
     }
 
-    int Tidy()
+    int Tidy(const std::vector<std::string>& keep)
     {
         int moved = 0;
-        for (const std::string& path : UntouchedStarters())
+        for (const std::string& path : UntouchedStarters(keep))
         {
             // One on a portal right now is being played: leave it.
             if (!GetLock(path).locked && Delete(path, "tidy"))
@@ -1131,6 +1401,12 @@ namespace collection
     bool TidyDone() { return LoadJson(PathOf(IndexName))["tidy_done"].AsBool(); }
 
     // --- Trash -----------------------------------------------------------------------------------------------------------
+
+    namespace
+    {
+        // trash/<id> + this: the backups of the figure that was deleted.
+        constexpr const char* BackupsSuffix = ".backups";
+    }
 
     bool Delete(const std::string& path, const std::string& reason, std::string* error)
     {
@@ -1180,6 +1456,9 @@ namespace collection
             record(false);
             return Refuse(error, "cannot move the file to the trash");
         }
+        // The figure's backups go with it, so a new figure under the same name does not inherit them.
+        if (!MoveFolder(Folder() + "/backups/" + FileName(path), folder + "/" + id + BackupsSuffix))
+            fprintf(stderr, "[collection] the backups of %s stay where they were\n", FileName(path).c_str());
         if (lock.locked)
             BreakLock(path);
         return true;
@@ -1211,6 +1490,8 @@ namespace collection
         std::string name = FreeName(item["file"].AsString());
         if (!SDL_RenamePath(from.c_str(), PathOf(name).c_str()))
             return {};
+        if (!MoveFolder(from + BackupsSuffix, Folder() + "/backups/" + name))
+            fprintf(stderr, "[collection] some backups of %s stay in the trash\n", name.c_str());
         UpdateIndex([&](Json& index) {
             Json trash = index["trash"];
             if (trash[id]["metadata"].IsObject())
@@ -1228,6 +1509,8 @@ namespace collection
     bool DeleteForGood(const std::string& id)
     {
         bool removed = SDL_RemovePath((Folder() + "/trash/" + id).c_str());
+        std::error_code ignored;
+        std::filesystem::remove_all(datadir::FromText(Folder() + "/trash/" + id + BackupsSuffix), ignored);
         UpdateIndex([&](Json& index) {
             Json trash = index["trash"];
             trash.Erase(id);
@@ -1267,12 +1550,15 @@ namespace collection
             std::vector<std::string> tags;
             for (const std::string& name : DumpNames(Folder()))
             {
-                std::string bytes;
-                if (LoadBytes(PathOf(name), bytes) && bytes.size() >= sizeof(FigureData))
-                    tags.push_back(bytes.substr(0, sizeof(FigureData)));
+                FigureData tag;
+                if (LoadDump(PathOf(name), tag))
+                    tags.emplace_back(reinterpret_cast<const char*>(tag.data()), tag.size());
             }
             return tags;
         }
+
+        // A tag's serial (block 0, first four bytes): two dumps with one serial are one toy.
+        bool SameSerial(const std::string& a, const std::string& b) { return a.compare(0, 4, b, 0, 4) == 0; }
     }
 
     ImportReport Import(const std::vector<std::string>& paths)
@@ -1294,7 +1580,7 @@ namespace collection
         for (const std::string& file : files)
         {
             std::string bytes;
-            if (!LoadBytes(file, bytes) || !IsTag(bytes))
+            if (!LoadBounded(file, bytes) || !IsTag(bytes))
             {
                 report.invalid++;
                 continue;
@@ -1308,11 +1594,14 @@ namespace collection
             std::string name =
                 FreeName(SafeName(IsDumpName(FileName(file)) ? FileName(file) : FileName(file) + ".sky"));
             SDL_CreateDirectory(Folder().c_str());
-            if (!SDL_SaveFile(PathOf(name).c_str(), bytes.data(), bytes.size()))
+            if (!SaveAtomically(PathOf(name), bytes))
             {
                 report.invalid++;
                 continue;
             }
+            // Another file of the same toy (a played copy, an older backup): kept, but said, as only one can sit on a portal.
+            if (std::any_of(tags.begin(), tags.end(), [&](const std::string& other) { return SameSerial(other, tag); }))
+                report.sameToy++;
             tags.push_back(tag);
             SetOrigin(PathOf(name), "imported");
             report.added++;
@@ -1321,8 +1610,9 @@ namespace collection
             if (Catalogue::Get().Find(type) == nullptr)
                 report.unknown.push_back(type);
         }
-        fprintf(stderr, "[collection] import: %d added, %d already there, %d not figure dumps\n", report.added,
-            report.duplicates, report.invalid);
+        fprintf(stderr,
+            "[collection] import: %d added, %d already there, %d not figure dumps, %d of a toy already there\n",
+            report.added, report.duplicates, report.invalid, report.sameToy);
         return report;
     }
 
@@ -1351,7 +1641,22 @@ namespace collection
         SDL_CreateDirectory(folder.c_str());
         int copied = 0;
         for (const std::string& path : paths)
-            copied += CopyBytes(path, folder + "/" + FileName(path)) ? 1 : 0;
+        {
+            // A file already there is never overwritten: one with the same bytes counts as done, else a free name is used.
+            std::string bytes, there;
+            if (!LoadBounded(path, bytes))
+                continue;
+            const std::string wanted = FileName(path);
+            const size_t dot = wanted.find_last_of('.');
+            const std::string stem = dot == std::string::npos ? wanted : wanted.substr(0, dot);
+            const std::string extension = dot == std::string::npos ? std::string() : wanted.substr(dot);
+            std::string name = wanted;
+            for (int n = 2; Exists(folder + "/" + name) && LoadBounded(folder + "/" + name, there) && there != bytes;
+                n++)
+                name = stem + " (" + std::to_string(n) + ")" + extension;
+            if (Exists(folder + "/" + name) ? there == bytes : CopyBytes(path, folder + "/" + name))
+                copied++;
+        }
         return copied;
     }
 

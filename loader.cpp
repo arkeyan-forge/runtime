@@ -1,6 +1,7 @@
 #include "loader.h"
 #include "kernel/objects.h"
 #include "memory.h"
+#include "platform/platform.h"
 #include <cstdio>
 #include <cstdlib>
 #include <mutex>
@@ -42,6 +43,25 @@ namespace
         fprintf(
             stderr, "Indirect call to unrecompiled guest code (ctr=0x%08X lr=0x%08X)\n", ctx.ctr.u32, uint32_t(ctx.lr));
         abort();
+    }
+
+    // The function table is read-only once LoadXex has filled it: a stray guest write there made a later call jump
+    // anywhere; now it faults where it happens. In 64 KB granules inside the table (every host page size divides 64 KB).
+    constexpr uintptr_t TableGranule = 0x10000;
+
+    uintptr_t TableEntry(uint32_t address)
+    {
+        return reinterpret_cast<uintptr_t>(&PPC_LOOKUP_FUNC(g_memory.base, address));
+    }
+    uintptr_t TableBegin() { return (TableEntry(PPC_CODE_BASE) + TableGranule - 1) & ~(TableGranule - 1); }
+    uintptr_t TableEnd() { return TableEntry(PPC_CODE_BASE + PPC_CODE_SIZE) & ~(TableGranule - 1); }
+
+    // The granule holding `address`'s entry, if it is in the read-only part.
+    void SetEntryReadOnly(uint32_t address, bool readOnly)
+    {
+        uintptr_t granule = TableEntry(address) & ~(TableGranule - 1);
+        if (granule >= TableBegin() && granule < TableEnd())
+            PlatformProtectReadOnly(reinterpret_cast<void*>(granule), TableGranule, readOnly);
     }
 
     uint32_t ReadBE32(const uint8_t* p) { return ByteSwap(*reinterpret_cast<const uint32_t*>(p)); }
@@ -200,6 +220,9 @@ LoadedModule LoadXex(const std::vector<uint8_t>& xex)
         PPC_LOOKUP_FUNC(g_memory.base, address) = UnmappedFunction;
     for (auto* mapping = PPCFuncMappings; mapping->host != nullptr; mapping++)
         PPC_LOOKUP_FUNC(g_memory.base, mapping->guest) = mapping->host;
+    if (TableEnd() > TableBegin() &&
+        !PlatformProtectReadOnly(reinterpret_cast<void*>(TableBegin()), TableEnd() - TableBegin(), true))
+        fprintf(stderr, "[loader] the function table stays writable\n");
 
     LoadedModule module;
     module.handle = CreateModuleHandle(xex, image);
@@ -243,7 +266,9 @@ uint32_t CreateHostThunk(PPCFunc* function)
         if (run == PaddingWords)
         {
             uint32_t thunk = address + (PaddingWords - 1) * 4;
+            SetEntryReadOnly(thunk, false);
             PPC_LOOKUP_FUNC(g_memory.base, thunk) = function;
+            SetEntryReadOnly(thunk, true);
             next = thunk;
             return thunk;
         }

@@ -1,7 +1,9 @@
 #pragma once
 
+#include "host/commands.h"
 #include "host/glyphs.h"
 #include "host/launcher.h"
+#include "host/mouse.h"
 #include "host/portal_prompt.h"
 #include <string>
 #include <string_view>
@@ -94,6 +96,23 @@ namespace game
         // Giants: 60. Its summon cutscene lasts 10 % less at 120 than at 30, every run (docs/runtime/xbox360/video_vblank.md, "Above 60,
         // measured"): a fade or a wait counted in frames, not found yet.
         uint32_t maxFpsLimit = 0;
+
+        // Pixel shader hashes of the passes that advance a simulation by one step for every frame the game renders (a
+        // water ripple height field, constants that never change): above fps_limit 30 the runtime draws them (and
+        // resolves their targets) in one frame of the 30 FPS cadence only, so the simulation keeps its rate in seconds
+        // (d3d/step_pacer.h). Empty: the game has none known.
+        std::span<const uint64_t> stepPassShaders = {};
+
+        // The game's actions on the F3 menu's Commands page, in Skylauncher's order and words (its launcher/game_keys.cpp):
+        // the keyboard key and the pad button of each (host/commands.h). Empty: the page has no rows.
+        std::span<const commands::Row> inputRows = {};
+
+        // The mouse once its switch is on (host/mouse.h): the game's attack 1 on the left button, attack 2 on the right.
+        std::span<const mouse::Default> mouseDefaults = {};
+
+        // The levels that are the game's own menus (game::LevelStarted's names: its front end), where the mouse does
+        // nothing and the pointer is not held. The menus inside a level (pause) cannot be told from play.
+        std::span<const std::string_view> menuLevels = {};
     };
 
     // The adapter of the game being built, defined by games/<id>/adapter.cpp.
@@ -102,10 +121,18 @@ namespace game
     // A movie's name from its path ("game:\movies\fre\legal.bik" -> "legal"): the file name, lower case, without
     // its extension.
     std::string MovieName(std::string_view path);
+    // The level a file starts, for Adapter::LevelOfFile: \level\<name>.arc -> "<name>", lower case (the title screen's is
+    // one too, "title"); empty for any other file. Giants and Trap Team.
+    std::string LevelArcOfFile(std::string_view path);
 
     // A level began (a file of a level the title opens, or the zone Swap Force enters): said once for each change of level;
     // the Toy Box's figures that ran out of health can play again. `name` is only for the log.
     void LevelStarted(std::string_view name);
+    // Copies the existing level label under its lock, without allocating; empty before the first level.
+    void CopyCurrentLevel(char* text, size_t capacity);
+    // True before the first level and while the level is one of the game's menus (Adapter::menuLevels): the mouse does
+    // nothing there.
+    bool InMenuLevel();
     // Called for every file the title opens: asks the adapter whether it is a level's.
     void NoteFileOpen(std::string_view path);
 

@@ -1,4 +1,5 @@
 #include "host/audio.h"
+#include "host/portal_speaker.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <atomic>
@@ -39,9 +40,13 @@ void HostAudioSubmit(const float* planarFrame)
     {
         auto channel = [&](uint32_t c) { return planarFrame[c * AudioFrameSamples + i]; };
         float center = channel(2) * Side;
-        stereo[i * 2 + 0] = std::clamp((channel(0) + center + channel(4) * Side) * gain, -1.0f, 1.0f);
-        stereo[i * 2 + 1] = std::clamp((channel(1) + center + channel(5) * Side) * gain, -1.0f, 1.0f);
+        stereo[i * 2 + 0] = channel(0) + center + channel(4) * Side;
+        stereo[i * 2 + 1] = channel(1) + center + channel(5) * Side;
     }
+    // The portal speaker's voice when the computer plays it (host/portal_speaker.h), under the same volume.
+    HostSpeakerStream().MixInto(stereo, AudioFrameSamples);
+    for (uint32_t i = 0; i < AudioFrameSamples * 2; i++)
+        stereo[i] = std::clamp(stereo[i] * gain, -1.0f, 1.0f);
     if (stream != nullptr)
         SDL_PutAudioStreamData(stream, stereo, sizeof(stereo));
     if (dump != nullptr)

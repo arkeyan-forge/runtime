@@ -25,7 +25,8 @@ namespace
 
     std::mutex g_tableLock;
     std::unordered_map<uint32_t, std::shared_ptr<KernelObject>> g_handles;
-    std::unordered_map<uint32_t, std::shared_ptr<KernelObject>> g_dispatchers; // binding id -> object
+    // Header -> object. Keyed by binding id, it kept every object a header ever had: one more at each re-initialisation.
+    std::unordered_map<uint32_t, std::shared_ptr<KernelObject>> g_dispatchers;
     uint32_t g_nextHandle = 0x10000;
     uint32_t g_nextBinding = 1;
 
@@ -34,7 +35,8 @@ namespace
     {
         uint32_t binding = g_nextBinding++;
         object->header = header;
-        g_dispatchers[binding] = std::move(object);
+        object->binding = binding;
+        g_dispatchers[header] = std::move(object);
         g_memory.Write<uint32_t>(header + WaitListFlink, BindingMarker);
         g_memory.Write<uint32_t>(header + WaitListBlink, binding);
     }
@@ -83,8 +85,18 @@ std::shared_ptr<KernelObject> LookupHandle(uint32_t handle)
 
 bool CloseHandle(uint32_t handle)
 {
-    std::lock_guard lock(g_tableLock);
-    return g_handles.erase(handle) != 0;
+    // The object leaves the table under the lock and is destroyed after it: a file's last reference commits the file
+    // (a save: fsync, backup, rename), which must not hold every other handle lookup and wait meanwhile.
+    std::shared_ptr<KernelObject> closed;
+    {
+        std::lock_guard lock(g_tableLock);
+        auto it = g_handles.find(handle);
+        if (it == g_handles.end())
+            return false;
+        closed = std::move(it->second);
+        g_handles.erase(it);
+    }
+    return true;
 }
 
 std::shared_ptr<KernelObject> LookupDispatcher(uint32_t header)
@@ -92,8 +104,8 @@ std::shared_ptr<KernelObject> LookupDispatcher(uint32_t header)
     std::lock_guard lock(g_tableLock);
     if (g_memory.Read<uint32_t>(header + WaitListFlink) == BindingMarker)
     {
-        auto it = g_dispatchers.find(g_memory.Read<uint32_t>(header + WaitListBlink));
-        if (it != g_dispatchers.end() && it->second->header == header)
+        auto it = g_dispatchers.find(header);
+        if (it != g_dispatchers.end() && it->second->binding == g_memory.Read<uint32_t>(header + WaitListBlink))
             return it->second;
     }
 

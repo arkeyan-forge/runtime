@@ -5,7 +5,7 @@
 // disc; IGA v10 and IGZ v7 (Swap Force, big-endian) are verified on its disc; IGA v11 is verified on Trap Team's; IGZ
 // v8 (Trap Team) is verified on its disc; v9 (the later games) follows public format descriptions [?] (games/swapforce/docs/art.md).
 // Formats: games/giants/docs/shaders.md (IGA, IGZ sections), games/giants/docs/art.md (IGZ objects and images),
-// docs/runtime/host/game_art.md (the versions). Shared by the runtime, SkyBuild and Skylauncher.
+// docs/runtime/host/game_art.md (the versions). Shared by the runtime, Arkeyan-Builder and Skylauncher.
 #include "xenos_texture.h"
 #include <cstddef>
 #include <cstdint>

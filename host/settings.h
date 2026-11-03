@@ -2,6 +2,7 @@
 
 #include "gpu/edge_smoothing.h"
 #include "host/launcher.h"
+#include "host/mouse.h"
 #include "host/pad_map.h"
 #include <cstdint>
 #include <functional>
@@ -30,7 +31,10 @@ struct RuntimeSettings
     bool aspectAuto = true; // [video] aspect: auto follows a window wider than 16:9 (Hor+ camera, wide scene and
     // frame, HUD centred); 16:9 keeps the game's 16:9 picture, with bars on a wider window
     bool showFps = false; // [<game>.video] show_fps: the frame rate in a corner (the F3 menu's FPS counter)
+    bool debugScreen = false; // [<game>.video] debug_screen: the diagnostic overlay, off by default
+    bool reduceMotion = false; // [video] reduce_motion: the in-game messages fade without sliding (host/toybox/look.h)
     uint32_t volume = 100; // [<game>.audio] volume (or [audio]), 0-100: the master volume
+    bool portalSound = true; // [<game>.audio] portal_sound (or [audio]): the trap's voice from the Traptanium speaker
     bool skipIntroMovies = false; // skip the start-up logos (legal, atvilogo, xpeclogo, tfb); story movies still play
     bool textureDump = false; // dump the game's textures as DDS files (host/texture_pack.h)
     bool texturePacks = true; // replace textures with the files of the game's textures folder, when there is one
@@ -43,6 +47,12 @@ struct RuntimeSettings
     std::string gamepad; // SDL GUID, empty: the first one connected
     std::string keys[22]; // SDL key name per g_keyActions entry
     PadMap padMap; // [input] / [<game>.input] pad_<button>=<button>: what each pad button does
+    mouse::Bindings
+        mouse; // [<game>.input] mouse=0|1 (off by default) and mouse_<action>=<mouse name>|none (host/mouse.h)
+    // [input] key_toybox, key_toybox_add, key_toybox_clear: open the Toy Box, add the next figure, clear the portal (F6, F7,
+    // F8); Tab also opens it while key_toybox is not set (toyboxTab).
+    std::string toyboxKeys[3] = { "F6", "F7", "F8" };
+    bool toyboxTab = true;
     std::string rumble[2] = { "normal", "normal" }; // rumble_p1 / rumble_p2: off, low, normal, strong
     std::string glyphs = "auto"; // button glyphs: auto (the last device used), xbox (auto among the next two), xbox360,
     // xboxone, playstation, nintendo, keyboard

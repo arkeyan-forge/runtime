@@ -256,6 +256,11 @@ uint8_t* PlatformReserveMemory(size_t size)
 
 bool PlatformProtectNoAccess(void* address, size_t size) { return mprotect(address, size, PROT_NONE) == 0; }
 
+bool PlatformProtectReadOnly(void* address, size_t size, bool readOnly)
+{
+    return mprotect(address, size, readOnly ? PROT_READ : PROT_READ | PROT_WRITE) == 0;
+}
+
 void PlatformStartThread(size_t stackSize, std::function<void()> body)
 {
     pthread_attr_t attributes;

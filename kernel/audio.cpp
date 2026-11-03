@@ -53,7 +53,7 @@ namespace
                     continue;
 
                 ctx.r3.u64 = client.contextCell;
-                (PPC_LOOKUP_FUNC(g_memory.base, client.callback))(ctx, g_memory.base);
+                CallGuest(ctx, client.callback);
             }
             HostAudioSubmit(g_mix);
 

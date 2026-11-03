@@ -1,7 +1,7 @@
 // UWP entry point (Xbox Dev Mode; also runs as a sideloaded Windows app): a CoreApplication view running the same
 // runtime as main.cpp. The game's frames go to a D3D12 swap chain on the CoreWindow through gpu/ (host/display.cpp),
 // the gamepad comes from Windows.Gaming.Input, sound goes out through XAudio2 (host/audio_xaudio2.cpp). The disc
-// image is read from the package's install folder; saves, figure dumps and the log (SSARecomp.log) are in LocalState.
+// image is read from the package's install folder; saves, figure dumps and the log (Arkeyan.log) are in LocalState.
 // Raw WinRT ABI through the mingw-w64 headers (no C++/WinRT, no Windows SDK), as in tools/xbox/testapp.
 
 // mingw-w64 (widl) declares IReference<boolean> and IReference<BYTE>, both IReference<unsigned char>, which C++
@@ -542,11 +542,11 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 {
     RoInitialize(RO_INIT_MULTITHREADED);
 
-    // Everything the runtime prints goes to LocalState\SSARecomp.log (Device Portal: File explorer, LocalAppData).
+    // Everything the runtime prints goes to LocalState\Arkeyan.log (Device Portal: File explorer, LocalAppData).
     std::wstring localState = LocalStatePath();
     if (!localState.empty())
     {
-        _wfreopen((localState + L"\\SSARecomp.log").c_str(), L"w", stderr);
+        _wfreopen((localState + L"\\Arkeyan.log").c_str(), L"w", stderr);
         setvbuf(stderr, nullptr, _IONBF, 0); // complete at all times: the log can be downloaded while the game runs
         UwpSetPreferencePath(Utf8(localState) + "\\");
     }

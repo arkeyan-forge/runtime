@@ -8,8 +8,10 @@
 #include "host/env.h"
 #include "host/launcher.h"
 #include "host/log.h"
+#include "host/portal.h"
 #include "host/report.h"
 #include "host/settings.h"
+#include "host/toybox.h"
 #include "kernel/video.h"
 #include <SDL3/SDL.h>
 #include <cstdio>
@@ -64,8 +66,12 @@ void gamemenu::Init(const RuntimeSettings& settings, SDL_Window* window, const c
     g_version = gameVersion != nullptr ? gameVersion : "";
     g_values = { settings.volume, settings.showFps, settings.fullscreen, settings.fpsLimit, settings.resolutionScale,
         settings.anisotropy, settings.vsync, settings.skipIntroMovies, settings.edgeSmoothing, settings.fpsAutoFallback,
-        ::game::HostKernelPixelShader != 0 };
+        settings.debugScreen, ::game::HostKernelPixelShader != 0, g_version, settings.reduceMotion,
+        settings.portalSound, PortalGameHasSpeaker() };
+    InitDebugScreen(g_gameInfo.name, g_version.c_str());
     HostAudioSetVolume(settings.volume);
+    PortalSetSound(settings.portalSound);
+    ToyboxSetKeys(settings.toyboxKeys, settings.toyboxTab);
 }
 
 const gamemenu::Values& gamemenu::Current() { return g_values; }
@@ -78,12 +84,29 @@ bool gamemenu::SetVolume(uint32_t percent)
     return Save(".audio", "volume", std::to_string(g_values.volume));
 }
 
+bool gamemenu::SetPortalSound(bool on)
+{
+    g_values.portalSound = on;
+    PortalSetSound(on);
+    Logged("portal_sound", on ? "1" : "0");
+    return Save(".audio", "portal_sound", on ? "1" : "0");
+}
+
 bool gamemenu::SetShowFps(bool on)
 {
     g_values.showFps = on;
     g_countStart = 0;
     Logged("show_fps", on ? "1" : "0");
     return SaveVideo("show_fps", on ? "1" : "0");
+}
+
+bool gamemenu::SetDebugScreen(bool on)
+{
+    g_values.debugScreen = on;
+    g_countStart = 0;
+    g_fpsText = "-- FPS";
+    Logged("debug_screen", on ? "1" : "0");
+    return SaveVideo("debug_screen", on ? "1" : "0");
 }
 
 bool gamemenu::SetFullscreen(bool on)
@@ -146,14 +169,15 @@ bool gamemenu::SetEdgeSmoothing(uint32_t mode)
 
 uint32_t gamemenu::EdgeSmoothingNow()
 {
-    return edgesmoothing::Resolve(edgesmoothing::Mode(g_values.edgeSmoothing), gpu::g_settings.resolutionScale);
+    return edgesmoothing::Resolve(
+        edgesmoothing::Mode(g_values.edgeSmoothing), gpu::g_settings.resolutionScale, ::game::InMenuLevel());
 }
 
 bool gamemenu::RestartNeeded() { return g_restart; }
 
 std::string gamemenu::FpsText()
 {
-    if (!g_values.showFps)
+    if (!g_values.showFps || g_values.debugScreen)
         return {};
     uint64_t now = SDL_GetTicksNS();
     uint64_t frames = gpu::FramesPresented();

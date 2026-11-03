@@ -1,6 +1,6 @@
 // The Xbox Series package (SSA_UWP_MARCH=x86-64-v3) uses AVX2, FMA and BMI2, which the Xbox One's Jaguar CPU lacks.
 // This file is compiled for the baseline (-march=btver2, CMakeLists.txt) and its check runs as the first static
-// constructor, before any code built for the newer CPU: on a CPU without them it writes LocalState\SSARecomp.log and
+// constructor, before any code built for the newer CPU: on a CPU without them it writes LocalState\Arkeyan.log and
 // exits, instead of crashing on an illegal instruction. Raw WinRT calls only (no templates shared with other files).
 #if defined(SSA_REQUIRE_X86_64_V3)
 #define ____FIReference_1_boolean_INTERFACE_DEFINED__
@@ -13,7 +13,7 @@ namespace
 {
     using namespace ABI::Windows::Storage;
 
-    // LocalState\SSARecomp.log, as the host writes it (host/uwp/main.cpp).
+    // LocalState\Arkeyan.log, as the host writes it (host/uwp/main.cpp).
     void WriteLog(const char* text)
     {
         RoInitialize(RO_INIT_MULTITHREADED);
@@ -37,7 +37,7 @@ namespace
             {
                 for (UINT32 i = 0; i < length; i++)
                     file[i] = folderPath[i];
-                const wchar_t leaf[] = L"\\SSARecomp.log";
+                const wchar_t leaf[] = L"\\Arkeyan.log";
                 for (UINT32 i = 0; leaf[i] != 0; i++)
                     file[length + i] = leaf[i];
                 HANDLE handle = CreateFile2(file, GENERIC_WRITE, 0, CREATE_ALWAYS, nullptr);

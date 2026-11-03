@@ -59,8 +59,8 @@ void UwpApplySettings(const std::string& localState, uint32_t defaultScale)
     if (!LoadConfig(path, config))
     {
         std::ofstream(path) << fmt::format(
-            "# SSARecomp settings (docs/getting-started/settings.md). Edit through Device Portal, then restart the "
-            "app.\n"
+            "# ArkeyanRuntime settings (docs/getting-started/settings.md). Edit through Device Portal, then restart "
+            "the app.\n"
             "\n[video]\nresolution_scale={}\nanisotropy=1\nvsync=1\n"
             "\n[ssa]\n# language=en\n# voice_language=en\n"
             "\n[portal]\n# auto: a real portal plugged in at start, else the emulated one; real: wait for a real one\n"

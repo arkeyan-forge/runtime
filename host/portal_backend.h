@@ -25,6 +25,10 @@ public:
     virtual bool IsOpen() { return IsConnected(); }
     virtual bool Write(const uint8_t* command, size_t size) = 0;
     virtual size_t Read(uint8_t* report, size_t capacity) = 0;
+    // The Traptanium speaker (host/portal_speaker.h): whether this portal can be sent the sound blocks, and one block (the
+    // Xbox 360's ADPCM, without its `0B 17` header), sent in the device's own format. Without it the computer plays them.
+    virtual bool TakesSound() { return false; }
+    virtual bool WriteSound(const uint8_t*, size_t) { return false; }
 };
 
 // Real portals. Both rescan for the device while it is unplugged; null when the host API is unavailable.

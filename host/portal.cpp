@@ -2,17 +2,21 @@
 #include "host/portal_async.h"
 #include "host/portal_backend.h"
 #include "host/portal_identity.h"
+#include "host/portal_speaker.h"
 #include "host/portal_stall.h"
 #include "host/collection/collection.h"
 #include "host/collection/datadir.h"
 #include "host/figures/figure_tag.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -33,17 +37,28 @@ namespace
 
     PortalLightState g_light; // under g_mutex
 
+    // A real portal's id, from its answer to 'R' (the speaker's route). Under g_mutex.
+    uint8_t g_realId[4];
+    size_t g_realIdLength;
+
+    // The "Portal sound" switch.
+    std::atomic<bool> g_sound{ true };
+    // Answers the runtime gives in place of a real portal (Read returns them first). Under g_mutex.
+    std::deque<std::array<uint8_t, 32>> g_answers;
+    // Where the speaker's blocks went last (logged when it changes). Under g_mutex.
+    SpeakerRoute g_speakerRoute = SpeakerRoute::Off;
+    bool g_speakerRouted = false;
+
     // A real portal's answer to 'R': its model, once per distinct id.
     void ObserveReset(const uint8_t* report, size_t size)
     {
-        static uint8_t last[4];
-        static size_t lastLength;
         uint8_t id[4];
         size_t length;
-        if (!PortalIdFromReset(report, size, id, length) || (length == lastLength && memcmp(last, id, length) == 0))
+        if (!PortalIdFromReset(report, size, id, length) ||
+            (length == g_realIdLength && memcmp(g_realId, id, length) == 0))
             return;
-        memcpy(last, id, length);
-        lastLength = length;
+        memcpy(g_realId, id, length);
+        g_realIdLength = length;
         fprintf(stderr, "[portal] model: %s\n", DescribePortal(GameId, id, length).c_str());
         std::string reason;
         PortalVerdict verdict = PortalVerdictFor(GameId, id, length, &reason);
@@ -67,7 +82,14 @@ namespace
                 if (present && (!g_seen[slot].present || (bits & 2) != 0))
                     g_seen[slot] = { true, now };
                 else if (!present && g_seen[slot].present)
+                {
+                    // A trap leaving the portal ends its voice at once (traps are toy types 210 to 220).
+                    const FigureData& data = g_seen[slot].data;
+                    unsigned toyType = data[0x10] | data[0x11] << 8;
+                    if ((g_seen[slot].blocks >> 1 & 1) != 0 && toyType >= 210 && toyType <= 220)
+                        HostSpeakerStream().Flush();
                     g_seen[slot] = {};
+                }
             }
         }
         else if (size >= 3 + FigureBlockSize && report[0] == 'Q' && (report[1] & 0xF0) == 0x10)
@@ -100,6 +122,14 @@ namespace
             if (g_light.commands++ == 0 || wasOn != PortalLightOn(g_light))
                 fprintf(stderr, "[portal] light: #%02X%02X%02X (%s)\n", colour[0], colour[1], colour[2],
                     PortalLightOn(g_light) ? "on" : "off");
+        }
+        else if (size >= 2 && command[0] == 'M')
+        {
+            // The speaker on (a new line: the decoder starts over) or off (what is queued plays out).
+            if (command[1] != 0)
+                HostSpeakerStream().Start();
+            else
+                HostSpeakerStream().Stop();
         }
         else if (size >= 3 + FigureBlockSize && command[0] == 'W')
         {
@@ -252,17 +282,19 @@ namespace
         g_hotkeySlot = PortalPlaceFigure(figures[g_hotkeyFigure]);
     }
 
-    // F7 swaps the hotkey figure for the next dump of the folder, F8 takes every figure off the portal.
+    // F7 swaps the hotkey figure for the next dump of the folder, F8 takes every figure off the portal (PortalSetHotkeys).
+    std::atomic<int> g_addKey{ SDL_SCANCODE_F7 }, g_clearKey{ SDL_SCANCODE_F8 };
+
     bool SDLCALL OnHostEvent(void*, SDL_Event* event)
     {
         if (event->type != SDL_EVENT_KEY_DOWN || event->key.repeat)
             return true;
 
-        if (event->key.key == SDLK_F7)
+        if (int(event->key.scancode) == g_addKey)
         {
             PlaceNextFigure();
         }
-        else if (event->key.key == SDLK_F8)
+        else if (int(event->key.scancode) == g_clearKey)
         {
             PortalRemoveAllFigures();
         }
@@ -429,12 +461,68 @@ bool PortalWrite(const uint8_t* command, size_t size)
     if (g_backend == nullptr)
         return false;
     ObserveCommand(command, size);
+    // A real portal without a speaker (any but the Traptanium) may never answer `M`, and Trap Team reads no figure until
+    // it is answered: the runtime answers as the speaker would, and the portal is not sent the command.
+    if (size >= 2 && command[0] == 'M' && g_emulated == nullptr && g_realIdLength != 0 &&
+        !PortalModelHasSpeaker(g_realId, g_realIdLength))
+    {
+        std::array<uint8_t, 32> answer{};
+        answer[0] = 'M';
+        answer[1] = command[1];
+        answer[3] = 0x19; // as the emulated portal answers (host/portal_emulated.cpp)
+        g_answers.push_back(answer);
+        return true;
+    }
     return g_backend->Write(command, size);
+}
+
+void PortalSpeakerSound(const uint8_t* block, size_t size)
+{
+    std::lock_guard lock(g_mutex);
+    if (g_backend == nullptr)
+        return;
+    SpeakerRoute route = ChooseSpeakerRoute(
+        g_sound, g_emulated == nullptr, g_realId, g_realIdLength, g_emulated == nullptr && g_backend->TakesSound());
+    if (!g_speakerRouted || route != g_speakerRoute)
+    {
+        fprintf(stderr, "[portal] speaker: %s\n",
+            route == SpeakerRoute::Device ? "the portal plays the sound"
+            : route == SpeakerRoute::Host ? "the computer plays the sound"
+                                          : "off (Portal sound)");
+        if (route != SpeakerRoute::Host)
+            HostSpeakerStream().Flush();
+        g_speakerRoute = route;
+        g_speakerRouted = true;
+    }
+    if (route == SpeakerRoute::Device)
+        g_backend->WriteSound(block, size);
+    else if (route == SpeakerRoute::Host)
+        HostSpeakerStream().Push(block, size);
+}
+
+void PortalSetSound(bool on)
+{
+    g_sound = on;
+    if (!on)
+        HostSpeakerStream().Flush();
+}
+
+bool PortalGameHasSpeaker()
+{
+    const PortalModel& model = EmulatedPortalModel(GameId);
+    return PortalModelHasSpeaker(model.id, model.idLength);
 }
 
 size_t PortalRead(uint8_t* report, size_t capacity)
 {
     std::lock_guard lock(g_mutex);
+    if (!g_answers.empty() && capacity >= 4)
+    {
+        const size_t size = std::min(capacity, g_answers.front().size());
+        memcpy(report, g_answers.front().data(), size);
+        g_answers.pop_front();
+        return size;
+    }
     size_t size = g_backend != nullptr ? g_backend->Read(report, capacity) : 0;
     ObserveReport(report, size);
     return size;
@@ -557,4 +645,10 @@ int PortalProbeMain()
     printf("{\"done\":true,\"count\":%zu}\n", portals.size());
     fflush(stdout);
     return 0;
+}
+
+void PortalSetHotkeys(int addScancode, int clearScancode)
+{
+    g_addKey = addScancode;
+    g_clearKey = clearScancode;
 }

@@ -17,6 +17,20 @@
 #include <thread>
 #include <utility>
 #include "../host/env.h"
+#if defined(SSA_METAL)
+#include <plume_metal.h>
+#else
+#if !defined(PLUME_D3D12_COREWINDOW)
+// Vulkan Memory Allocator tests extension macros the headers leave undefined (-Wundef under SKY_WERROR on Linux).
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wundef"
+#include <plume_vulkan.h>
+#pragma clang diagnostic pop
+#endif
+#if defined(_WIN32)
+#include <plume_d3d12.h>
+#endif
+#endif
 
 #if defined(SSA_METAL)
 #include "shaders/present_metallib.h"
@@ -512,18 +526,23 @@ namespace
 {
     // The adapter's driver version as its vendor writes it: D3D12 gives the user-mode driver's four 16-bit parts,
     // Vulkan a packed number (NVIDIA's own packing, everyone else's VK_MAKE_VERSION); Metal none.
-    std::string DriverVersion(const RenderDeviceDescription& description, RenderShaderFormat format)
+    void WriteDriverVersion(
+        char* text, size_t capacity, const RenderDeviceDescription& description, RenderShaderFormat format)
     {
         unsigned long long v = description.driverVersion;
-        char text[64] = "n/a";
+        snprintf(text, capacity, "n/a");
         if (format == RenderShaderFormat::DXIL)
-            snprintf(
-                text, sizeof(text), "%llu.%llu.%llu.%llu", v >> 48, v >> 32 & 0xFFFF, v >> 16 & 0xFFFF, v & 0xFFFF);
+            snprintf(text, capacity, "%llu.%llu.%llu.%llu", v >> 48, v >> 32 & 0xFFFF, v >> 16 & 0xFFFF, v & 0xFFFF);
         else if (format == RenderShaderFormat::SPIRV && description.vendor == RenderDeviceVendor::NVIDIA)
-            snprintf(
-                text, sizeof(text), "%llu.%llu.%llu.%llu", v >> 22 & 0x3FF, v >> 14 & 0xFF, v >> 6 & 0xFF, v & 0x3F);
+            snprintf(text, capacity, "%llu.%llu.%llu.%llu", v >> 22 & 0x3FF, v >> 14 & 0xFF, v >> 6 & 0xFF, v & 0x3F);
         else if (format == RenderShaderFormat::SPIRV)
-            snprintf(text, sizeof(text), "%llu.%llu.%llu", v >> 22 & 0x3FF, v >> 12 & 0x3FF, v & 0xFFF);
+            snprintf(text, capacity, "%llu.%llu.%llu", v >> 22 & 0x3FF, v >> 12 & 0x3FF, v & 0xFFF);
+    }
+
+    std::string DriverVersion(const RenderDeviceDescription& description, RenderShaderFormat format)
+    {
+        char text[64];
+        WriteDriverVersion(text, sizeof(text), description, format);
         return text;
     }
 
@@ -912,6 +931,7 @@ namespace
     // time and its other commands; without it, the guest's CPU work, the renderer's state translation and the guest's
     // waits. A second line gives the GPU thread's busy share and how long the game's render thread waited for it.
     std::atomic<uint64_t> g_framesPresented;
+    std::vector<uint64_t> g_perfFrameNs;
 
     void LogPerf()
     {
@@ -920,7 +940,7 @@ namespace
         static const bool enabled = skyenv::Get("SKY_PERF_LOG") == nullptr || atoi(skyenv::Get("SKY_PERF_LOG")) != 0;
         static uint32_t slowWindows = 0; // consecutive windows under the frame rate with the GPU as the limit
         static uint64_t windowStart = SDL_GetTicksNS(), lastFrame = windowStart;
-        static std::vector<uint64_t> frameNs;
+        auto& frameNs = g_perfFrameNs;
         static Context::Perf total;
         uint64_t now = SDL_GetTicksNS();
         frameNs.push_back(now - lastFrame);
@@ -1306,4 +1326,78 @@ void gpu::ServicePresents(uint32_t timeoutMs)
     g_handoff.pending = false;
     g_handoff.done = true;
     g_handoffChanged.notify_all();
+}
+
+// Read only: sampling never resets the perf log or creates renderer resources.
+gpu::DebugSnapshot gpu::ReadDebugSnapshot()
+{
+    std::lock_guard lock(g_mutex);
+    DebugSnapshot result;
+    if (g_context == nullptr)
+        return result;
+    const auto& c = *g_context;
+    const auto& description = c.device->getDescription();
+    auto format = c.renderInterface->getCapabilities().shaderFormat;
+    snprintf(result.adapter, sizeof(result.adapter), "%s", description.name.c_str());
+    snprintf(result.backend, sizeof(result.backend), "%s",
+        format == RenderShaderFormat::METAL   ? "Metal"
+        : format == RenderShaderFormat::DXIL  ? "D3D12"
+        : format == RenderShaderFormat::SPIRV ? "Vulkan"
+                                              : "n/a");
+    WriteDriverVersion(result.driver, sizeof(result.driver), description, format);
+    result.width = c.swapChain ? c.swapChain->getWidth() : c.offscreen.desc.width;
+    result.height = c.swapChain ? c.swapChain->getHeight() : c.offscreen.desc.height;
+#if defined(SSA_METAL)
+    if (format == RenderShaderFormat::METAL)
+    {
+        auto* device = static_cast<plume::MetalDevice&>(*c.device).mtl;
+        result.videoUsed = device->currentAllocatedSize();
+        result.videoBudget = device->recommendedMaxWorkingSetSize();
+        result.videoUsageKnown = true;
+        result.videoBudgetKnown = result.videoBudget != 0;
+    }
+#else
+#if defined(_WIN32)
+    // Windows can choose Vulkan or D3D12. Dispatch by the live interface, never by the host OS alone.
+    if (format == RenderShaderFormat::DXIL)
+    {
+        auto* adapter = static_cast<plume::D3D12Device&>(*c.device).adapter;
+        IDXGIAdapter3* query = nullptr;
+        if (adapter && SUCCEEDED(adapter->QueryInterface(IID_PPV_ARGS(&query))))
+        {
+            DXGI_QUERY_VIDEO_MEMORY_INFO memory{};
+            if (SUCCEEDED(query->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &memory)))
+            {
+                result.videoUsed = memory.CurrentUsage;
+                result.videoBudget = memory.Budget;
+                result.videoUsageKnown = result.videoBudgetKnown = true;
+            }
+            query->Release();
+        }
+    }
+#endif
+#if !defined(PLUME_D3D12_COREWINDOW)
+    if (format == RenderShaderFormat::SPIRV)
+    {
+        const auto& device = static_cast<plume::VulkanDevice&>(*c.device);
+        VkPhysicalDeviceMemoryProperties properties{};
+        vkGetPhysicalDeviceMemoryProperties(device.physicalDevice, &properties);
+        VmaBudget budgets[VK_MAX_MEMORY_HEAPS]{};
+        vmaGetHeapBudgets(device.allocator, budgets);
+        for (uint32_t heap = 0; heap < properties.memoryHeapCount; heap++)
+            if (properties.memoryHeaps[heap].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
+            {
+                result.videoUsed += budgets[heap].usage;
+                result.videoBudget += budgets[heap].budget;
+            }
+        result.videoUsageKnown = result.videoBudgetKnown = result.videoBudget != 0;
+    }
+#endif
+#endif
+    result.scale = g_settings.resolutionScale;
+    result.frameCount = std::min(result.frameNs.size(), g_perfFrameNs.size());
+    std::copy(g_perfFrameNs.end() - result.frameCount, g_perfFrameNs.end(), result.frameNs.begin());
+    result.available = true;
+    ReadDebugDrawSnapshot(result);
+    return result;
 }

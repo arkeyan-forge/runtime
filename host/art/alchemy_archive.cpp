@@ -394,6 +394,14 @@ namespace art::alchemy
     {
         const Entry& entry = m_entries[index];
         size = size == 0 ? entry.size : std::min<size_t>(size, entry.size);
+        // The entry's offset and size are the archive's word: checked before anything is allocated. A chunk takes at
+        // least one alignment unit of the archive and gives at most ChunkSize bytes.
+        constexpr size_t MaxEntrySize = size_t(512) << 20;
+        if (size > MaxEntrySize || entry.offset >= m_length)
+            return {};
+        const uint64_t left = m_length - entry.offset;
+        if (entry.flags == 0xFFFFFFFF ? size > left : size > (left / m_chunkAlign + 2) * ChunkSize)
+            return {};
         auto read = [&](uint64_t offset, size_t count) {
             std::vector<uint8_t> out(
                 count, 0); // bytes past the end read as zero (the LZMA decoder looks a few bytes beyond)
@@ -420,6 +428,8 @@ namespace art::alchemy
         uint64_t p = entry.offset;
         while (out.size() < size)
         {
+            if (p >= m_length)
+                return {};
             size_t want = std::min(ChunkSize, size - out.size());
             std::vector<uint8_t> head = read(p, 7);
             if (head.size() < 7)

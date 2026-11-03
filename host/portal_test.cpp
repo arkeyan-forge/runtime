@@ -150,6 +150,14 @@ int main()
     Send(portal, { 'J', 0x01, 0x02 });
     CHECK(Receive(portal)[0] == 'S' && portal.LightCommands() == 5);
 
+    // The speaker is answered, on and off.
+    for (uint8_t on : { 1, 0 })
+    {
+        Send(portal, { 'M', on });
+        reply = Receive(portal);
+        CHECK(reply[0] == 'M' && reply[1] == on && reply[3] == 0x19);
+    }
+
     // Removal: "changed" once, then absent. A new figure avoids the slot whose removal was not reported yet.
     portal.Remove(0);
     CHECK(portal.Place(CreateBlankFigure(16), "") == 1);

@@ -14,6 +14,7 @@ struct PortalModel
     uint8_t id[4];
     size_t idLength;          // 2 or 4
     const char* name;         // "Spyro's Adventure portal (Xbox 360)"
+    bool speaker = false;     // the Traptanium portals: a speaker for the traps' voices
 };
 
 // What a game does with a portal.
@@ -27,6 +28,9 @@ enum class PortalVerdict
 
 // The model whose id starts `id`; null if the id is not in the table.
 const PortalModel* FindPortalModel(const uint8_t* id, size_t length);
+
+// Whether the model whose id starts `id` has a speaker (false for an unknown id).
+bool PortalModelHasSpeaker(const uint8_t* id, size_t length);
 
 // "01 28", the bytes as hex.
 std::string PortalIdText(const uint8_t* id, size_t length);

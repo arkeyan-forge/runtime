@@ -1,4 +1,5 @@
 #include "host/audio.h"
+#include "host/collection/collection.h"
 #include "host/collection/datadir.h"
 #include "host/collection/progress.h"
 #include "host/collection/save_backup.h"
@@ -9,7 +10,9 @@
 #include "host/input.h"
 #include "host/launcher.h"
 #include "host/log.h"
+#include "host/mouse_input.h"
 #include "host/pad_map.h"
+#include "host/portable.h"
 #include "host/portal.h"
 #include "host/settings.h"
 #include "host/xex_title.h"
@@ -70,6 +73,7 @@ struct HostInput
     SDL_Scancode keys[std::size(g_keyActions)];
     PadMap padMap;                  // what each pad button does (the keyboard has its own keys)
     std::string rumble[2];          // off, low, normal, strong, per player
+    bool raw = false; // the pad as it is, no keyboard and no remapping (the F3 menu's Commands page waits for a button)
 };
 
 static HostInput MakeHostInput(const RuntimeSettings& settings)
@@ -85,13 +89,16 @@ static HostInput MakeHostInput(const RuntimeSettings& settings)
     return input;
 }
 
-static GamepadState ReadHostGamepad(const HostInput& input, SDL_Gamepad* gamepad)
+// `mouse`: the actions the mouse holds (Player 1's, host/mouse_input.h), else nullptr.
+static GamepadState ReadHostGamepad(const HostInput& input, SDL_Gamepad* gamepad, const bool* mouse = nullptr)
 {
     GamepadState state;
-    if (input.keyboard)
+    if ((input.keyboard || mouse != nullptr) && !input.raw)
     {
-        const bool* keys = SDL_GetKeyboardState(nullptr);
-        auto held = [&](size_t action) { return keys[input.keys[action]]; };
+        const bool* keys = ToyboxKeyboardState();
+        auto held = [&](size_t action) {
+            return (input.keyboard && keys[input.keys[action]]) || (mouse != nullptr && mouse[action]);
+        };
         // g_keyActions order: a b x y start back lb rb lt rt, left stick, right stick, d-pad.
         static const uint16_t buttons[] = { Button::A, Button::B, Button::X, Button::Y, Button::Start, Button::Back,
             Button::LeftShoulder, Button::RightShoulder };
@@ -102,7 +109,7 @@ static GamepadState ReadHostGamepad(const HostInput& input, SDL_Gamepad* gamepad
         for (size_t i = 0; i < std::size(dpad); i++)
             if (held(18 + i))
                 state.buttons |= dpad[i];
-        if (keys[SDL_SCANCODE_ESCAPE])
+        if (input.keyboard && keys[SDL_SCANCODE_ESCAPE])
             state.buttons |= Button::Back;
         state.leftTrigger = held(8) ? 255 : 0;
         state.rightTrigger = held(9) ? 255 : 0;
@@ -144,7 +151,8 @@ static GamepadState ReadHostGamepad(const HostInput& input, SDL_Gamepad* gamepad
         pad.thumbRY = int16_t(-std::max(-32767, int(axis(SDL_GAMEPAD_AXIS_RIGHTY))));
         pad.leftTrigger = uint8_t(axis(SDL_GAMEPAD_AXIS_LEFT_TRIGGER) >> 7);
         pad.rightTrigger = uint8_t(axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) >> 7);
-        pad = RemapPad(pad, input.padMap);
+        if (!input.raw)
+            pad = RemapPad(pad, input.padMap);
         state.buttons |= pad.buttons;
         if (state.thumbLX == 0)
             state.thumbLX = pad.thumbLX;
@@ -216,6 +224,8 @@ int main(int argc, char** argv)
 {
     datadir::MigrateOnce(); // the older folders into <data root> (datadir.h), before any path is used
     const GameInfo& game = *FindGame(SSA_GAME_ID); // the game this runtime was built for (-DSSA_GAME)
+    // A portable's figures and keys, before the settings are read.
+    const std::string firstLaunch = portable::FirstLaunch(game, collection::Folder());
     RuntimeSettings settings;
     std::vector<std::string> warnings;
     std::string error;
@@ -227,6 +237,8 @@ int main(int argc, char** argv)
     {
         LogInit();
         LogHeader(settings);
+        if (!firstLaunch.empty())
+            fprintf(stderr, "%s\n", firstLaunch.c_str());
     }
     for (const std::string& warning : warnings)
         fprintf(stderr, "[settings] %s\n", warning.c_str());
@@ -242,13 +254,24 @@ int main(int argc, char** argv)
     }
     if (settings.version)
     {
-        printf("SSARecomp %s\n", SSA_VERSION);
+        printf("ArkeyanRuntime %s\n", SSA_VERSION);
         return 0;
     }
     if (settings.listGamepads)
     {
         ListGamepads();
         return 0;
+    }
+
+    // One copy of the game at a time: the installed game and a portable one share the saves, and so the running game's
+    // marker (save_backup.h).
+    if (savebackup::GameRunning())
+    {
+        const std::string message = std::string(game.name) + " is already running. Close it before starting it again.";
+        fprintf(stderr, "%s\n", message.c_str());
+        if (skyenv::Get("SKY_HEADLESS") == nullptr)
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, game.name, message.c_str(), nullptr);
+        return 1;
     }
 
     // The launcher's own arguments: the disc image, --select-iso, --launcher.
@@ -331,14 +354,16 @@ int main(int argc, char** argv)
         // The game's name and its version (games/<id>/game.txt): "Skylanders: Spyro's Adventure v0.9.1".
         const std::string title = std::string(g_gameInfo.name) + " v" + SSA_GAME_VERSION;
         window = CreateDisplayWindow(title.c_str(), 1280, 720, settings.fullscreen);
-#ifndef __APPLE__ // macOS: the bundle's icon (SkyBuild's BundleIcon)
+#ifndef __APPLE__ // macOS: the bundle's icon (Arkeyan-Builder's BundleIcon)
         if (window !=
-            nullptr) // game_icon.png beside the executable (SkyBuild's GameIcon: the disc's logo); else the icon of default.xex; else the system's
+            nullptr) // game_icon.png beside the executable (Arkeyan-Builder's GameIcon: the disc's logo); else the icon of default.xex; else the system's
         {
             std::vector<uint8_t> png;
             if (const char* base = SDL_GetBasePath())
                 if (std::ifstream file(std::filesystem::path(base) / "game_icon.png", std::ios::binary); file)
                     png.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+            if (png.empty())
+                png = portable::ReadOwn(portable::IconName);
             if (png.empty())
                 png = ReadTitleMetadata(g_disc.ReadAll("default.xex")).iconPng;
             int iconWidth = 0, iconHeight = 0, channels = 0;
@@ -379,6 +404,7 @@ int main(int argc, char** argv)
     auto mainThread = CreateGuestThread(g_module.entryPoint, 0, 0, g_module.stackSize, false, 0);
 
     HostInput input = MakeHostInput(settings);
+    mouseinput::Configure(settings, ::game::Current().mouseDefaults);
     auto wanted = [&](SDL_JoystickID id) { return settings.gamepad.empty() || GamepadGuid(id) == settings.gamepad; };
     SDL_Gamepad* gamepad = nullptr;
     SDL_Gamepad* secondGamepad = nullptr; // Player 2's: another pad than the first one, no keyboard
@@ -403,6 +429,7 @@ int main(int argc, char** argv)
         SDL_Event event;
         while (SDL_PollEvent(&event))
         {
+            mouseinput::OnEvent(event, window); // first: a quit frees the pointer before anything else
             // Closing the window, Cmd+Q, Ctrl+C or SIGTERM, or the window disappearing. The title's threads are still
             // running and use SDL (the audio driver thread feeds the audio stream, the renderer presents to the
             // window), so tearing SDL down first (SDL_Quit) would free objects under them; the system reclaims
@@ -446,8 +473,18 @@ int main(int argc, char** argv)
             ToyboxHandleEvent(event);
             glyphs::OnEvent(event, gamepad);
         }
+        // The F3 menu's Commands page changed a key or a button: in use from this frame.
+        if (commands::Take(settings))
+        {
+            input = MakeHostInput(settings);
+            secondInput = input;
+            secondInput.keyboard = false;
+            mouseinput::Configure(settings, ::game::Current().mouseDefaults);
+        }
+        input.raw = ToyboxWaitsForPadButton();
         // The title gets no input while the Toy Box or the wheel is open; View may become the wheel.
-        GamepadState state = ReadHostGamepad(input, gamepad);
+        mouseinput::Frame(window, ToyboxOverlayOpen(), ::game::InMenuLevel());
+        GamepadState state = ReadHostGamepad(input, gamepad, mouseinput::HeldActions());
         ToyboxFilterGamepad(state);
         SetHostGamepad(state);
         SetHostGamepad(ReadHostGamepad(secondInput, secondGamepad), 1, secondGamepad != nullptr);

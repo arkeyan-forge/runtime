@@ -250,8 +250,8 @@ std::string report::Build(const Sources& sources, const Identity& who, size_t ma
     Section(out, crash.empty() ? "last crash" : "last crash (" + crashFrom + ")",
         crash.empty() ? "(no crash in the logs)" : crash);
     Section(out, "launcher.ini", ReadWhole(sources.settingsFile));
-    Section(out, "SSARecomp.log", log, cut);
-    Section(out, "SSARecomp.prev.log", previous, cutPrevious);
+    Section(out, "Arkeyan.log", log, cut);
+    Section(out, "Arkeyan.prev.log", previous, cutPrevious);
     Section(out, "skylauncher-game.log", launcherLog);
 
     while (!out.empty() && (out.back() == '\n' || out.back() == '\r'))

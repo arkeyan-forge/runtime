@@ -90,7 +90,8 @@ namespace art::lux
         constexpr uint8_t DistanceExtra[30] = { 0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10,
             10, 11, 11, 12, 12, 13, 13 };
 
-        bool InflateBlock(BitReader& in, const Huffman& literals, const Huffman& distances, std::vector<uint8_t>& out)
+        bool InflateBlock(
+            BitReader& in, const Huffman& literals, const Huffman& distances, std::vector<uint8_t>& out, size_t limit)
         {
             while (true)
             {
@@ -99,6 +100,8 @@ namespace art::lux
                     return false;
                 if (symbol < 256)
                 {
+                    if (out.size() >= limit)
+                        return false;
                     out.push_back(uint8_t(symbol));
                     continue;
                 }
@@ -112,7 +115,7 @@ namespace art::lux
                 if (distanceSymbol < 0 || distanceSymbol >= 30)
                     return false;
                 size_t distance = DistanceBase[distanceSymbol] + in.Bits(DistanceExtra[distanceSymbol]);
-                if (distance > out.size() || in.overrun)
+                if (distance > out.size() || in.overrun || out.size() + length > limit)
                     return false;
                 size_t from = out.size() - distance;
                 for (size_t i = 0; i < length; i++)
@@ -198,7 +201,7 @@ namespace art::lux
         }
     }
 
-    bool Inflate(const uint8_t* data, size_t size, std::vector<uint8_t>& out)
+    bool Inflate(const uint8_t* data, size_t size, std::vector<uint8_t>& out, size_t limit)
     {
         // zlib header: deflate, window <= 32 KB, no preset dictionary, header checksum.
         if (size < 2 || (data[0] & 0x0F) != 8 || (data[0] >> 4) > 7 || (data[1] & 0x20) != 0 ||
@@ -217,7 +220,7 @@ namespace art::lux
                     return false;
                 uint16_t length = uint16_t(in.data[byte] | in.data[byte + 1] << 8);
                 uint16_t inverse = uint16_t(in.data[byte + 2] | in.data[byte + 3] << 8);
-                if (uint16_t(~inverse) != length || byte + 4 + length > in.size)
+                if (uint16_t(~inverse) != length || byte + 4 + length > in.size || out.size() + length > limit)
                     return false;
                 out.insert(out.end(), in.data + byte + 4, in.data + byte + 4 + length);
                 in.position = (byte + 4 + length) * 8;
@@ -235,13 +238,13 @@ namespace art::lux
                     tables.second.Build(distances, 30);
                     return tables;
                 }();
-                if (!InflateBlock(in, Fixed.first, Fixed.second, out))
+                if (!InflateBlock(in, Fixed.first, Fixed.second, out, limit))
                     return false;
             }
             else if (type == 2)
             {
                 Huffman literals, distances;
-                if (!DynamicTables(in, literals, distances) || !InflateBlock(in, literals, distances, out))
+                if (!DynamicTables(in, literals, distances) || !InflateBlock(in, literals, distances, out, limit))
                     return false;
             }
             else

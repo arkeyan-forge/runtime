@@ -15,6 +15,7 @@
 struct KernelObject
 {
     uint32_t header = 0; // guest dispatcher header of a Ke* object, 0 for handle-only objects
+    uint32_t binding = 0; // the id written in that header (LookupDispatcher)
     std::vector<std::condition_variable*> sleepers; // the threads in WaitForObjects on this object
 
     // Wakes the threads waiting for this object, after a change of its signal state. Call with g_kernelLock held.
@@ -132,7 +133,8 @@ std::shared_ptr<T> LookupHandleAs(uint32_t handle)
 }
 
 // Ke* functions pass the object's dispatcher header; the host object is created from its type on first use and
-// bound through a marker in the header's wait list, which the (inlined) Ke*Initialize* calls overwrite.
+// bound through a marker in the header's wait list, which the (inlined) Ke*Initialize* calls overwrite. One object per
+// header address: a header initialised again replaces the previous object.
 std::shared_ptr<KernelObject> LookupDispatcher(uint32_t header);
 void RegisterDispatcher(uint32_t header, std::shared_ptr<KernelObject> object);
 

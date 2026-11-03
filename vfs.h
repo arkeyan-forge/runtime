@@ -6,14 +6,15 @@
 #include <unordered_map>
 #include <vector>
 
-// Read-only view of the game's files: the disc's XDVDFS file system read straight from the ISO, or a folder holding a copy of
-// them ("Copy the game data", host/collection/game_data.h): Open takes either.
+// Read-only view of the game's files: the disc's XDVDFS file system read straight from the ISO, a folder holding a copy of
+// them ("Copy the game data", host/collection/game_data.h), or the pack of a portable game (host/collection/portable_pack.h:
+// its game/ files, at the end of the game's own executable or in game.skypack): Open takes any of them.
 class DiscFileSystem
 {
 public:
     struct Entry
     {
-        uint64_t offset; // byte offset in the ISO
+        uint64_t offset; // byte offset in the ISO (or the pack)
         uint32_t size;
         bool directory;
         std::string name; // as on the disc (paths are looked up in lowercase)
@@ -25,9 +26,10 @@ public:
     DiscFileSystem& operator=(const DiscFileSystem&) = delete;
     ~DiscFileSystem();
 
-    // `path`: a disc image, or a folder with the disc's files (it needs a default.xex).
+    // `path`: a disc image, a folder with the disc's files, or a file ending with a pack (each needs a default.xex).
     bool Open(const char* path);
     bool FromFolder() const { return m_folder; }
+    bool FromPack() const { return m_pack; }
 
     // `path` is relative to the disc root, any case, '\' or '/' separators. Empty means the root.
     const Entry* Find(const std::string& path) const;
@@ -47,9 +49,14 @@ private:
     uint64_t m_partition = 0;
     std::unordered_map<std::string, Entry> m_entries;
     bool m_folder = false;
+    bool m_pack = false;
 
     bool OpenFolder(const char* path);
-    void IndexDirectory(uint32_t sector, uint32_t size, const std::string& prefix);
+    bool OpenPack(const char* path);
+    // A real disc's directories are a few sectors and a few levels deep.
+    static constexpr uint32_t MaxDirectorySize = 16u << 20;
+    static constexpr int MaxDirectoryDepth = 64;
+    void IndexDirectory(uint32_t sector, uint32_t size, const std::string& prefix, int depth = 0);
 };
 
 extern DiscFileSystem g_disc;

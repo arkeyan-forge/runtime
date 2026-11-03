@@ -250,6 +250,13 @@ namespace
         uint32_t slot = uint32_t(g_draw->samplers.size());
         if (slot >= SamplerHeapSize)
             return 0;
+        // Once per run (samplers are cached): proves the anisotropy setting reaches the samplers.
+        static bool anisotropyLogged = false;
+        if (desc.anisotropyEnabled && !anisotropyLogged)
+        {
+            anisotropyLogged = true;
+            fprintf(stderr, "[gpu] sampler %u: anisotropy %u (the first anisotropic one)\n", slot, desc.maxAnisotropy);
+        }
         g_draw->samplers.push_back(g_context->device->createSampler(desc));
         g_draw->samplerStates.push_back(state);
         g_draw->heaps[SamplerHeap]->setSampler(slot, g_draw->samplers.back().get());
@@ -1434,4 +1441,27 @@ void gpu::detail::ResolveDepthNow(
     list.setGraphicsDescriptorSet(set.get(), 0);
     list.setGraphicsPushConstants(0, offset);
     list.drawInstanced(3, 1, 0, 0);
+}
+
+void gpu::detail::ReadDebugDrawSnapshot(DebugSnapshot& result)
+{
+    // Caller holds g_mutex. Do not call Draws(): the accessor must not start cache loading.
+    if (!g_drawCreated.load(std::memory_order_acquire) || g_draw == nullptr)
+        return;
+#if defined(SSA_SHADER_CACHE)
+    result.shaders = g_shaderCacheEntryCount;
+#endif
+    {
+        std::lock_guard lock(g_draw->shaderMutex);
+        for (const auto& [hash, shader] : g_draw->shaders)
+            if (shader == nullptr)
+                result.missingShaders++;
+    }
+    {
+        std::lock_guard lock(g_draw->pipelineMutex);
+        for (const auto& [hash, entry] : g_draw->pipelines)
+            if (entry.ready && entry.pipeline != nullptr)
+                result.pipelinesReady++;
+    }
+    result.drawTimeBuilds = g_pipelineList.drawBuilds;
 }

@@ -8,6 +8,7 @@
 
 struct RuntimeSettings;
 struct SDL_Window;
+struct ImFont;
 
 namespace gamemenu
 {
@@ -24,7 +25,12 @@ namespace gamemenu
         bool skipIntroMovies = false;
         uint32_t edgeSmoothing = 0; // edgesmoothing::Mode as chosen (0: not chosen, by the resolution scale)
         bool fpsAutoFallback = true;
+        bool debugScreen = false;
         bool edgeSmoothingShown = false; // the game has a known FXAA pass; without one the setting does nothing
+        std::string version; // the game's version (games/<id>/game.txt), shown in the menu's corner
+        bool reduceMotion = false; // [video] reduce_motion: messages fade in and out without sliding (not a menu row)
+        bool portalSound = true;       // [<game>.audio] portal_sound: the trap's voice (host/portal_speaker.h)
+        bool portalSoundShown = false; // the game's portal has a speaker (PortalGameHasSpeaker)
     };
 
     // The frame rates the menu offers, as the launcher does (0: no limit), and the rate a value stands for: a rate of the list as it
@@ -52,7 +58,15 @@ namespace gamemenu
     // Each applies the new value now where it can (volume, FPS counter, fullscreen, frame rate), writes it to launcher.ini, and
     // returns false when the file could not be written (the value still applies for this run). The others apply at the next start.
     bool SetVolume(uint32_t percent);
+    bool SetPortalSound(bool on);
     bool SetShowFps(bool on);
+    bool SetDebugScreen(bool on);
+    // Copies trusted game identity and warms the shared system identity before the frame loop.
+    void InitDebugScreen(const char* game, const char* version);
+    // Main-thread overlay integration: refresh at 2 Hz, returning true when its image needs drawing again.
+    bool UpdateDebugScreen();
+    // Inside the Toy Box's existing ImGui frame, before rasterizing its shared overlay.
+    void DrawDebugScreen(ImFont* font);
     bool SetFullscreen(bool on);
     bool SetFpsLimit(uint32_t fps);
     bool SetFpsAutoFallback(bool on);
@@ -62,7 +76,7 @@ namespace gamemenu
     bool SetSkipIntroMovies(bool on);
     // Applies at once (the FXAA pass reads it every draw).
     bool SetEdgeSmoothing(uint32_t mode);
-    // The mode in force: the chosen one, or by the resolution scale the game runs at when none was chosen (edgesmoothing::Resolve).
+    // The mode in force: the chosen one, or by the resolution scale and the level when none was chosen (edgesmoothing::Resolve).
     uint32_t EdgeSmoothingNow();
 
     // Whether the menu has saved a value that applies at the next start only.

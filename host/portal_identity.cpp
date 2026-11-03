@@ -17,10 +17,10 @@ namespace
         { { 0x01, 0x48 }, 2, "Giants portal (Xbox 360)" },
         { { 0x02, 0x03 }, 2, "Swap Force portal" },
         { { 0x02, 0x02 }, 2, "Swap Force portal (3DS)" },
-        { { 0x02, 0x18 }, 2, "Traptanium portal" },
-        { { 0x02, 0x1B }, 2, "Traptanium portal (Xbox 360)" },
-        { { 0x02, 0x19 }, 2, "Trap Team portal (mobile)" },
-        { { 0x02, 0x27 }, 2, "Traptanium portal (Xbox One)" },
+        { { 0x02, 0x18 }, 2, "Traptanium portal", true },
+        { { 0x02, 0x1B }, 2, "Traptanium portal (Xbox 360)", true },
+        { { 0x02, 0x19 }, 2, "Trap Team portal (mobile)", true },
+        { { 0x02, 0x27 }, 2, "Traptanium portal (Xbox One)", true },
         { { 0x02, 0x0A, 0x03, 0x02 }, 4, "SuperChargers portal" },
         { { 0x02, 0x14, 0x03, 0x02 }, 4, "SuperChargers portal (Xbox One)" },
         { { 0x02, 0x0A, 0x05, 0x08 }, 4, "Imaginators portal" },
@@ -50,6 +50,12 @@ const PortalModel* FindPortalModel(const uint8_t* id, size_t length)
             return &model;
     }
     return nullptr;
+}
+
+bool PortalModelHasSpeaker(const uint8_t* id, size_t length)
+{
+    const PortalModel* model = FindPortalModel(id, length);
+    return model != nullptr && model->speaker;
 }
 
 std::string PortalIdText(const uint8_t* id, size_t length)

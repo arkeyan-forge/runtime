@@ -202,8 +202,8 @@ namespace
         return location;
     }
 
-    // Giants' levels are `level\<name>.arc` and `.bld` pairs (no `levels\<name>\` folders).
-    bool IsGiants() { return std::string_view(::game::Current().info.id) == "giants"; }
+    // Giants' and Trap Team's levels are `level\<name>.arc` and `.bld` pairs (no `levels\<name>\` folders).
+    bool LevelArcs() { return ::game::Current().LevelOfFile == ::game::LevelArcOfFile; }
     bool IsSwapForce() { return std::string_view(::game::Current().info.id) == "swapforce"; }
 
     // SKY_LEVEL=<level> (test aid): the files of the game's first level (game::Adapter::firstLevel) are those of
@@ -514,11 +514,12 @@ namespace
         file->deleteOnClose = location.content && (options & FileDeleteOnClose);
         g_memory.Write<uint32_t>(handlePointer, CreateHandle(file));
 
-        // A level or the frontend starts loading (Lux: levels\<name>\mission.str, the hub's mission_stage<n>.str; Giants:
-        // level\<name>.arc; Swap Force: archives\common_ents_zone.pak, opened by every zone load, the menu background's
-        // too): the loading screen waits here until the pipeline list is built, so the level's first frames build none of it.
+        // A level or the frontend starts loading (Lux: levels\<name>\mission.str, the hub's mission_stage<n>.str;
+        // Giants, Trap Team: level\<name>.arc; Swap Force: archives\common_ents_zone.pak, opened by every zone load,
+        // the menu background's too): the loading screen waits here until the pipeline list is built, so the level's
+        // first frames build none of it.
         if (!location.content &&
-            (IsGiants()         ? (file->path.starts_with("\\level\\") && file->path.ends_with(".arc"))
+            (LevelArcs()        ? (file->path.starts_with("\\level\\") && file->path.ends_with(".arc"))
                 : IsSwapForce() ? file->path == "\\archives\\common_ents_zone.pak"
                                 : (file->path.starts_with("\\levels\\") && file->path.ends_with(".str") &&
                                       file->path.find("\\mission", 8) != std::string::npos)))

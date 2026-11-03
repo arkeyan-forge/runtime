@@ -24,6 +24,14 @@ bool PortalIsConnected();
 // Sends one command. Returns false if the portal went away.
 bool PortalWrite(const uint8_t* command, size_t size);
 
+// One sound block of the Traptanium speaker, without the Xbox 360's `0B 17` header (host/portal_speaker.h): to a real
+// portal with a speaker, else to the computer's audio. `M` (on, off) comes through PortalWrite like any command.
+void PortalSpeakerSound(const uint8_t* block, size_t size);
+// The "Portal sound" switch ([<game>.audio] portal_sound, the F3 menu): off, the speaker's blocks go nowhere.
+void PortalSetSound(bool on);
+// Whether this game's own console portal has a speaker (the menus offer the switch only then).
+bool PortalGameHasSpeaker();
+
 // Copies the next report from the portal and returns its size, 0 if none is pending. Never blocks.
 size_t PortalRead(uint8_t* report, size_t capacity);
 
@@ -36,6 +44,9 @@ int PortalPlaceFigureAt(const std::string& path, int slot);
 void PortalRemoveFigure(int slot);
 // Takes every figure off (F8, the Toy Box's "Clear portal").
 void PortalRemoveAllFigures();
+// The keys (SDL scancodes) that place the folder's next figure and clear the portal: F7 and F8 until set ([input]
+// key_toybox_add, key_toybox_clear).
+void PortalSetHotkeys(int addScancode, int clearScancode);
 
 // Emulated portal only (false / empty otherwise).
 constexpr int PortalSlotCount = 16;

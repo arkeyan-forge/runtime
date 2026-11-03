@@ -22,6 +22,8 @@ namespace
 
     constexpr uint8_t Header[2] = { 0x0B, 0x14 };
     constexpr size_t HeaderSize = sizeof(Header);
+    // The second header byte of the Traptanium speaker's sound blocks (0B 17).
+    constexpr uint8_t SoundHeader = 0x17;
 
     // SKY_PORTAL_LOG: one line per command and answer; status reports only when the figures change.
     void LogReport(const char* direction, const uint8_t* report, size_t size)
@@ -95,6 +97,23 @@ PPC_FUNC(__imp__XamInputNonControllerSetRaw)
     }
 
     const auto* data = static_cast<const uint8_t*>(g_memory.Translate(buffer));
+    // The Traptanium speaker's sound blocks come this way under their own header (host/portal_speaker.h). They are not
+    // commands: one that starts with 'R' would reset the portal, one that starts with 'W' write to a figure.
+    if (size >= HeaderSize && data[1] == SoundHeader)
+    {
+        PortalSpeakerSound(data + HeaderSize, size - HeaderSize);
+        ctx.r3.u64 = ErrorSuccess;
+        return;
+    }
+    if (size >= HeaderSize && data[1] != Header[1])
+    {
+        static bool logged;
+        if (!logged && PortalLogEnabled())
+            fprintf(stderr, "[portal] -> report under header %02X %02X (%u bytes), dropped\n", data[0], data[1], size);
+        logged = true;
+        ctx.r3.u64 = ErrorSuccess;
+        return;
+    }
     if (size > HeaderSize && PortalLogEnabled())
         LogReport("->", data + HeaderSize, size - HeaderSize);
     bool sent = size <= HeaderSize || PortalWrite(data + HeaderSize, size - HeaderSize);

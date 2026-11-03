@@ -1,4 +1,5 @@
 #include "host/input.h"
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -16,6 +17,7 @@ namespace
         std::chrono::steady_clock::duration length;
         uint16_t button;
         int16_t stickX, stickY; // left stick, for "lup", "ldown", "lleft", "lright"
+        uint8_t leftTrigger, rightTrigger; // for "lt", "rt"
     };
 
     constexpr auto PressLength = std::chrono::milliseconds(150);
@@ -47,6 +49,8 @@ namespace
             { "down", Button::DpadDown },
             { "left", Button::DpadLeft },
             { "right", Button::DpadRight },
+            { "lb", Button::LeftShoulder },
+            { "rb", Button::RightShoulder },
         };
         for (const auto& [text, button] : names)
         {
@@ -146,7 +150,8 @@ static void ReadPressFile()
                                                 : std::chrono::steady_clock::duration(PressLength);
         int16_t x = name == "lleft" ? -32767 : name == "lright" ? 32767 : 0;
         int16_t y = name == "ldown" ? -32767 : name == "lup" ? 32767 : 0;
-        g_users[user].script.push_back({ now - g_launch, length, ButtonByName(name), x, y });
+        g_users[user].script.push_back({ now - g_launch, length, ButtonByName(name), x, y,
+            uint8_t(name == "lt" ? 255 : 0), uint8_t(name == "rt" ? 255 : 0) });
     }
 }
 
@@ -168,6 +173,8 @@ GamepadState GetGamepad(uint32_t& packetNumber, int user)
                 state.thumbLX = press.stickX;
             if (press.stickY != 0)
                 state.thumbLY = press.stickY;
+            state.leftTrigger = std::max(state.leftTrigger, press.leftTrigger);
+            state.rightTrigger = std::max(state.rightTrigger, press.rightTrigger);
             packetNumber += 0x10000; // distinct from host-only states
         }
     }
@@ -197,7 +204,8 @@ void LoadInputScript(const char* script, int user)
             std::string name = item.substr(0, colon);
             int16_t x = name == "lleft" ? -32767 : name == "lright" ? 32767 : 0;
             int16_t y = name == "ldown" ? -32767 : name == "lup" ? 32767 : 0;
-            g_users[user].script.push_back({ duration_cast<Duration>(at), length, ButtonByName(name), x, y });
+            g_users[user].script.push_back({ duration_cast<Duration>(at), length, ButtonByName(name), x, y,
+                uint8_t(name == "lt" ? 255 : 0), uint8_t(name == "rt" ? 255 : 0) });
         }
         if (end == std::string::npos)
             break;

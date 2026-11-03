@@ -83,7 +83,8 @@ namespace
             portal_adpcm::DecodeBytes(decoder, bytes.data(), bytes.size(), output);
             double snr = SnrDb(input, output, 1000); // after the predictor has settled
             printf("sine %.0f Hz: SNR %.1f dB\n", hertz, snr);
-            CHECK(output.size() == input.size() && snr > 24.0);
+            // 34 dB: the pole predictor's a1 adapted the wrong way round before 2026-11-02 (33.5, 27.6, 26.1 dB).
+            CHECK(output.size() == input.size() && snr > 34.0);
         }
     }
 

@@ -3,11 +3,13 @@
 #include "host/art/game_art.h"
 #include "host/gamemenu.h"
 #include "host/glyphs.h"
+#include "host/pad_map.h"
 #include "host/portal.h"
 #include "game.h"
 #include "host/portal_prompt.h"
 #include "host/toybox/draw.h"
 #include "host/toybox/model.h"
+#include "host/toybox/keys.h"
 #include "vfs.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
@@ -15,6 +17,7 @@
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -39,6 +42,15 @@ namespace
     std::mutex g_noticeMutex;
     std::pair<std::string, std::string> g_notice;
     bool g_noticePending;
+    struct PendingAchievement
+    {
+        std::string name;
+        uint32_t points = 0;
+        std::vector<uint8_t> png;
+    };
+    PendingAchievement g_achievement; // under g_noticeMutex
+    bool g_achievementPending;
+    void (*g_achievementPreview)();
     gpu::Texture* g_texture;
     std::vector<uint32_t> g_pixels;
     bool g_overlayShown;
@@ -55,12 +67,14 @@ namespace
     bool g_wheelByPad;         // the wheel closes when View is released
     bool g_swallow;            // the game gets nothing until every button is released
 
-    // Keyboard.
+    // Keyboard. The Toy Box's keys (ToyboxSetKeys): the saved key opens it; while the Tab alias is on, Tab does too (tap: the Toy Box,
+    // hold: the wheel), else the open key also holds for the wheel.
+    toybox::Keys g_keys;
     uint64_t g_tabDown;
     bool g_wheelByTab;
     bool g_enterHeld;
     bool g_pinKey;
-    bool g_mouseHeld;          // a hold button pressed with the mouse             // F2 held on the wheel: pin
+    bool g_mouseHeld; // a hold button pressed with the mouse             // F2 held on the wheel: pin
 
     // SKY_TOYBOX_SCRIPT.
     struct ScriptStep
@@ -77,13 +91,26 @@ namespace
         int16_t lx, ly;
     };
     std::vector<PadPress> g_padPresses;
+    struct KeyHold
+    {
+        uint64_t from, to;
+        SDL_Scancode scancode;
+        std::string name;
+        bool logged;
+    };
+    std::vector<KeyHold> g_keyHolds; // "hold=K": a key the game's input reads as held (ToyboxKeyboardState)
+    bool g_padArmed; // the Commands page waits for a pad button and every button was released since
 
     toybox::Model& M() { return toybox::Get(); }
+
+    // The key held for the wheel (a tap opens the Toy Box), and the key that opens the Toy Box at once.
+    bool HoldKey(const SDL_KeyboardEvent& key) { return g_keys.Hold(key.scancode); }
+    bool OpenKey(const SDL_KeyboardEvent& key) { return g_keys.Open(key.scancode); }
 
     // The game's "place a Skylander" prompt (host/portal_prompt.h; the adapter reads it: game.h).
     bool g_autoOpen = true;
     portalprompt::Tracker g_promptTracker;
-    bool g_openedByPrompt;     // the Toy Box on screen is the one the prompt opened
+    bool g_openedByPrompt; // the Toy Box on screen is the one the prompt opened
 
     void LoadPortraits()
     {
@@ -142,7 +169,7 @@ namespace
         {
             if (key.key == SDLK_F2)
                 g_pinKey = false;
-            if (key.key == SDLK_TAB && g_tabDown != 0)
+            if (HoldKey(key) && g_tabDown != 0)
             {
                 g_tabDown = 0;
                 if (g_wheelByTab && model.screen == Screen::Wheel)
@@ -161,15 +188,22 @@ namespace
             }
             return;
         }
-        if (key.repeat && (key.key == SDLK_TAB || key.key == SDLK_F6 || key.key == SDLK_F3))
+        if (model.open && model.waiting != toybox::Model::Waiting::None)
+        {
+            // The Commands page waits for a key or a pad button; Escape cancels.
+            if (!key.repeat)
+                model.TakeKey(key.key == SDLK_ESCAPE ? 0 : int(key.scancode));
+            return;
+        }
+        if (key.repeat && (HoldKey(key) || OpenKey(key) || key.key == SDLK_F3))
             return;
         if (!model.open)
         {
             if (key.key == SDLK_F3)
                 model.OpenMenu(); // the F3 menu (docs/runtime/host/gamemenu.md)
-            else if (key.key == SDLK_F6)
+            else if (OpenKey(key))
                 OpenToybox();
-            else if (key.key == SDLK_TAB)
+            else if (HoldKey(key))
                 g_tabDown = now;
             return;
         }
@@ -191,7 +225,14 @@ namespace
                 g_pinKey = true;
             return;
         }
-        if ((key.key == SDLK_F6 || key.key == SDLK_TAB) && model.screen != Screen::Name)
+        if (key.key == SDLK_TAB && model.screen == Screen::Home && model.dialogs.empty())
+        {
+            // Tab and Shift+Tab: the next or previous row (seats, search and filters, the grid); the open key closes.
+            if (!key.repeat)
+                model.Run((key.mod & SDL_KMOD_SHIFT) != 0 ? Command::PreviousRow : Command::NextRow);
+            return;
+        }
+        if ((OpenKey(key) || HoldKey(key)) && model.screen != Screen::Name)
         {
             model.Close();
             return;
@@ -244,6 +285,51 @@ namespace
             model.Hold(true, now);
     }
 
+    // A mouse button down at a canvas point (SDL's number: 1 left, 2 middle, 3 right, 4 and 5 the side ones). The
+    // Commands page waiting for a mouse button takes it, and it does nothing else.
+    void MouseDown(float x, float y, int sdlButton, bool twice)
+    {
+        toybox::Model& model = M();
+        if (model.waiting == toybox::Model::Waiting::MouseButton)
+        {
+            model.TakeMouse(mouse::FromSdlButton(sdlButton));
+            return;
+        }
+        if (sdlButton != SDL_BUTTON_LEFT && sdlButton != SDL_BUTTON_RIGHT)
+            return;
+        toybox::Click(model, x, y, sdlButton == SDL_BUTTON_RIGHT ? 3 : 1, twice);
+        g_mouseHeld = true;
+        model.Hold(true, SDL_GetTicksNS());
+    }
+
+    // A wheel tick (up > 0): the page waiting for a mouse button takes it; else it scrolls what is on screen.
+    void MouseWheel(float up)
+    {
+        toybox::Model& model = M();
+        if (model.waiting == toybox::Model::Waiting::MouseButton)
+            model.TakeMouse(up > 0 ? mouse::WheelUp : mouse::WheelDown);
+        else if (model.screen == Screen::Stats)
+            model.Run(up > 0 ? Command::Right : Command::Left);
+        else if (model.screen == Screen::Home || model.screen == Screen::Add || model.screen == Screen::WheelList)
+            model.ScrollList(up > 0 ? -1 : 1);
+        else if (model.screen == Screen::Menu)
+            model.Run(up > 0 ? Command::Up : Command::Down);
+    }
+
+    // The pointer moved to a canvas point: the wheel aims, the rest shows what is under it.
+    void MouseMove(float x, float y, bool inside)
+    {
+        toybox::Model& model = M();
+        if (model.screen == Screen::Wheel)
+        {
+            int place = inside ? toybox::WheelPlaceAt(x, y) : -2;
+            if (place >= -1)
+                model.AimWheel(place);
+        }
+        else if (toybox::Pointer(x, y, inside))
+            model.Touch();
+    }
+
     // --- Script ----------------------------------------------------------------------------------------------------
 
     // Screenshot of what was last presented (offscreen output only): <SKY_TOYBOX_SHOTS>_<n>.png, or _<name>.png.
@@ -293,7 +379,9 @@ namespace
     // launch. A key name (SDL_GetKeyFromName; "shift+Right") is pressed and released; "down=Tab" / "up=Tab" press or
     // release only; "type=<text>" types; "shot" or "shot=<name>" saves a screenshot; "pad=back+lright*0.8" holds pad
     // buttons (a b x y back start lb rb up down left right, lup ldown lleft lright for the stick) for 0.8 s (0.15 s
-    // without "*"), as the Toy Box sees the pad; "click=x/y" and "rclick=x/y" click at canvas pixels.
+    // without "*"), as the Toy Box sees the pad; "click=x/y" and "rclick=x/y" click at canvas pixels, "move=x/y" moves the
+    // pointer there (hover), "wheel=up" / "wheel=down" turn the wheel one tick (each logs the focus); "hold=K*0.5" holds a
+    // key (an SDL scancode name) for the game's input 0.5 s and logs the pad state the game gets from it.
     void LoadScript()
     {
         const char* script = skyenv::Get("SKY_TOYBOX_SCRIPT");
@@ -318,21 +406,101 @@ namespace
         SDL_Event event{};
         event.type = down ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP;
         event.key.key = SDL_GetKeyFromName(name.c_str());
+        event.key.scancode = SDL_GetScancodeFromKey(event.key.key, nullptr);
         event.key.mod = mod;
         event.key.down = down;
         ToyboxHandleEvent(event);
     }
 
+    // After a scripted key or mouse action: where the focus is, so a check can read it from the log. "home" is the Home
+    // row and its place: seats (the top row's place), bar (0 search, 1 Filters) or grid (the card).
+    void LogFocus()
+    {
+        const toybox::Model& model = M();
+        const char* row = model.homeRow == toybox::Model::Row::Seats ? "seats"
+                          : model.homeRow == toybox::Model::Row::Bar ? "bar"
+                                                                     : "grid";
+        int place = model.homeRow == toybox::Model::Row::Seats ? model.column
+                    : model.homeRow == toybox::Model::Row::Bar ? model.barColumn
+                                                               : model.list.cursor;
+        fprintf(stderr,
+            "[toybox] script: focus: screen %d, menu row %d, commands row %d column %d, card %d, home %s %d seat %d, "
+            "hover %s\n",
+            int(model.screen), model.menuRow, model.commandRow, model.commandColumn, model.list.cursor, row, place,
+            model.seat, toybox::HoverTarget().c_str());
+    }
+
+    // SKY_TOYBOX_CLOCK=frames: the script's times and its pad and key holds count the frames the game presented, 30 a
+    // second, instead of the wall clock: a recorded route keeps its pace on a machine too busy for 30 fps, where the
+    // game itself slows down frame by frame.
+    uint64_t ScriptClock()
+    {
+        static const bool frames = [] {
+            const char* clock = skyenv::Get("SKY_TOYBOX_CLOCK");
+            return clock != nullptr && strcmp(clock, "frames") == 0;
+        }();
+        return frames ? gpu::FramesPresented() * 1'000'000'000ull / 30 : SDL_GetTicksNS();
+    }
+
+    // SKY_TOYBOX_SCRIPT_FILE=<file>: lines appended to the file while the game runs are script items run at once, or
+    // "+<seconds> <item>" that many seconds of the script's clock after the line is read: a live run steered from
+    // outside, as SKY_PRESS_FILE does for the pad, or a route started at a moment the caller sees in the log.
+    void ReadScriptFile(uint64_t clock)
+    {
+        static const char* path = skyenv::Get("SKY_TOYBOX_SCRIPT_FILE");
+        static size_t offset = 0;
+        static uint64_t lastCheck = 0;
+        uint64_t now = SDL_GetTicksNS();
+        if (path == nullptr || now - lastCheck < 100000000ull)
+            return;
+        lastCheck = now;
+        size_t size = 0;
+        char* data = static_cast<char*>(SDL_LoadFile(path, &size));
+        if (data == nullptr)
+            return;
+        std::string text = size > offset ? std::string(data + offset, size - offset) : std::string();
+        SDL_free(data);
+        size_t end = text.rfind('\n');
+        if (end == std::string::npos)
+            return;
+        offset += end + 1;
+        for (size_t begin = 0; begin < end;)
+        {
+            size_t stop = text.find('\n', begin);
+            std::string item = text.substr(begin, stop - begin);
+            begin = stop + 1;
+            uint64_t at = clock;
+            if (item.size() > 1 && item[0] == '+')
+            {
+                size_t space = item.find(' ');
+                at += uint64_t(atof(item.c_str() + 1) * 1e9);
+                item = space == std::string::npos ? std::string() : item.substr(space + 1);
+            }
+            if (item.empty())
+                continue;
+            auto later = std::upper_bound(g_script.begin() + ptrdiff_t(g_scriptNext), g_script.end(), at,
+                [](uint64_t t, const ScriptStep& step) { return t < step.at; });
+            g_script.insert(later, { at, item });
+        }
+    }
+
     void RunScript()
     {
-        uint64_t now = SDL_GetTicksNS();
-        while (g_scriptNext < g_script.size() && g_script[g_scriptNext].at <= now)
+        uint64_t now = SDL_GetTicksNS(), clock = ScriptClock();
+        ReadScriptFile(clock);
+        while (g_scriptNext < g_script.size() && g_script[g_scriptNext].at <= clock)
         {
             std::string action = g_script[g_scriptNext++].action;
             fprintf(stderr, "[toybox] script: %s\n", action.c_str());
             if (action == "shot" || action.rfind("shot=", 0) == 0)
             {
                 SaveShot(action.size() > 5 ? action.substr(5) : std::string());
+                continue;
+            }
+            if (action == "achievement")
+            {
+                if (g_achievementPreview != nullptr)
+                    g_achievementPreview();
                 continue;
             }
             if (action.rfind("prompt=", 0) == 0)
@@ -360,7 +528,7 @@ namespace
                 size_t star = spec.find('*');
                 double hold = star != std::string::npos ? atof(spec.c_str() + star + 1) : 0.15;
                 spec = spec.substr(0, star);
-                PadPress press{ now, now + uint64_t(hold * 1e9), 0, 0, 0 };
+                PadPress press{ clock, clock + uint64_t(hold * 1e9), 0, 0, 0 };
                 for (size_t b = 0; b <= spec.size();)
                 {
                     size_t plus = std::min(spec.find('+', b), spec.size());
@@ -373,13 +541,36 @@ namespace
                 g_padPresses.push_back(press);
                 continue;
             }
-            if (action.rfind("click=", 0) == 0 || action.rfind("rclick=", 0) == 0)
+            if (action.rfind("hold=", 0) == 0)
             {
-                bool right = action[0] == 'r';
-                std::string at = action.substr(right ? 7 : 6);
+                std::string name = action.substr(5);
+                size_t star = name.find('*');
+                double hold = star != std::string::npos ? atof(name.c_str() + star + 1) : 0.5;
+                name = name.substr(0, star);
+                if (SDL_Scancode scancode = SDL_GetScancodeFromName(name.c_str()); scancode != SDL_SCANCODE_UNKNOWN)
+                    g_keyHolds.push_back({ clock, clock + uint64_t(hold * 1e9), scancode, name, false });
+                continue;
+            }
+            if (action.rfind("click=", 0) == 0 || action.rfind("rclick=", 0) == 0 || action.rfind("move=", 0) == 0)
+            {
+                std::string at = action.substr(action.find('=') + 1);
                 float x = float(atof(at.c_str())), y = float(atof(at.c_str() + at.find('/') + 1));
+                if (M().open && action[0] == 'm')
+                    MouseMove(x, y, true);
+                else if (M().open)
+                {
+                    MouseDown(x, y, action[0] == 'r' ? SDL_BUTTON_RIGHT : SDL_BUTTON_LEFT, false);
+                    g_mouseHeld = false;
+                    M().Hold(false, now);
+                }
+                LogFocus();
+                continue;
+            }
+            if (action.rfind("wheel=", 0) == 0)
+            {
                 if (M().open)
-                    toybox::Click(M(), x, y, right ? 3 : 1, false);
+                    MouseWheel(action == "wheel=up" ? 1.0f : -1.0f);
+                LogFocus();
                 continue;
             }
             if (action.rfind("down=", 0) == 0 || action.rfind("up=", 0) == 0)
@@ -396,13 +587,15 @@ namespace
             }
             SendKey(action, true, mod);
             SendKey(action, false, mod);
+            if (M().open)
+                LogFocus();
         }
     }
 
     void Present()
     {
         toybox::Model& model = M();
-        bool visible = model.open || !model.toast.empty() || !model.fps.empty();
+        bool visible = model.open || !model.toast.empty() || !model.fps.empty() || gamemenu::Current().debugScreen;
         if (!visible)
         {
             if (g_overlayShown)
@@ -446,8 +639,9 @@ void ToyboxInit(SDL_Window* window)
     M().Init(!PortalIsEmulated() || (realView != nullptr && *realView != '\0'));
     g_enabled = true;
     LoadScript();
-    fprintf(stderr, "[toybox] hold Tab or View: quick swap wheel; F6, tap Tab or View + Y: the Toy Box; F3 or View + "
-                    "Start: the game menu\n");
+    fprintf(stderr,
+        "[toybox] hold %s or View: quick swap wheel; %s or View + Y: the Toy Box; F3 or View + Start: the game menu\n",
+        SDL_GetScancodeName(g_keys.tab ? SDL_SCANCODE_TAB : g_keys.open), SDL_GetScancodeName(g_keys.open));
 }
 
 bool ToyboxHandleEvent(const SDL_Event& event)
@@ -460,7 +654,7 @@ bool ToyboxHandleEvent(const SDL_Event& event)
     case SDL_EVENT_KEY_DOWN:
     case SDL_EVENT_KEY_UP:
     {
-        bool toggle = event.key.key == SDLK_TAB || event.key.key == SDLK_F6 || event.key.key == SDLK_F3;
+        bool toggle = HoldKey(event.key) || OpenKey(event.key) || event.key.key == SDLK_F3;
         bool wasOpen = model.open;
         HandleKey(event.key, event.type == SDL_EVENT_KEY_DOWN);
         return wasOpen || model.open || toggle;
@@ -471,13 +665,10 @@ bool ToyboxHandleEvent(const SDL_Event& event)
         return model.open;
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
     {
-        float x, y;
-        if (model.open && CanvasPoint(event.button.x, event.button.y, x, y))
-        {
-            toybox::Click(model, x, y, event.button.button == SDL_BUTTON_RIGHT ? 3 : 1, event.button.clicks >= 2);
-            g_mouseHeld = true;
-            model.Hold(true, SDL_GetTicksNS());
-        }
+        float x = 0, y = 0;
+        bool inside = CanvasPoint(event.button.x, event.button.y, x, y);
+        if (model.open && (inside || model.waiting == toybox::Model::Waiting::MouseButton))
+            MouseDown(x, y, event.button.button, event.button.clicks >= 2);
         return model.open;
     }
     case SDL_EVENT_MOUSE_BUTTON_UP:
@@ -486,21 +677,15 @@ bool ToyboxHandleEvent(const SDL_Event& event)
         return model.open;
     case SDL_EVENT_MOUSE_MOTION:
     {
-        float x, y;
-        if (model.open && model.screen == Screen::Wheel && CanvasPoint(event.motion.x, event.motion.y, x, y))
-        {
-            int place = toybox::WheelPlaceAt(x, y);
-            if (place >= -1)
-                model.AimWheel(place);
-        }
+        float x = 0, y = 0;
+        bool inside = CanvasPoint(event.motion.x, event.motion.y, x, y);
+        if (model.open)
+            MouseMove(x, y, inside);
         return model.open;
     }
     case SDL_EVENT_MOUSE_WHEEL:
-        if (model.open && model.screen == Screen::Stats)
-            model.Run(event.wheel.y > 0 ? Command::Right : Command::Left);
-        else if (model.open &&
-                 (model.screen == Screen::Home || model.screen == Screen::Add || model.screen == Screen::WheelList))
-            model.ScrollList(event.wheel.y > 0 ? -1 : 1);
+        if (model.open && event.wheel.y != 0)
+            MouseWheel(event.wheel.y);
         return model.open;
     default: return false;
     }
@@ -511,10 +696,23 @@ void ToyboxFilterGamepad(GamepadState& state)
     if (!g_enabled)
         return;
     toybox::Model& model = M();
-    uint64_t now = SDL_GetTicksNS();
+    uint64_t now = SDL_GetTicksNS(), clock = ScriptClock();
+    for (KeyHold& hold : g_keyHolds)
+    {
+        if (!hold.logged && clock >= hold.from + 100'000'000 && clock < hold.to)
+        {
+            hold.logged = true;
+            fprintf(stderr,
+                "[toybox] script: %s held: the game gets buttons 0x%04X, left stick %d/%d, right stick %d/%d, triggers "
+                "%d/%d\n",
+                hold.name.c_str(), state.buttons, state.thumbLX, state.thumbLY, state.thumbRX, state.thumbRY,
+                state.leftTrigger, state.rightTrigger);
+        }
+    }
+    std::erase_if(g_keyHolds, [&](const KeyHold& hold) { return clock >= hold.to + 1'000'000'000; });
     for (const PadPress& press : g_padPresses)
     {
-        if (now >= press.from && now < press.to)
+        if (clock >= press.from && clock < press.to)
         {
             state.buttons |= press.buttons;
             if (press.lx != 0)
@@ -523,7 +721,7 @@ void ToyboxFilterGamepad(GamepadState& state)
                 state.thumbLY = press.ly;
         }
     }
-    std::erase_if(g_padPresses, [&](const PadPress& press) { return now >= press.to + 1'000'000'000; });
+    std::erase_if(g_padPresses, [&](const PadPress& press) { return clock >= press.to + 1'000'000'000; });
 
     uint16_t buttons = state.buttons;
     uint16_t pressed = buttons & ~g_lastButtons, released = g_lastButtons & ~buttons;
@@ -619,6 +817,36 @@ void ToyboxFilterGamepad(GamepadState& state)
     }
     if (released & Button::Back)
         g_wheelByPad = false;
+
+    // --- The F3 menu's Commands page: a pad button it waits for (the first pressed after all were released), then none
+    // until every button is released again --------------------------------------------------------------------------
+    if (model.waiting != toybox::Model::Waiting::PadButton)
+        g_padArmed = false;
+    if (model.screen == Screen::Menu && (model.waiting == toybox::Model::Waiting::PadButton || model.settle))
+    {
+        constexpr uint8_t TriggerPressed = 30;
+        bool any = buttons != 0 || state.leftTrigger > TriggerPressed || state.rightTrigger > TriggerPressed;
+        if (model.settle)
+            model.settle = any;
+        else if (!any)
+            g_padArmed = true;
+        else if (g_padArmed)
+        {
+            for (int button = 0; button < PadButtonCount; button++)
+            {
+                uint16_t mask = PadButtonMask(button);
+                bool down = mask != 0 ? (buttons & mask) != 0
+                                      : (button == 6 ? state.leftTrigger : state.rightTrigger) > TriggerPressed;
+                if (down)
+                {
+                    model.TakePadButton(button);
+                    break;
+                }
+            }
+        }
+        state = {};
+        return;
+    }
 
     // --- The Toy Box ---------------------------------------------------------------------------------------------------
     if ((buttons & Button::Back) &&
@@ -746,6 +974,40 @@ void ToyboxNotice(const char* english, const char* french)
     g_noticePending = true;
 }
 
+void ToyboxAchievement(const std::string& name, uint32_t points, std::vector<uint8_t> png)
+{
+    std::lock_guard lock(g_noticeMutex);
+    g_achievement = { name, points, std::move(png) };
+    g_achievementPending = true;
+}
+
+void ToyboxSetAchievementPreview(void (*preview)()) { g_achievementPreview = preview; }
+
+namespace
+{
+    collection::Image DecodePng(const std::vector<uint8_t>& png)
+    {
+        collection::Image image;
+        if (png.empty())
+            return image;
+        SDL_Surface* loaded = SDL_LoadPNG_IO(SDL_IOFromConstMem(png.data(), png.size()), true);
+        if (loaded == nullptr)
+            return image;
+        if (SDL_Surface* rgba = SDL_ConvertSurface(loaded, SDL_PIXELFORMAT_RGBA32))
+        {
+            image.width = rgba->w;
+            image.height = rgba->h;
+            image.rgba.resize(size_t(rgba->w) * size_t(rgba->h));
+            for (int y = 0; y < rgba->h; y++)
+                memcpy(&image.rgba[size_t(y) * size_t(rgba->w)],
+                    static_cast<const uint8_t*>(rgba->pixels) + size_t(y) * size_t(rgba->pitch), size_t(rgba->w) * 4);
+            SDL_DestroySurface(rgba);
+        }
+        SDL_DestroySurface(loaded);
+        return image;
+    }
+}
+
 void ToyboxUpdate()
 {
     if (!g_enabled)
@@ -759,10 +1021,17 @@ void ToyboxUpdate()
             g_noticePending = false;
             model.Notice(toybox::French() ? g_notice.second : g_notice.first, 4);
         }
+        if (g_achievementPending)
+        {
+            g_achievementPending = false;
+            model.Achievement(g_achievement.name, g_achievement.points, DecodePng(g_achievement.png));
+        }
     }
     if (g_levelStarted.exchange(false))
         model.ClearOutOfHealth();
     FollowPrompt(model);
+    if (gamemenu::UpdateDebugScreen())
+        model.Touch();
     if (std::string fps = gamemenu::FpsText(); fps != model.fps)
     {
         model.fps = fps;
@@ -793,4 +1062,42 @@ void ToyboxUpdate()
     }
     model.Tick(now);
     Present();
+}
+
+bool ToyboxWaitsForPadButton()
+{
+    return g_enabled && M().open && M().screen == Screen::Menu && M().waiting == toybox::Model::Waiting::PadButton;
+}
+
+const bool* ToyboxKeyboardState()
+{
+    const bool* keys = SDL_GetKeyboardState(nullptr);
+    if (g_keyHolds.empty())
+        return keys;
+    static bool merged[SDL_SCANCODE_COUNT];
+    std::copy(keys, keys + SDL_SCANCODE_COUNT, merged);
+    uint64_t now = ScriptClock();
+    for (const KeyHold& hold : g_keyHolds)
+        if (now >= hold.from && now < hold.to)
+            merged[hold.scancode] = true;
+    return merged;
+}
+
+bool ToyboxOverlayOpen() { return g_enabled && M().open; }
+
+bool ToyboxWaitsForMouseButton() { return g_enabled && M().open && M().waiting == toybox::Model::Waiting::MouseButton; }
+
+void ToyboxSetKeys(const std::string (&keys)[3], bool tab)
+{
+    g_keys.Set(keys, tab);
+    g_tabDown = 0; // a rebind must not leave a press waiting for the old key's release
+    g_wheelByTab = false;
+    PortalSetHotkeys(g_keys.add, g_keys.clear);
+}
+
+std::string ToyboxWheelKeyName()
+{
+    SDL_Scancode code = g_keys.tab ? SDL_SCANCODE_TAB : g_keys.open;
+    const char* name = SDL_GetKeyName(SDL_GetKeyFromScancode(code, SDL_KMOD_NONE, false));
+    return name != nullptr && *name != 0 ? name : SDL_GetScancodeName(code);
 }

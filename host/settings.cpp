@@ -163,6 +163,42 @@ namespace
             return false;
         }
 
+        // mouse_<action>=<mouse name>|none (host/mouse.h).
+        bool Mouse(const std::string& source, const std::string& action, const std::string& value)
+        {
+            for (size_t i = 0; i < std::size(g_keyActions); i++)
+            {
+                if (action != g_keyActions[i].name)
+                    continue;
+                mouse::Button button;
+                if (!mouse::FromName(value, button))
+                    return Warn(source, "mouse_" + action, value, "a mouse button (Mouse Left, Wheel Up...) or none");
+                s.mouse.stored[i] = button;
+                s.mouse.set[i] = true;
+                return true;
+            }
+            warnings.push_back(fmt::format("{}: no action \"{}\" for the mouse; ignored", source, action));
+            return false;
+        }
+
+        // key_toybox, key_toybox_add, key_toybox_clear: the Toy Box's keys.
+        bool ToyboxKey(const std::string& source, const std::string& name, const std::string& value)
+        {
+            static const char* const Names[] = { "key_toybox", "key_toybox_add", "key_toybox_clear" };
+            for (size_t i = 0; i < std::size(Names); i++)
+            {
+                if (name != Names[i])
+                    continue;
+                if (SDL_GetScancodeFromName(value.c_str()) == SDL_SCANCODE_UNKNOWN)
+                    return Warn(source, name, value, "an SDL key name");
+                s.toyboxKeys[i] = value;
+                if (i == 0)
+                    s.toyboxTab = false;
+                return true;
+            }
+            return false;
+        }
+
         // pad_<button>=<button>|none: the pad button `button` does the job of the named one.
         bool Pad(const std::string& source, const std::string& button, const std::string& value)
         {
@@ -220,8 +256,12 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
             set.FpsLimit(file, value);
         else if (key == "skip_intro_movies")
             set.Bool(file, "skip_intro_movies", value, s.skipIntroMovies);
+        else if (key == "debug_screen")
+            set.Bool(file, "debug_screen", value, s.debugScreen);
         else if (key == "show_fps")
             set.Bool(file, "show_fps", value, s.showFps);
+        else if (key == "reduce_motion")
+            set.Bool(file, "reduce_motion", value, s.reduceMotion);
         else if (key == "texture_dump")
             set.Bool(file, "texture_dump", value, s.textureDump);
         else if (key == "texture_packs")
@@ -237,11 +277,13 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
     // so a game started without PLAY (its own icon, a shortcut to the runtime) still gets what its page shows.
     for (const auto& [key, value] : section((gameSection + ".video").c_str()))
         video(key, value);
-    // The master volume: [audio], then the game's own [<game>.audio].
+    // The master volume and the portal's sound: [audio], then the game's own [<game>.audio].
     for (const std::string& name : { std::string("audio"), gameSection + ".audio" })
         for (const auto& [key, value] : section(name.c_str()))
             if (key == "volume")
                 set.Volume(file, value);
+            else if (key == "portal_sound")
+                set.Bool(file, "portal_sound", value, s.portalSound);
     for (const auto& [key, value] : section("input"))
     {
         if (key == "device")
@@ -250,6 +292,8 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
             s.gamepad = value;
         else if (key == "glyphs")
             set.Glyphs(file, value);
+        else if (key.starts_with("key_toybox"))
+            set.ToyboxKey(file, key, value);
         else if (key.starts_with("key_"))
             set.Key(file, key.substr(4), value);
         else if (key.starts_with("pad_"))
@@ -263,7 +307,11 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
     // [input], so a game started without the launcher still plays with its own bindings.
     for (const auto& [key, value] : section((gameSection + ".input").c_str()))
     {
-        if (key.starts_with("key_"))
+        if (key == "mouse")
+            set.Bool(file, "mouse", value, s.mouse.enabled);
+        else if (key.starts_with("mouse_"))
+            set.Mouse(file, key.substr(6), value);
+        else if (key.starts_with("key_"))
             set.Key(file, key.substr(4), value);
         else if (key.starts_with("pad_"))
             set.Pad(file, key.substr(4), value);
@@ -562,5 +610,6 @@ std::string DescribeSettings(const RuntimeSettings& s)
                    ? fmt::format(", edge smoothing {}", edgesmoothing::Name(s.edgeSmoothing))
                    : "") +
            (s.nightmareFromStart ? ", nightmare from the start" : "") + (s.showFps ? ", fps counter" : "") +
-           (s.volume != 100 ? fmt::format(", volume {}", s.volume) : "");
+           (s.debugScreen ? ", debug screen" : "") + (s.reduceMotion ? ", reduced motion" : "") +
+           (s.volume != 100 ? fmt::format(", volume {}", s.volume) : "") + (s.portalSound ? "" : ", portal sound off");
 }

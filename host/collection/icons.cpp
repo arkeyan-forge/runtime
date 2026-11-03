@@ -1,4 +1,5 @@
 #include "icons.h"
+#include "collection.h"
 #include "datadir.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
@@ -401,84 +402,85 @@ namespace collection
         return found != game->kindPictures.end() ? FirstCached(*game, { found->second }) : std::string();
     }
 
-    std::string PortraitPath(const std::string& gameId, const Toy& toy, uint16_t variant, bool large)
+    namespace
     {
-        if (std::string path = GamePortraitPath(gameId, toy, variant, large); !path.empty())
-            return path;
-        for (const Game& game : Catalogue::Get().Games())
-            if (game.id != gameId)
-                if (std::string path = GamePortraitPath(game.id, toy, variant, large); !path.empty())
+        enum class PictureKind
+        {
+            Portrait,
+            Best,
+            Half,
+            JoinedHalf
+        };
+
+        // Every UI uses this order: a variant's own art before plain art, newest cached game first.
+        // Half images take precedence for swappers; whole-figure art is never used in a waist composite.
+        std::string PicturePath(const Toy& toy, uint16_t variant, PictureKind kind, bool large)
+        {
+            const auto& games = Catalogue::Get().Games();
+            auto mapped = [](const Game& game, const auto& pictures, uint16_t type, uint16_t version,
+                              const char* folder = "") -> std::string {
+                auto it = pictures.find(uint32_t(type) << 16 | version);
+                return it == pictures.end() ? std::string() : FirstCached(game, { folder + it->second });
+            };
+            bool half = toy.category == Category::SwapTop || toy.category == Category::SwapBottom;
+            if (!half && (kind == PictureKind::Half || kind == PictureKind::JoinedHalf))
+                return {};
+            const Toy* whole =
+                toy.category == Category::SwapBottom ? Catalogue::Get().Find(MatchingHalf(toy.type)) : nullptr;
+            for (int pass = 0; pass < (variant != 0 ? 2 : 1); ++pass)
+            {
+                uint16_t version = pass == 0 ? variant : 0;
+                if (half)
+                    for (auto game = games.rbegin(); game != games.rend(); ++game)
+                        if (std::string path = mapped(*game, game->halves, toy.type, version, "artworks/");
+                            !path.empty())
+                            return path;
+                if (kind == PictureKind::JoinedHalf)
+                    continue;
+                for (auto game = games.rbegin(); game != games.rend(); ++game)
+                    for (const Toy* candidate : { &toy, whole })
+                    {
+                        if (candidate == nullptr)
+                            continue;
+                        if (kind != PictureKind::Portrait)
+                            if (std::string art = mapped(*game, game->artworks, candidate->type, version, "artworks/");
+                                !art.empty())
+                                return art;
+                        if (std::string portrait = mapped(*game, game->portraits, candidate->type, version);
+                            !portrait.empty())
+                            return portrait;
+                        // Unkeyed names and images describe the plain toy only.
+                        if (version == 0)
+                            if (std::string plain = GamePortraitPath(game->id, *candidate, 0, large); !plain.empty())
+                                return plain;
+                        if (kind == PictureKind::Portrait)
+                            if (std::string art = mapped(*game, game->artworks, candidate->type, version, "artworks/");
+                                !art.empty())
+                                return art;
+                    }
+            }
+            if (kind == PictureKind::JoinedHalf)
+                return {};
+            for (auto game = games.rbegin(); game != games.rend(); ++game)
+                if (std::string path = GameKindPicturePath(game->id, toy.category); !path.empty())
                     return path;
-        if (std::string path = GameKindPicturePath(gameId, toy.category); !path.empty())
-            return path;
-        for (const Game& game : Catalogue::Get().Games())
-            if (game.id != gameId)
-                if (std::string path = GameKindPicturePath(game.id, toy.category); !path.empty())
-                    return path;
-        return {};
+            return {};
+        }
     }
 
-    std::string BestPicturePath(const std::string& gameId, const Toy& toy, uint16_t variant)
+    std::string PortraitPath(const std::string& /*gameId*/, const Toy& toy, uint16_t variant, bool large)
     {
-        std::vector<const Game*> games;
-        if (const Game* viewed = Catalogue::Get().FindGame(gameId))
-            games.push_back(viewed);
-        for (const Game& game : Catalogue::Get().Games())
-            if (game.id != gameId)
-                games.push_back(&game);
-        // A file the game names for `key` (type << 16 | variant) in `pictures`, under its portraits folder.
-        auto find = [](const Game& game, const std::map<uint32_t, std::string>& pictures, uint32_t key,
-                        const char* subfolder) -> std::string {
-            auto it = pictures.find(key);
-            if (it == pictures.end())
-                return {};
-            std::string folder;
-            if (const char* portraits = skyenv::Get("SKY_PORTRAITS"))
-                folder = std::string(portraits) + "/";
-            else if (std::filesystem::path data = datadir::Game(game.id); !data.empty())
-                folder = datadir::Text(data / "portraits") + "/";
-            else
-                return {};
-            std::string path = folder + subfolder + it->second + ".png";
-            return SDL_GetPathInfo(path.c_str(), nullptr) ? path : std::string();
-        };
-        uint32_t plain = uint32_t(toy.type) << 16;
-        if (variant != 0)
-            for (const Game* game : games)
-                for (auto [pictures, subfolder] :
-                    { std::pair{ &game->artworks, "artworks/" }, std::pair{ &game->portraits, "" } })
-                    if (std::string path = find(*game, *pictures, plain | variant, subfolder); !path.empty())
-                        return path;
-        for (const Game* game : games)
-            if (std::string path = find(*game, game->artworks, plain, "artworks/"); !path.empty())
-                return path;
-        return PortraitPath(gameId, toy, variant, true);
+        return PicturePath(toy, variant, PictureKind::Portrait, large);
+    }
+
+    std::string BestPicturePath(const std::string& /*gameId*/, const Toy& toy, uint16_t variant)
+    {
+        return PicturePath(toy, variant, PictureKind::Best, true);
     }
 
     std::string HalfPicturePath(const Toy& toy, uint16_t variant)
     {
-        for (const Game& game : Catalogue::Get().Games())
-        {
-            std::filesystem::path data = datadir::Game(game.id);
-            std::string folder;
-            if (const char* portraits = skyenv::Get("SKY_PORTRAITS"))
-                folder = std::string(portraits) + "/artworks/";
-            else if (!data.empty())
-                folder = datadir::Text(data / "portraits") + "/artworks/";
-            else
-                continue;
-            for (uint32_t key :
-                { uint32_t(toy.type) << 16 | variant, uint32_t(toy.type) << 16 }) // for variant 0 the same twice
-            {
-                auto it = game.halves.find(key);
-                if (it == game.halves.end())
-                    continue;
-                std::string path = folder + it->second + ".png";
-                if (SDL_GetPathInfo(path.c_str(), nullptr))
-                    return path;
-            }
-        }
-        return {};
+        return PicturePath(toy, variant, PictureKind::Half, true);
     }
 
     namespace
@@ -542,8 +544,13 @@ namespace collection
 
     Image SwapperPicture(const Toy& top, uint16_t topVariant, const Toy& bottom, uint16_t bottomVariant)
     {
-        std::string upper = HalfPicturePath(top, topVariant), lower = HalfPicturePath(bottom, bottomVariant);
+        std::string upper = PicturePath(top, topVariant, PictureKind::JoinedHalf, true),
+                    lower = PicturePath(bottom, bottomVariant, PictureKind::JoinedHalf, true);
         if (upper.empty() || lower.empty())
+            return {};
+        // Dedicated variant art must not be replaced by a composite made from plain half images.
+        if (PicturePath(top, topVariant, PictureKind::Best, true) != upper ||
+            PicturePath(bottom, bottomVariant, PictureKind::Best, true) != lower)
             return {};
         return JoinHalves(LoadPng(upper), LoadPng(lower));
     }

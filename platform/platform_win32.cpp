@@ -205,6 +205,16 @@ bool PlatformProtectNoAccess(void* address, size_t size)
     return Commit(address, size, PAGE_NOACCESS) != nullptr;
 }
 
+bool PlatformProtectReadOnly(void* address, size_t size, bool readOnly)
+{
+    ULONG previous;
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+    return VirtualProtect(address, size, readOnly ? PAGE_READONLY : PAGE_READWRITE, &previous);
+#else
+    return VirtualProtectFromApp(address, size, readOnly ? PAGE_READONLY : PAGE_READWRITE, &previous);
+#endif
+}
+
 void PlatformStartThread(size_t stackSize, std::function<void()> body)
 {
     // The stack size is a reservation: pages are committed as the stack grows.

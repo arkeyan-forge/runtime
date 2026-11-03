@@ -1,5 +1,6 @@
 #include "launcher.h"
 #include "launcher_ui.h"
+#include "portable.h"
 #include "env.h"
 #include "vfs.h"
 #include "collection/datadir.h"
@@ -23,11 +24,9 @@
 namespace
 {
 #ifdef __APPLE__
-    constexpr char SelectAgainHint[] = "hold Shift (or Option) while the app starts, or start it with --launcher";
     constexpr char PermissionHint[] =
         "\n\nIf the file is there, allow access in System Settings > Privacy & Security > Files and Folders.";
 #else
-    constexpr char SelectAgainHint[] = "hold Shift while the app starts, or start it with --launcher";
     constexpr char PermissionHint[] = "";
 #endif
 
@@ -403,6 +402,20 @@ std::string ResolveGameSource(int argc, char** argv, const GameInfo& game, bool 
             launcherRequested = true;
         else if (path.empty())
             path = argument;
+    }
+
+    // A portable game reads its own data, whatever the arguments: no disc image, no launcher window (portable.h).
+    if (const std::string& pack = portable::OwnPack(); !pack.empty())
+    {
+        GameSourceCheck check = CheckGameSource(pack, game);
+        if (check.status == GameSourceStatus::Ok)
+        {
+            fprintf(stderr, "game data: reading the portable copy's own data in %s\n", pack.c_str());
+            return pack;
+        }
+        ShowError(
+            game, "This portable copy of the game is damaged: " + check.message + " Export it again.", interactive);
+        return {};
     }
 
     // The copy of the game data (Skylauncher's "Copy the game data") is read in preference to the disc image, and makes it

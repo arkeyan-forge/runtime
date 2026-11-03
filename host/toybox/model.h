@@ -5,8 +5,10 @@
 // main actions, the rest behind More), Edit stats, Add a figure, names, Manage, the quick swap wheel. No drawing here: draw.cpp
 // shows a Model and calls its actions, toybox.cpp feeds it the input. Everything runs on the host's main thread.
 #include "host/collection/collection.h"
+#include "host/collection/icons.h"
 #include "host/collection/search.h"
 #include "host/collection/upgrades.h"
+#include "host/toybox/nav.h"
 #include <cstdint>
 #include <functional>
 #include <set>
@@ -30,7 +32,9 @@ namespace toybox
         PreviousSection,
         NextSection,
         Delete,
-        Start
+        Start,
+        NextRow, // Tab: Home's next row (seats, search and filters, the grid), round the end
+        PreviousRow // Shift+Tab
     };
 
     enum class Screen
@@ -106,6 +110,8 @@ namespace toybox
         std::vector<Cell> cells;
         int rows = 0;
         int cursor = 0; // index in cells
+        // The column Up and Down keep (nav::GridMove), while the cursor stays where the last Up or Down put it.
+        int keep = 0, keptAt = -1;
         int scroll = 0; // pixels scrolled
         // Layout in pixels, set by the model for the drawing: a header above the first row of each titled section.
         int rowHeight = 100, headerHeight = 40, visibleHeight = 400;
@@ -220,6 +226,21 @@ namespace toybox
         bool nextStart = false; // applies at the next start (the row says so)
     };
 
+    // One line of the F3 menu's Commands page: an action with a cell per column (Model::CommandHeaders: the keyboard's
+    // key, the pad's button, the mouse's button), the mouse's switch (`value`: On / Off), or one of the page's own actions
+    // (no cells, no value).
+    struct CommandLine
+    {
+        struct Cell
+        {
+            std::string text;
+            bool editable = false; // a stick direction's pad cell is not, nor a Toy Box key's pad and mouse cells
+        };
+        std::string label;
+        std::vector<Cell> cells;
+        std::string value;
+    };
+
     class Model
     {
     public:
@@ -248,14 +269,29 @@ namespace toybox
         // --- Navigation ------------------------------------------------------------------------------------------------
         Screen screen = Screen::Home;
         bool open = false;
-        int seat = 0; // the focused seat
-        bool inList = true; // Home: focus in the grid (else the row of seats along the top)
+        int seat = 0; // the chosen seat (lit gold)
+        // Home's rows, top to bottom; each remembers its place: `column`, `barColumn`, `list.cursor`.
+        enum class Row
+        {
+            Seats, // the seats, then Add a figure and Manage
+            Bar, // the search field, Filters
+            Grid // your figures for the chosen seat
+        };
+        Row homeRow = Row::Grid;
         int column = 0; // the top row's place: the seats, then Add a figure, Manage
+        int barColumn = -1; // 0 the search field, 1 Filters; -1: not visited yet (nav::Land)
+        bool gridKnown =
+            true; // the grid kept its place (false: rebuilt for another seat while the focus was elsewhere)
+        static constexpr int BarCount = 2;
+        // Where the drawing put each row's things (x extents), so that Up and Down keep the column: the seats row's
+        // places, the bar's two, the grid's columns.
+        std::vector<nav::Span> seatSpans, barSpans, gridSpans;
         Grid list; // your figures for the focused seat (Home, WheelList)
         int figure = -1; // the Figure page's figure
         int figureAction = 0;
         bool figureMore = false; // the Figure page shows its other actions (More)
         bool figureDetails = false; // ...and the technical details (Details)
+        uint8_t trapPick = 0; // a trap's Villain row: the villain chosen before A puts it in (0: the one it holds)
         int pinPlace = 0;
         int backup = 0;
         std::vector<std::string> backups;
@@ -275,19 +311,45 @@ namespace toybox
 
         // --- The F3 menu ---------------------------------------------------------------------------------------------------
         static constexpr int MenuRowCount =
-            12; // the most rows; a game without a known FXAA pass has no edge smoothing row
+            15; // the most rows; a game without a known FXAA pass has no edge smoothing row, one without a speaker no portal sound
         int MenuRowTotal() const; // the rows shown
         int menuRow = 0;
         std::vector<MenuRow> MenuRows() const;
         void OpenMenu();
         void FocusMenuRow(int row, int step); // the mouse: focus the row, then step -1 / +1 (a value) or 0 (do it)
+        // The menu's Commands page (menu.cpp): a row per action of the game (game::Adapter::inputRows), a column per device.
+        enum class Waiting
+        {
+            None,
+            Key,
+            PadButton,
+            MouseButton
+        };
+        bool commandsOpen = false;
+        int commandRow = 0, commandColumn = 0;
+        Waiting waiting = Waiting::None; // a key or pad cell waits for the next key or button
+        bool settle =
+            false; // a binding was just taken: the pad does nothing on the page until every button is released
+        std::vector<std::string> CommandHeaders() const;
+        std::vector<CommandLine> CommandLines() const;
+        void FocusCommand(int row, int cell); // the mouse: focus that cell (-1: the row) and do it
+        void TakeKey(int scancode); // the key the page waits for (an SDL_Scancode; 0: Escape, cancels)
+        void TakePadButton(int button); // the pad button it waits for (an index of g_padButtons)
+        void TakeMouse(int button); // the mouse button or wheel tick it waits for (a mouse::Button; None: not one)
 
         // --- Messages --------------------------------------------------------------------------------------------------
         uint32_t lightRgb = 0; // the portal's light as the game last set it, in 4 steps per channel (0xRRGGBB); 0 = off
         std::string fps; // the FPS counter's text ("30 FPS"), empty: off; set by toybox.cpp, drawn in the corner
-        std::string toast; // shown 3 s (5 s for long ones), in the Toy Box and over the game
-        uint64_t toastUntil = 0;
+        std::string
+            toast; // shown 3 s (5 s for long ones), in the Toy Box and over the game; slides in, fades out (look.h)
+        uint64_t toastSince = 0, toastUntil = 0; // shown from, until; then its fade out
+        std::string
+            toastCaption; // an achievement's line over the text ("ACHIEVEMENT UNLOCKED · 20 POINTS"); empty: a notice
+        collection::Image toastPicture; // an achievement's picture; empty: none
+        uint32_t toastSerial = 0; // a new number with each picture (draw.cpp keeps the last one scaled)
         void Notice(const std::string& text, uint64_t seconds) { Toast(text, seconds); } // ToyboxNotice (host/toybox.h)
+        // ToyboxAchievement (host/toybox.h): the achievement's name, its points, its picture (may be empty); 6 s.
+        void Achievement(const std::string& title, uint32_t points, collection::Image picture);
         int tidied = 0; // figures this start's tidy moved (the one-time message)
 
         // --- Calls from toybox.cpp -----------------------------------------------------------------------------------
@@ -317,12 +379,14 @@ namespace toybox
         // --- Actions the drawing's mouse areas call ----------------------------------------------------------------
         void FocusSeat(int index);
         void FocusColumnRow(int row);
-        void FocusCell(int cell);
+        void FocusBar(int index); // the search field (0) or Filters (1), without opening them
+        void FocusCell(int cell, bool scroll = true); // the pointer passing over a card does not scroll
         void ActivateCell(int cell); // double click: put on
         void OptionsCell(int cell); // right click: Figure page
         void ScrollList(int rows);
         void FocusAction(int index);
         void FocusAddCell(int cell);
+        void HoverAddCell(int cell); // focus only (a click on the focused card opens its versions)
         void FocusVersion(int index);
         void FocusKey(int row, int column);
         void FocusSuggestion(int index);
@@ -352,6 +416,11 @@ namespace toybox
         std::set<std::string> outOfHealth;
         std::string FigureName(const collection::Figure& f) const;
         std::vector<std::string> FigureActions() const; // the Figure page's lines
+        // A trap's Villain row (host/toybox/trap_villain.h): the villains of its element, the one the row shows (chosen
+        // or held; 0: none), and a villain picked with the mouse on the page's strip (put in at once).
+        std::vector<const collection::Villain*> TrapVillainsOf(const collection::Figure& f) const;
+        uint8_t TrapPick() const;
+        void PickTrapVillain(uint8_t id);
         std::vector<std::string> ColumnRows() const; // the top row's places after the seats
         // The name of a toy on the Add a figure screen: a swapper's top is the swapper ("Boom Jet", not "Boom Jet (top)").
         static std::string AddName(const collection::Toy& toy);
@@ -391,13 +460,15 @@ namespace toybox
         void BuildAdd(collection::Element element = collection::Element::Count);
         void BuildVersions();
         void FixGrid(Grid& grid, int visibleRows);
-        void MoveGrid(Grid& grid, Command command);
+        bool MoveGrid(Grid& grid, Command command); // false when the move would leave the grid
+        void HomeStep(int step, bool wrap); // Up / Down (Tab) between Home's rows
         void JumpSection(Grid& grid, int step);
         void Toast(const std::string& text, uint64_t seconds = 3);
         void Ask(Dialog dialog);
 
         void RunHome(Command command);
         void RunList(Command command, bool wheelList);
+        void RunBar(Command command);
         void OpenSearch();
         void RunFilters(Command command);
         void RunFigure(Command command);
@@ -414,6 +485,7 @@ namespace toybox
         void RunManage(Command command);
         void RunDialog(Command command);
         void RunMenu(Command command);
+        void RunCommands(Command command);
         void MenuStep(int row, int step);
 
         // Portal.
@@ -432,6 +504,8 @@ namespace toybox
         void OpenFigure(int index);
         void DoFigureAction(int action);
         void OpenStats(int index);
+        // Into the Figure page's trap, lifted off the emulated portal around the write.
+        void PutVillain(uint8_t id, bool evolved);
         void SaveStats();
         void OpenName(NameEntry entry);
         void CreateFrom(const Version& version);

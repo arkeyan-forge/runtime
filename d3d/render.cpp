@@ -4,12 +4,14 @@
 // XenosRecomp translated them. EDRAM surfaces become host render targets; resolves copy them into host textures that
 // stand in for the guest textures they were resolved to.
 #include "d3d/capture.h"
+#include "d3d/render_stats.h"
 #include "d3d/command_buffers.h"
 #include "d3d/depth_readback.h"
 #include "d3d/device.h"
 #include "d3d/render_scale.h"
 #include "d3d/ring.h"
 #include "d3d/shaders.h"
+#include "d3d/step_pacer.h"
 #include "d3d/ultrawide.h"
 #include "d3d/xenos.h"
 #include "gpu/buffer_cache.h"
@@ -36,6 +38,7 @@
 #include <mutex>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 #include <ppc_config.h>
 #include <ppc_context.h>
@@ -59,11 +62,20 @@ namespace
     // Resolution scale (settings): host render targets, and the textures resolved from them, are this many times the
     // guest's surfaces, so guest pixel coordinates (viewports, scissors, resolve and clear rectangles) are scaled by it.
     int32_t Scale() { return int32_t(gpu::g_settings.resolutionScale); }
-    // The effective edge smoothing: the setting, or by the resolution scale when it was not chosen.
+    // The effective edge smoothing: the setting, or by the resolution scale and the level when it was not chosen. Each
+    // change is logged once.
     edgesmoothing::Mode EdgeSmoothing()
     {
-        return edgesmoothing::Resolve(
-            edgesmoothing::Mode(gpu::g_settings.edgeSmoothing), uint32_t(gpu::g_settings.resolutionScale));
+        const edgesmoothing::Mode mode = edgesmoothing::Resolve(edgesmoothing::Mode(gpu::g_settings.edgeSmoothing),
+            uint32_t(gpu::g_settings.resolutionScale), game::InMenuLevel());
+        static edgesmoothing::Mode logged = edgesmoothing::Auto;
+        if (mode != logged)
+        {
+            logged = mode;
+            fprintf(stderr, "[gpu] edge smoothing %s (setting %s)\n", edgesmoothing::Name(mode),
+                edgesmoothing::Name(edgesmoothing::Mode(gpu::g_settings.edgeSmoothing)));
+        }
+        return mode;
     }
 
     int32_t TargetScale(const gpu::TextureDesc& desc) { return d3d::TargetScale(desc.width, desc.height, Scale()); }
@@ -158,6 +170,7 @@ namespace
         uint64_t guestHash = 0; // GuestContentHash at the last full check (contentHash may be a glyph's host hash)
         uint64_t sampleHash = 0; // GuestSampleHash then
         uint64_t fullFrame = 0; // the frame of the next full check
+        uint64_t glyphHash = 0; // the guest hash of the button glyph it holds (host/glyphs.h); 0: the game's texture
     };
     std::unordered_map<uint64_t, HostTexture> g_textures;
 
@@ -515,10 +528,14 @@ namespace
         // Guest textures can change at any time (movies, streaming): reload when the guest data differs.
         host.checkedFrame = g_frame;
         uint64_t hash = CheckGuestContent(host, key, fetch, info);
+        host.glyphHash = 0;
         if (glyphs::Replace(
                 hash, fetch.Width(), fetch.Height(), xenos::TextureLevelCount(fetch),
                 [&] { return GuestBaseRgba(fetch, info); }, host.texture, host.contentHash))
+        {
+            host.glyphHash = hash;
             return host.texture; // a button glyph drawn for the device in use (host/glyphs.cpp)
+        }
         if (host.texture != nullptr && hash == host.contentHash)
             return host.texture;
 
@@ -724,6 +741,10 @@ namespace
     bool g_frameDraw, g_frameSceneRead, g_frameComposite;
     // The draw's guest shader hashes, for the frame dump's lines (0: none).
     uint64_t g_drawVertexShader, g_drawPixelShader;
+    // The draw's textures that hold a button glyph (their guest hashes, 0 for the others), and the vertex constant of a
+    // glyph model's texture matrix to set to the identity (glyphs::UvMatrix; -1: none).
+    uint64_t g_drawGlyphs[gpu::MaxSamplers];
+    int g_drawUvMatrix = -1;
 
     void ReadConstants(uint32_t device, float* out)
     {
@@ -785,6 +806,33 @@ namespace
         return false;
     }
 
+    // The adapter's simulation passes (game::Adapter::stepPassShaders) are drawn in the frames the pacer picks, all of a
+    // frame's passes together; in the others the draw and the resolve that copies its target are dropped, so the
+    // textures the passes feed keep their last step.
+    bool g_skipStepResolve = false;
+    uint64_t g_stepsRun, g_stepsSkipped; // since start-up, in the SKY_RENDER_STATS line
+
+    bool SkipStepPass(uint64_t pixelShader)
+    {
+        const auto& shaders = game::Current().stepPassShaders;
+        if (std::find(shaders.begin(), shaders.end(), pixelShader) == shaders.end())
+        {
+            g_skipStepResolve = false;
+            return false;
+        }
+        static StepPacer pacer;
+        static uint64_t decidedFrame = 0;
+        static bool run = true;
+        if (decidedFrame != g_frame)
+        {
+            decidedFrame = g_frame;
+            run = pacer.Run(uint64_t(std::chrono::steady_clock::now().time_since_epoch().count()), FrameRateLimit());
+        }
+        (run ? g_stepsRun : g_stepsSkipped)++;
+        g_skipStepResolve = !run;
+        return !run;
+    }
+
     bool PrepareDraw(uint32_t device, uint32_t primitive, gpu::DrawDesc& draw)
     {
         memset(&draw, 0, sizeof(draw));
@@ -801,6 +849,8 @@ namespace
             g_stats.skippedShader++;
             return false;
         }
+        if (ps != nullptr && SkipStepPass(ps->hash))
+            return false;
         draw.vertexShader = vs != nullptr ? gpu::FindXenosShader(vs->hash) : nullptr;
         draw.pixelShader = ps != nullptr ? gpu::FindXenosShader(ps->hash) : nullptr;
         if (draw.vertexShader == nullptr || (pixelShaderObject != 0 && draw.pixelShader == nullptr))
@@ -995,6 +1045,8 @@ namespace
         }
 
         // Textures (fetch constants).
+        bool glyphBound = false;
+        std::fill_n(g_drawGlyphs, gpu::MaxSamplers, 0);
         uint32_t fetchConstants[gpu::MaxSamplers * 6];
         GpuRegisters(device, 0x4800, gpu::MaxSamplers * 6, fetchConstants);
         for (uint32_t slot = 0; slot < gpu::MaxSamplers; slot++)
@@ -1006,12 +1058,18 @@ namespace
                 continue;
             draw.textures[slot] = TextureFor(fetch);
             auto host = g_textures.find(TextureKey(fetch));
+            if (host != g_textures.end() && host->second.glyphHash != 0)
+            {
+                g_drawGlyphs[slot] = host->second.glyphHash;
+                glyphBound = true;
+            }
             draw.swizzles[slot] = SwizzleFor(fetch, host != g_textures.end() && host->second.swapRB);
             if (host != g_textures.end() && host->second.resolved &&
                 gpu::Desc(host->second.texture).width != fetch.Width())
                 draw.scaledTextures |= 1u << slot; // a resolve: resolution-scale times its guest size
             draw.samplers[slot] = SamplerFor(fetch);
         }
+        g_drawUvMatrix = glyphBound ? glyphs::UvMatrix(g_drawVertexShader, g_drawGlyphs) : -1;
 
         // A vertex shader's texture fetches (fetch constants 16-19), only for the samplers its constant table lists: the
         // slots keep their textures between draws.
@@ -1422,13 +1480,20 @@ namespace
         // The "Edge smoothing" setting: Game leaves the pass's contrast thresholds, Light and Off raise them (gpu/edge_smoothing.h).
         const edgesmoothing::Mode smoothing = fxaaPass ? EdgeSmoothing() : edgesmoothing::Game;
         if (upData != 0 || g_dump.active || (g_frameComposite && game::UltrawideCompositeVpos) || hostKernel ||
-            smoothing != edgesmoothing::Game)
+            smoothing != edgesmoothing::Game || g_drawUvMatrix >= 0)
         {
             // A BeginVertices draw captures the constants when the buffer is requested, before the game fills the
             // vertices (and may change state); the debug dump wants the same host-order copy.
             ReadConstants(device, g_constants.data());
             draw.vertexConstants = g_constants.data();
             draw.pixelConstants = g_constants.data() + 256 * 4;
+            if (g_drawUvMatrix >= 0 && g_drawUvMatrix <= 252)
+            {
+                // A glyph model's animated texture matrix (host/glyphs.h, Model): the identity keeps the glyph in place.
+                float* matrix = g_constants.data() + g_drawUvMatrix * 4;
+                std::fill_n(matrix, 16, 0.0f);
+                matrix[0] = matrix[5] = matrix[10] = matrix[15] = 1.0f;
+            }
             if (hostKernel)
             {
                 HostKernel kernel{ .scaledTextures = draw.scaledTextures };
@@ -1535,9 +1600,19 @@ namespace
         return true;
     }
 
+    // A glyph model's letters of geometry (host/glyphs.h, Model): not drawn while its card shows the style's glyph.
+    bool GlyphLetters(uint32_t device, uint32_t first, uint32_t count)
+    {
+        uint32_t indices = Read32(device + Device::Indices);
+        uint32_t guest = indices != 0 ? PhysicalToGuest(Read32(indices + Resource::IndexBufferAddress)) : 0;
+        return guest != 0 && glyphs::HidesDraw(count, g_memory.Translate(guest + first * 2));
+    }
+
     void IssueDraw(
         uint32_t device, uint32_t primitive, uint32_t first, uint32_t count, bool indexed, int32_t baseVertex)
     {
+        if (indexed && GlyphLetters(device, first, count))
+            return;
         gpu::DrawDesc draw;
         if (BuildDraw(device, primitive, first, count, 0, 0, indexed, baseVertex, draw))
         {
@@ -1670,6 +1745,8 @@ namespace
 
     void Resolve(uint32_t device, const ResolveArgs& args)
     {
+        if (std::exchange(g_skipStepResolve, false))
+            return;
         g_stats.resolves++;
         if ((args.flags >> 26) != 0)
         {
@@ -2094,9 +2171,10 @@ PPC_FUNC(GAME_HOOK(D3DDevice_Swap))
             last = now;
             fprintf(stderr,
                 "[render] frame %llu: %u draws, %u resolves, skipped %u (shader) %u (target) [%0.1f fps], ring jumps "
-                "%u\n",
+                "%u, simulation passes since start-up: %llu run, %llu skipped\n",
                 (unsigned long long)g_frame, g_stats.draws, g_stats.resolves, g_stats.skippedShader,
-                g_stats.skippedTarget, fps, TakeRingJumps());
+                g_stats.skippedTarget, fps, TakeRingJumps(), (unsigned long long)g_stepsRun,
+                (unsigned long long)g_stepsSkipped);
         }
         // SKY_FRAME_TIMES=<file>: one line per frame: milliseconds since start-up at the present (the origin of the
         // `[file] open` lines' times), the frame's work (from the previous swap's end to this swap, without the vblank
@@ -2136,4 +2214,10 @@ PPC_FUNC(GAME_HOOK(D3DDevice_Swap))
 void d3d::SetCpuReadDepth(uint32_t physicalAddress)
 {
     g_cpuReadDepth.store(physicalAddress & 0x1FFFFFFF, std::memory_order_relaxed);
+}
+
+d3d::RenderStats d3d::ReadRenderStats()
+{
+    std::lock_guard lock(g_mutex);
+    return { g_stats.draws, g_stats.resolves };
 }

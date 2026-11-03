@@ -2,6 +2,7 @@
 
 #include "kernel/objects.h"
 #include <functional>
+#include <memory>
 #include <ppc_config.h>
 #include <ppc_context.h>
 
@@ -12,15 +13,18 @@ struct GuestThreadContext
     PPCContext ctx{};
     uint32_t pcr{};
     uint32_t kthread{};
+    uint32_t tls{};
     uint32_t tlsSlots{}; // dynamic TLS slots (KeTlsGetValue / KeTlsSetValue)
+    uint32_t stack{};
+    uint32_t stackSize{};
 
-    GuestThreadContext(uint32_t stackSize, uint32_t threadId, uint8_t cpu);
+    GuestThreadContext(uint32_t stackBytes, uint32_t threadId, uint8_t cpu);
 };
 
 // A guest thread as a waitable kernel object, signaled once it exits. Fields are guarded by g_kernelLock.
 struct GuestThread : KernelObject
 {
-    GuestThreadContext* context{};
+    std::unique_ptr<GuestThreadContext> context;
     uint32_t id{};
     uint32_t suspendCount{};
     bool exited{};
@@ -46,6 +50,14 @@ void QueueUserApc(GuestThread& thread, const UserApc& apc);
 
 // Runs the APCs queued to the calling thread, preserving its guest registers.
 void DeliverUserApcs(PPCContext& ctx, GuestThread& thread);
+
+// True for a word-aligned address inside the recompiled code: the indirect-call guard's test
+// (SSARecompLib/indirect_call_guard.h). The function table read at any other address gives a garbage host pointer.
+bool GuestCodeAddress(uint32_t target);
+
+// Calls the guest function at `target` from host code (a thread's start, an APC, an interrupt or audio callback). A target
+// outside the code is logged once and not called: r3 = 0, and the result is false.
+bool CallGuest(PPCContext& ctx, uint32_t target);
 
 // Runs host code that calls into the guest (interrupts, timers) on its own thread with a guest context.
 void StartHostDrivenThread(std::function<void(PPCContext&)> body, uint8_t cpu);

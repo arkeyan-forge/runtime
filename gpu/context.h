@@ -167,6 +167,9 @@ namespace gpu::detail
 
     extern std::unique_ptr<Context> g_context;
 
+    // Read-only draw-cache portion of ReadDebugSnapshot; caller holds g_mutex.
+    void ReadDebugDrawSnapshot(gpu::DebugSnapshot& snapshot);
+
     // Every public gpu function takes it: the game's render thread draws while the main thread may still present
     // movie frames.
     extern std::recursive_mutex g_mutex;

@@ -200,6 +200,7 @@ namespace savebackup
         std::error_code error;
         fs::create_directories(target.parent_path(), error);
         fs::path temp = TempPath(target);
+        fs::remove(temp, error); // a link left in its place: the write below must not follow it
         {
             std::ofstream out(temp, std::ios::binary | std::ios::trunc);
             if (!out)
@@ -242,6 +243,7 @@ namespace savebackup
         std::error_code error;
         fs::path temp = TempPath(to);
         fs::create_directories(to.parent_path(), error);
+        fs::remove(temp, error); // as in WriteFileAtomic
         if (!WriteStream(from, temp))
         {
             fs::remove(temp, error);

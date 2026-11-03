@@ -6,6 +6,7 @@
 #include <SDL3/SDL_video.h>
 #include <plume_render_interface_types.h>
 #include <cstdint>
+#include <array>
 #include <functional>
 #include <vector>
 
@@ -118,6 +119,20 @@ namespace gpu
     // cannot be read.
     // Frames the game has presented since the start (any thread): the F3 menu's FPS counter divides its difference by time.
     uint64_t FramesPresented();
+    // A read-only copy of the perf window already collected by LogPerf (at most 10 seconds).
+    // No device strings or mutable renderer containers escape their lock. Unavailable data stays explicit.
+    struct DebugSnapshot
+    {
+        char adapter[192]{}, backend[16]{}, driver[64]{};
+        uint32_t width = 0, height = 0, scale = 1;
+        uint64_t videoUsed = 0, videoBudget = 0;
+        std::array<uint64_t, 2048> frameNs{};
+        size_t frameCount = 0;
+        size_t shaders = 0, missingShaders = 0, pipelinesReady = 0;
+        uint32_t drawTimeBuilds = 0;
+        bool available = false, videoUsageKnown = false, videoBudgetKnown = false;
+    };
+    DebugSnapshot ReadDebugSnapshot();
     bool ReadbackOutput(std::vector<uint32_t>& rgba, uint32_t& width, uint32_t& height);
 
     // Reads back a colour texture's base level as RGBA8 (finishes the frame's GPU work first); with `raw`, the bits of

@@ -113,7 +113,7 @@ namespace
             ctx.r3.u64 = interrupt.first;
             ctx.r4.u64 = callbackContext;
             auto called = std::chrono::steady_clock::now();
-            (PPC_LOOKUP_FUNC(g_memory.base, callback))(ctx, g_memory.base);
+            CallGuest(ctx, callback);
             {
                 std::lock_guard lock(g_mutex);
                 g_interruptsHandled++;
@@ -310,3 +310,10 @@ PPC_FUNC(__imp__VdSetGraphicsInterruptCallback)
 PPC_FUNC(__imp__VdQueryVideoMode) { WriteVideoMode(ctx.r3.u32); }
 
 PPC_FUNC(__imp__XGetVideoMode) { WriteVideoMode(ctx.r3.u32); }
+
+// Read by the debug screen; the pacing state is owned by the vblank mutex.
+bool FrameRateFallbackActive()
+{
+    std::lock_guard lock(g_mutex);
+    return g_fpsLimit == 60 && FpsAutoFallback() && g_halfRate.active;
+}

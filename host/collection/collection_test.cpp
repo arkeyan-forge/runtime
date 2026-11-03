@@ -12,6 +12,8 @@
 #include "host/collection/datadir.h"
 #include "host/figures/figure_catalog.h"
 #include <SDL3/SDL.h>
+#include <iterator>
+#include <fstream>
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -92,6 +94,15 @@ namespace
         _putenv_s(name, value.c_str());
 #else
         setenv(name, value.c_str(), 1);
+#endif
+    }
+
+    void UnsetVariable(const char* name)
+    {
+#ifdef _WIN32
+        _putenv_s(name, "");
+#else
+        unsetenv(name);
 #endif
     }
 
@@ -693,6 +704,22 @@ namespace
         CHECK(Read(gill, figure) && figure.Kind() == VariantKind::Crystal && figure.lastGame == "ssa" &&
               figure.lastUsed.size() == 20);
         CHECK(SetFavourite(item, false) && Read(item, figure) && !figure.favourite);
+#ifndef _WIN32
+        {
+            // A link left where a temporary could be is never followed.
+            const std::filesystem::path index = datadir::FromText(Folder() + "/collection.json"),
+                                        sentinel = index.parent_path() / "sentinel.txt";
+            std::ofstream(sentinel) << "keep";
+            std::error_code linked;
+            std::filesystem::create_symlink(sentinel, std::filesystem::path(index) += ".tmp", linked);
+            CHECK(!linked && SetFavourite(item, true));
+            std::ifstream in(sentinel);
+            CHECK(std::string(std::istreambuf_iterator<char>(in), {}) == "keep");
+            std::filesystem::remove(std::filesystem::path(index) += ".tmp");
+            std::filesystem::remove(sentinel);
+            CHECK(SetFavourite(item, false));
+        }
+#endif
 
         // Listing and filters.
         CHECK(List().size() == 8);
@@ -1310,6 +1337,136 @@ namespace
         CHECK(Catalogue::Get().Find(0) != nullptr && HalfPicturePath(*Catalogue::Get().Find(0), 0).empty());
     }
 
+    // Synthetic, separate per-game caches: viewing a game or changing icon size never picks older art.
+    void TestPictureRule()
+    {
+        const std::string data = g_scratch + "/picture-rule";
+        const std::string oldData = getenv("SKYLANDERS_DATA") != nullptr ? getenv("SKYLANDERS_DATA") : "";
+        const std::string oldPortraits = skyenv::Get("SKY_PORTRAITS");
+        SetVariable("SKYLANDERS_DATA", data);
+        UnsetVariable("SKY_PORTRAITS");
+        UnsetVariable("SSA_PORTRAITS");
+        const Catalogue& catalogue = Catalogue::Get();
+        const Toy* eruptor = catalogue.Find(9);
+        const Toy* top = catalogue.Find(2004);
+        const Toy* bottom = catalogue.Find(1004);
+        CHECK(eruptor != nullptr && top != nullptr && bottom != nullptr);
+        if (eruptor == nullptr || top == nullptr || bottom == nullptr)
+            return;
+        const Game& giants = *catalogue.FindGame("giants");
+        const Game& swap = *catalogue.FindGame("swapforce");
+        const Game& trap = *catalogue.FindGame("trapteam");
+        auto path = [&](const Game& game, const std::string& name) {
+            // Preferred separators, as the library builds its paths ("artworks/x" is "artworks\\x" on Windows).
+            return datadir::Text((datadir::Game(game.id) / "portraits" / (name + ".png")).make_preferred());
+        };
+        auto write = [&](const Game& game, const std::string& name, uint32_t color) {
+            std::string file = path(game, name);
+            std::filesystem::create_directories(std::filesystem::path(file).parent_path());
+            CHECK(SavePng({ 8, 8, std::vector<uint32_t>(64, color) }, file));
+            return file;
+        };
+        const uint32_t key = uint32_t(eruptor->type) << 16;
+        std::string oldest = write(*catalogue.FindGame("ssa"), "toy_eruptor_hud", 0xFF0000FFu);
+        std::string newer = write(giants, giants.portraits.at(key), 0xFF00FF00u);
+        std::string oldArtwork = write(giants, "artworks/" + giants.artworks.at(key), 0xFF00FF00u);
+        std::string newest = write(trap, trap.portraits.at(key), 0xFFFF0000u);
+        // Compared as paths: on Windows the library joins with '\\' what the test joined with '/' ("artworks/...").
+        auto same = [](const std::string& a, const std::string& b) {
+            return std::filesystem::path(a).lexically_normal() == std::filesystem::path(b).lexically_normal();
+        };
+        auto allViews = [&](const Toy& toy, uint16_t variant, const std::string& portrait, const std::string& best) {
+            for (const char* viewed : { "ssa", "giants", "swapforce", "trapteam", "", "unknown" })
+            {
+                CHECK(same(PortraitPath(viewed, toy, variant, false), portrait));
+                CHECK(same(PortraitPath(viewed, toy, variant, true), portrait));
+                CHECK(same(BestPicturePath(viewed, toy, variant), best));
+            }
+        };
+        allViews(*eruptor, 0, newest, newest); // a newer portrait beats older large artwork
+        CHECK(same(DiscImagePath(*eruptor), newest));
+        for (int size : { 32, 128, 256 })
+        {
+            bool fromDisc = false;
+            Image icon = Icon(eruptor, VariantKind::Base, size, &fromDisc);
+            CHECK(fromDisc && icon.width == size && icon.height == size && icon.rgba[size * size / 2] == 0xFFFF0000u);
+        }
+        // A variant's own older portrait beats a newer plain portrait or artwork, at every size and in every view.
+        std::string variant = write(giants, giants.portraits.at(key | 0x1206), 0xFF00FFFFu);
+        allViews(*eruptor, 0x1206, variant, variant);
+        CHECK(VariantFor(*eruptor, VariantKind::LightCore) == 0x1206);
+        bool fromDisc = false;
+        CHECK(!Icon(eruptor, VariantKind::LightCore, 64, &fromDisc).Empty() && fromDisc);
+        std::string latestVariant = write(trap, trap.portraits.at(key | 0x1206), 0xFFFFFF00u);
+        allViews(*eruptor, 0x1206, latestVariant, latestVariant);
+        std::filesystem::remove(latestVariant);
+        std::filesystem::remove(variant);
+        std::string variantArtwork = write(giants, "artworks/" + giants.artworks.at(key | 0x1206), 0xFF00FFFFu);
+        allViews(*eruptor, 0x1206, variantArtwork, variantArtwork); // artwork alone still identifies the variant
+        std::filesystem::remove(variantArtwork);
+        allViews(*eruptor, 0x1206, newest, newest); // no variant art anywhere: the newest plain art
+        std::filesystem::remove(newest);
+        allViews(*eruptor, 0, newer, oldArtwork);
+        std::filesystem::remove(newer);
+        std::filesystem::remove(oldArtwork);
+        allViews(*eruptor, 0, oldest, oldest);
+        std::filesystem::remove(oldest);
+        allViews(*eruptor, 0, "", "");
+        Image generated = Portrait("ssa", eruptor, VariantKind::Base, 64, 0, &fromDisc);
+        CHECK(!fromDisc && !generated.Empty() &&
+              std::any_of(generated.rgba.begin(), generated.rgba.end(), [](uint32_t pixel) { return pixel >> 24; }));
+
+        // Every incomplete swapper keeps two visible icons; only two genuine half files may be joined at the waist.
+        const uint32_t topKey = uint32_t(top->type) << 16, bottomKey = uint32_t(bottom->type) << 16;
+        std::string topHalf = write(swap, "artworks/" + swap.halves.at(topKey), 0xFF0000FFu);
+        std::string bottomHalf = write(swap, "artworks/" + swap.halves.at(bottomKey), 0xFF00FF00u);
+        CHECK(same(HalfPicturePath(*top), topHalf) && same(HalfPicturePath(*bottom), bottomHalf));
+        CHECK(!SwapperPicture(*top, 0, *bottom, 0).Empty());
+        allViews(*top, 0, topHalf, topHalf);
+        allViews(*bottom, 0, bottomHalf, bottomHalf);
+        std::string darkWhole = write(swap, swap.portraits.at(topKey | 0x2402), 0xFF00FFFFu);
+        allViews(*top, 0x2402, darkWhole, darkWhole); // dedicated variant art before a plain half image
+        CHECK(same(HalfPicturePath(*top, 0x2402), darkWhole));
+        CHECK(SwapperPicture(*top, 0x2402, *bottom, 0x2402).Empty()); // show dedicated variant art instead
+        std::filesystem::remove(darkWhole);
+        std::string whole = write(trap, trap.portraits.at(topKey), 0xFFFF0000u);
+        std::filesystem::remove(bottomHalf); // top only: bottom uses the matching whole figure, from Trap Team
+        CHECK(same(HalfPicturePath(*top), topHalf) && same(HalfPicturePath(*bottom), whole));
+        allViews(*bottom, 0, whole, whole);
+        CHECK(SwapperPicture(*top, 0, *bottom, 0).Empty());
+        bottomHalf = write(swap, "artworks/" + swap.halves.at(bottomKey), 0xFF00FF00u);
+        std::filesystem::remove(topHalf); // bottom only
+        CHECK(same(HalfPicturePath(*top), whole) && same(HalfPicturePath(*bottom), bottomHalf));
+        CHECK(SwapperPicture(*top, 0, *bottom, 0).Empty());
+        std::filesystem::remove(bottomHalf); // neither half, but whole-figure art remains
+        CHECK(same(HalfPicturePath(*top), whole) && same(HalfPicturePath(*bottom), whole));
+        CHECK(SwapperPicture(*top, 0, *bottom, 0).Empty());
+        std::filesystem::remove(whole); // neither half nor whole: both generated icons have visible pixels
+        for (const Toy* half : { top, bottom })
+        {
+            CHECK(HalfPicturePath(*half).empty());
+            Image icon = Portrait("trapteam", half, VariantKind::Base, 64, 0, &fromDisc);
+            CHECK(!fromDisc && !icon.Empty() &&
+                  std::any_of(icon.rgba.begin(), icon.rgba.end(), [](uint32_t pixel) { return pixel >> 24; }));
+        }
+        // With only one half file and no whole figure, the other half still gets its generated icon.
+        for (const Toy* present : { top, bottom })
+        {
+            const Toy* missing = present == top ? bottom : top;
+            std::string own = write(swap, "artworks/" + swap.halves.at(uint32_t(present->type) << 16), 0xFF00FF00u);
+            CHECK(same(HalfPicturePath(*present), own) && HalfPicturePath(*missing).empty());
+            CHECK(!Portrait("ssa", missing, VariantKind::Base, 64, 0, &fromDisc).Empty() && !fromDisc);
+            CHECK(SwapperPicture(*top, 0, *bottom, 0).Empty());
+            std::filesystem::remove(own);
+        }
+        CHECK(HalfPicturePath(*eruptor).empty());
+        SetVariable("SKY_PORTRAITS", oldPortraits);
+        if (oldData.empty())
+            UnsetVariable("SKYLANDERS_DATA");
+        else
+            SetVariable("SKYLANDERS_DATA", oldData);
+    }
+
     // The smart search (search.h): names, elements, games, toy types, versions, levels, both languages, accents, typos.
     void TestSearch()
     {
@@ -1561,6 +1718,7 @@ int main(int argc, char** argv)
     TestManagement();
     TestSwappers();
     TestSwapperPicture();
+    TestPictureRule();
     TestSearch();
     TestBadIndex();
     TestPortalOverview();

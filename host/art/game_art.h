@@ -62,7 +62,7 @@ namespace art
     // True for a game whose pictures this file knows how to read (those with a manifest: "ssa", "giants", "swapforce").
     bool Known(std::string_view game);
 
-    // The game's logo alone, read from the disc as the manifest says and not cached (SkyBuild makes the game's icon from it).
+    // The game's logo alone, read from the disc as the manifest says and not cached (Arkeyan-Builder makes the game's icon from it).
     // False when `game` has no manifest or the disc has no readable logo.
     bool ReadLogo(std::string_view game, const Disc& disc, Image& logo);
 

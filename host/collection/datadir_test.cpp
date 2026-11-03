@@ -2,7 +2,9 @@
 // the migration is only ever called with scratch roots, never with RealOldRoots().
 //   SSADatadirTest        Exit code 0 = pass.
 #include "host/collection/datadir.h"
+#include "host/runtime_names.h"
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -324,6 +326,33 @@ void TestPortableCopy(const char* self)
     CHECK(probe() == "portable " + (fs::weakly_canonical(folder, error) / "data").string());
 }
 
+// The 0.8.0 rename (Arkeyan names) moves nothing of the player's: the data folders keep their names, a 0.7.x data
+// folder is left as it is, and a game's log is read under either name.
+void TestRenameKeepsData()
+{
+    CHECK(Root().filename() == "Skylanders");
+    OldRoots real = RealOldRoots();
+    CHECK(real.ssarecomp.filename() == "SSARecomp" && real.skylauncher.filename() == "Skylauncher");
+    fs::path base = g_scratch / "rename", root = base / "Skylanders", game = root / "SSA";
+    Write(game / "saves" / "slot.sav", "save");
+    Write(game / "SSARecomp.log", "old log\n");
+    Write(game / "ssabuild-work" / "ppc" / "ppc_config.h", "work");
+    Write(root / "launcher.ini",
+        "[install.ab]\nruntime=" + (game / "Skylanders Spyro's Adventure").string() + "\nkit=0.7.2\n");
+    Write(root / "Collection" / "fig.sky", "figure");
+    const std::string before = Tree(root);
+    OldRoots none{ base / "SSARecomp", base / "Skylauncher", base / "LocalSSARecomp" };
+    MigrationReport report = Migrate(none, root);
+    CHECK(!report.Changed() && Tree(root) == before);
+    CHECK(runtime_names::ReadLog(game) == game / "SSARecomp.log");
+    CHECK(runtime_names::ReadLog(game, true) == game / "Arkeyan.prev.log"); // neither: the current name
+    Write(game / "Arkeyan.log", "new log\n");
+    CHECK(runtime_names::ReadLog(game) == game / "Arkeyan.log");
+    fs::last_write_time(game / "SSARecomp.log", fs::last_write_time(game / "Arkeyan.log") + std::chrono::seconds(5));
+    CHECK(runtime_names::ReadLog(game) == game / "SSARecomp.log"); // an old game started after the new one
+    CHECK(Read(game / "saves" / "slot.sav") == "save" && Read(game / "SSARecomp.log") == "old log\n");
+}
+
 int main(int argc, char** argv)
 {
     if (argc > 1 && std::string(argv[1]) == "--portable-probe")
@@ -344,6 +373,7 @@ int main(int argc, char** argv)
     TestFailure();
     TestCacheAgain();
     TestTrim();
+    TestRenameKeepsData();
     std::error_code error;
     fs::remove_all(g_scratch, error);
     printf("datadir test: %d checks, %d failures\n", g_checks, g_failures);

@@ -1,6 +1,7 @@
 // Audio output through XAudio2 2.9, for the UWP build (Xbox), which has no SDL. Same contract as host/audio.cpp: the
 // 5.1 mix is downmixed to stereo the same way, and SKY_AUDIO_DUMP works the same.
 #include "host/audio.h"
+#include "host/portal_speaker.h"
 #include <windows.h>
 #include <xaudio2.h>
 #include <algorithm>
@@ -70,9 +71,13 @@ void HostAudioSubmit(const float* planarFrame)
     {
         auto channel = [&](uint32_t c) { return planarFrame[c * AudioFrameSamples + i]; };
         float center = channel(2) * Side;
-        stereo[i * 2 + 0] = std::clamp((channel(0) + center + channel(4) * Side) * gain, -1.0f, 1.0f);
-        stereo[i * 2 + 1] = std::clamp((channel(1) + center + channel(5) * Side) * gain, -1.0f, 1.0f);
+        stereo[i * 2 + 0] = channel(0) + center + channel(4) * Side;
+        stereo[i * 2 + 1] = channel(1) + center + channel(5) * Side;
     }
+    // The portal speaker's voice when the computer plays it (host/portal_speaker.h), under the same volume.
+    HostSpeakerStream().MixInto(stereo, AudioFrameSamples);
+    for (uint32_t i = 0; i < AudioFrameSamples * 2; i++)
+        stereo[i] = std::clamp(stereo[i] * gain, -1.0f, 1.0f);
     if (dump != nullptr)
         fwrite(stereo, sizeof(g_buffers[0]), 1, dump);
 

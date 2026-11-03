@@ -8,6 +8,7 @@ endif()
 add_library(SSARecompGpu STATIC gpu.cpp draw.cpp buffer_cache.cpp worker.cpp)
 if(SSA_METAL)
     target_compile_definitions(SSARecompGpu PUBLIC SSA_METAL)
+    target_include_directories(SSARecompGpu SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/plume/contrib/metal-cpp)
 endif()
 if(WIN32)
     target_sources(SSARecompGpu PRIVATE d3d12_diagnostics.cpp d3d12_pipeline_cache.cpp) # DRED, removal report; PSO cache
@@ -60,7 +61,7 @@ if(SSA_METAL)
     endif()
     # Metal 3 (macOS 13): plume writes argument buffers as tier 2 resource IDs.
     add_custom_command(OUTPUT ${SHADER_OUT}/present.air
-        COMMAND xcrun -sdk macosx metal -std=metal3.0 -mmacosx-version-min=13.0 -c ${CMAKE_CURRENT_SOURCE_DIR}/shaders/present.metal
+        COMMAND xcrun -sdk macosx metal -fmodules-cache-path=${CMAKE_CURRENT_BINARY_DIR}/metal-cache -std=metal3.0 -mmacosx-version-min=13.0 -c ${CMAKE_CURRENT_SOURCE_DIR}/shaders/present.metal
             -o ${SHADER_OUT}/present.air
         DEPENDS shaders/present.metal VERBATIM)
     add_custom_command(OUTPUT ${SHADER_OUT}/present.metallib

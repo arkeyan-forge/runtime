@@ -36,8 +36,10 @@ namespace art
         std::vector<uint8_t> ReadAll(const Disc& disc, const std::string& path)
         {
             uint64_t size = disc.size(path);
+            if (size == 0 || size > (512ull << 20)) // before allocating: the size comes from the disc's directory
+                return {};
             std::vector<uint8_t> bytes(static_cast<size_t>(size));
-            if (size == 0 || size > (512ull << 20) || !disc.read(path, 0, bytes.size(), bytes.data()))
+            if (!disc.read(path, 0, bytes.size(), bytes.data()))
                 return {};
             return bytes;
         }

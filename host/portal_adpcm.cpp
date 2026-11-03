@@ -8,8 +8,9 @@ namespace portal_adpcm
     {
         // The recommendation's tables for the 4-bit coder, indexed by the code (0-7 positive, 15-8 the same magnitudes
         // negative, so entry i and 15 - i agree): the logarithm of the quantised difference, the scale factor's
-        // multiplier, and the speed-control function. [?] typed from the recommendation's tables, not yet checked
-        // against a real stream: the test proves the decoder against our own encoder only.
+        // multiplier, and the speed-control function. Typed from the recommendation's tables; Trap Team's own stream
+        // decodes to speech with them (docs/runtime/host/portal.md), and it never sends code 0, as the recommendation's
+        // coder does not.
         constexpr int LogMagnitude[16] = { -2048, 4, 135, 213, 273, 323, 373, 425, 425, 373, 323, 273, 213, 135, 4,
             -2048 };
         constexpr int ScaleMultiplier[16] = { -12, 18, 41, 64, 112, 198, 355, 1122, 1122, 355, 198, 112, 64, 41, 18,
@@ -76,16 +77,6 @@ namespace portal_adpcm
         yu_ = std::clamp(y + (((ScaleMultiplier[code] << 5) - y) >> 5), 544, 5120);
         yl_ += yu_ + ((-yl_) >> 6);
 
-        // Speed control: short and long averages of how large the codes are.
-        dms_ += (SpeedControl[code] - dms_) >> 5;
-        dml_ += ((SpeedControl[code] << 2) - dml_) >> 7;
-        if (transition)
-            ap_ = 256;
-        else if (y < 1536 || td_ || std::abs((dms_ << 2) - dml_) >= (dml_ >> 3))
-            ap_ += (0x200 - ap_) >> 4;
-        else
-            ap_ += (-ap_) >> 4;
-
         // Predictor adaptation: sign-sign LMS with leakage, the poles limited to keep the filter stable.
         if (transition)
         {
@@ -105,7 +96,7 @@ namespace portal_adpcm
             a_[1] = std::clamp(a2, -12288, 12288);
             int a1 = a_[0] - (a_[0] >> 8);
             if (dqsez != 0)
-                a1 += differs1 ? 192 : -192;
+                a1 += differs1 ? -192 : 192; // up while p(k) and p(k-1) agree
             const int limit = 15360 - a_[1];
             a_[0] = std::clamp(a1, -limit, limit);
             for (int i = 0; i < 6; i++)
@@ -117,6 +108,16 @@ namespace portal_adpcm
             }
         }
         td_ = !transition && a_[1] < -11776;
+
+        // Speed control: short and long averages of how large the codes are (with the tone flag just updated).
+        dms_ += (SpeedControl[code] - dms_) >> 5;
+        dml_ += ((SpeedControl[code] << 2) - dml_) >> 7;
+        if (transition)
+            ap_ = 256;
+        else if (y < 1536 || td_ || std::abs((dms_ << 2) - dml_) >= (dml_ >> 3))
+            ap_ += (0x200 - ap_) >> 4;
+        else
+            ap_ += (-ap_) >> 4;
 
         for (int i = 5; i > 0; i--)
             dq_[i] = dq_[i - 1];

@@ -10,13 +10,18 @@ namespace edgesmoothing
 {
     enum Mode : uint32_t
     {
-        Auto, // not chosen: Light from resolution scale 2, Game at scale 1
+        Auto, // not chosen: Light from resolution scale 2 in a level, Game at scale 1 and in the game's menus
         Game,
         Light,
         Off
     };
 
-    constexpr Mode Resolve(Mode mode, uint32_t scale) { return mode != Auto ? mode : scale >= 2 ? Light : Game; }
+    // `menu`: the title and the game's menus (game::InMenuLevel), 2D art whose cut-out edges only the game's pass smooths
+    // (Trap Team's title logo stair-stepped under Light at scale 2); fine 3D texture detail is in the levels.
+    constexpr Mode Resolve(Mode mode, uint32_t scale, bool menu)
+    {
+        return mode != Auto ? mode : scale >= 2 && !menu ? Light : Game;
+    }
 
     // The FXAA shader leaves a pixel alone when its local contrast is below max(minimum, threshold x the brightest luma):
     // the game's own are 0.125 and 0.05. Light raises both; Off raises them past any contrast (a plain copy).

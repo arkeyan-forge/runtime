@@ -37,6 +37,10 @@ public:
     // Queues the command; false only while the portal is not connected.
     bool Write(const uint8_t* command, size_t size) override;
     size_t Read(uint8_t* report, size_t capacity) override;
+    // What the device said on this thread when it connected, and after each speaker block.
+    bool TakesSound() override { return m_connected && m_takesSound; }
+    // Queued with the commands, in order (an `M` before the blocks it starts).
+    bool WriteSound(const uint8_t* block, size_t size) override;
 
     // The wait before the next attempt to open the device, 0 while connected (tests).
     std::chrono::milliseconds RetryDelay();
@@ -45,15 +49,21 @@ private:
     void Run();
 
     using Report = std::vector<uint8_t>;
+    struct Command
+    {
+        Report bytes;
+        bool sound = false; // a speaker block (WriteSound), not a command
+    };
     static constexpr size_t QueueLimit = 64; // older reports and commands are dropped past this
 
     std::unique_ptr<PortalBackend> m_device;
     const char* m_name;
     Timing m_timing;
-    std::atomic<bool> m_connected, m_stop{ false };
+    std::atomic<bool> m_connected, m_stop{ false }, m_takesSound{ false };
     std::mutex m_mutex;
     std::condition_variable m_wake;
-    std::deque<Report> m_commands, m_reports; // under m_mutex
+    std::deque<Command> m_commands;           // under m_mutex
+    std::deque<Report> m_reports;             // under m_mutex
     std::chrono::milliseconds m_delay{ 0 };    // under m_mutex
     std::thread m_thread;
 };

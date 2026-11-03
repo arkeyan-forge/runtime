@@ -55,6 +55,19 @@ namespace glyphs
         ArrowsUpDown
     };
 
+    // A 3D model that shows its button over a glyph texture with letters of geometry (Trap Team's RT prompt: a card with a
+    // grey gradient, "RT" extruded on it). While the texture is drawn as a glyph, the letters' indexed draw (its index
+    // count and the XXH3 of its indices as stored) is skipped, and the model's vertex shaders (its passes), which turn
+    // the texture's coordinates by the 4x4 matrix at float constant `uvMatrix` (an animated sheen), get the identity
+    // there, so that the glyph stays upright and in place.
+    struct Model
+    {
+        uint32_t lettersIndexCount;
+        uint64_t lettersIndexHash;
+        std::span<const uint64_t> vertexShaders;
+        uint32_t uvMatrix;
+    };
+
     // A cell of an atlas, in base-level pixels, inclusive (the picture's bounding box as the game drew it).
     struct Cell
     {
@@ -71,6 +84,8 @@ namespace glyphs
         Glyph glyph;
         std::span<const Cell> cells = {};
         bool flipped = false; // stored upside down (the game draws it with V flipped): drawn upside down too
+        bool over = false;    // cells drawn over the game's pixels, not in cleared ones (an opaque model's texture)
+        const Model* model = nullptr;
     };
 
     // A picture of buttons the game's CPU text renderer copies into its strings (Swap Force: the fonts' "button" images,
@@ -108,4 +123,15 @@ namespace glyphs
     // `guestBase` decodes the guest's base level to RGBA8 (R in the low byte; empty if it cannot): atlases need it.
     bool Replace(uint64_t guestHash, uint32_t width, uint32_t height, uint32_t levels,
         const std::function<std::vector<uint32_t>()>& guestBase, gpu::Texture*& texture, uint64_t& hostHash);
+
+    // Renderer, before an indexed draw of 16-bit `indices` (as stored, `count` of them): true when they are the letters of
+    // a glyph texture's model (Model) and that texture is drawn as a glyph in the current style, so that the 360's letters
+    // do not cover it. Hashes only a draw whose count is listed.
+    bool HidesDraw(uint32_t count, const void* indices);
+    bool HidesDraw(std::span<const Texture> textures, Style style, uint32_t count, const void* indices);
+
+    // Renderer, for a draw by `vertexShader` with these textures (the guest hashes of those drawn as glyphs, 0 for the
+    // others): the float constant of the model's texture matrix to set to the identity (Model::uvMatrix), or -1.
+    int UvMatrix(uint64_t vertexShader, std::span<const uint64_t> glyphHashes);
+    int UvMatrix(std::span<const Texture> textures, uint64_t vertexShader, std::span<const uint64_t> glyphHashes);
 }

@@ -1,15 +1,15 @@
 #pragma once
 
 // Where everything of the player's lives (docs/getting-started/settings.md): one folder per OS, "Skylanders", shared by the game, the
-// launcher and SkyBuild. Plain C++ and the C library only (no SDL), so SkyBuild can use it too.
+// launcher and Arkeyan-Builder. Plain C++ and the C library only (no SDL), so Arkeyan-Builder can use it too.
 //
 //   <root>/Collection/      the figures, shared by every game          (collection.h)
 //   <root>/launcher.ini     the settings shared by the games and the launcher
 //   <root>/kit/             the kits the launcher downloaded, <release tag>/ each
-//   <root>/toolchains/      the compilers SkyBuild downloads (Windows)
+//   <root>/toolchains/      the compilers Arkeyan-Builder downloads (Windows)
 //   <root>/logs/            the launcher's logs, migration.log
 //   <root>/<Game>/          one per game ("SSA"): the built game, its settings, saves, pipelines.bin, portal.txt,
-//                           figures, portraits, launcher-cache and SSARecomp.log
+//                           figures, portraits, launcher-cache and Arkeyan.log (SSARecomp.log from a game built before 0.8.0)
 //
 // <root> is SKYLANDERS_DATA (tests), <program folder>/data when portable.txt is beside the program, else %APPDATA%\Skylanders on Windows, ~/Library/Application
 // Support/Skylanders on macOS and $XDG_DATA_HOME/Skylanders (~/.local/share/Skylanders) elsewhere. Nothing here
@@ -36,6 +36,8 @@ namespace datadir
     std::filesystem::path PortableRoot(const std::filesystem::path& folder);
     // The folder that holds the running program (on macOS, the one that holds its .app). Empty when it cannot be found.
     std::filesystem::path ProgramFolder();
+    // The running program's own file (on macOS, <app>/Contents/MacOS/<name>). Empty when it cannot be found.
+    std::filesystem::path ProgramPath();
     // When portable.txt is beside the program and SKYLANDERS_DATA is not set, sets SKYLANDERS_DATA to the portable root, so
     // Root() and the games the launcher starts follow it (and the older folders are not migrated). True when it did.
     // Call first thing in main, before MigrateOnce.
@@ -51,7 +53,7 @@ namespace datadir
     // --- Migration from the older layouts -----------------------------------------------------------------------------
     //
     // Before, the game kept its data in <roaming>/SSARecomp (and, nested, <roaming>/SSARecomp/SSARecomp), Skylauncher
-    // its games and kits in its own folder (%LOCALAPPDATA%\Skylauncher on Windows), SkyBuild its compilers in
+    // its games and kits in its own folder (%LOCALAPPDATA%\Skylauncher on Windows), Arkeyan-Builder its compilers in
     // %LOCALAPPDATA%\SSARecomp\toolchains. Migrate() moves them into the layout above:
     //  - entries are RENAMED, one by one; a source that is gone is skipped, so a half-done run is finished by the next;
     //  - nothing is overwritten or deleted: when the target exists the moved entry is kept beside it as

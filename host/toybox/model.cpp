@@ -1,5 +1,8 @@
 #include "host/toybox/model.h"
 #include "host/collection/json.h"
+#include "host/gamemenu.h"
+#include "host/toybox/look.h"
+#include "host/toybox/trap_villain.h"
 #include "host/portal.h"
 #include "host/portal_backend.h"
 #include "language.h"
@@ -28,6 +31,8 @@ namespace toybox
             PutOn,
             TakeOff,
             Unlock,
+            Villain, // a trap: the villain it holds (Left / Right choose, A puts it in)
+            Evolved, // ...and whether that villain is evolved
             EditStats,
             ChangeHalf,
             Rename,
@@ -203,8 +208,10 @@ namespace toybox
         dialogs.clear();
         search.clear();
         ClearFilters();
-        inList = true; // the list, or the empty state's three choices
+        homeRow = Row::Grid; // the list, or the empty state's three choices
         column = seat;
+        barColumn = -1;
+        gridKnown = true;
         figureMore = figureDetails = false;
         BuildList();
         // The first card that is not on the portal: favourites and recent come first, so "swap to the last one" is A.
@@ -263,10 +270,28 @@ namespace toybox
 
     void Model::Toast(const std::string& text, uint64_t seconds)
     {
+        uint64_t now = SDL_GetTicksNS();
+        // A message that replaces one still shown takes its place; otherwise it slides in.
+        if (toast.empty() || now >= toastUntil || !toastCaption.empty())
+            toastSince = now;
         toast = text;
-        toastUntil = SDL_GetTicksNS() + seconds * Second;
+        toastCaption.clear();
+        toastPicture = {};
+        toastUntil = now + seconds * Second;
         fprintf(stderr, "[toybox] %s\n", text.c_str());
         m_dirty = true;
+    }
+
+    void Model::Achievement(const std::string& title, uint32_t points, collection::Image picture)
+    {
+        Toast(title, 6);
+        toastSince = toastUntil - 6 * Second; // always slides in: it is a new kind of card
+        toastCaption = std::string(L("ACHIEVEMENT UNLOCKED", "SUCCÈS DÉBLOQUÉ")) + " \xC2\xB7 " +
+                       std::to_string(points) + L(" POINTS", " POINTS");
+        toastPicture = std::move(picture);
+        toastSerial++;
+        fprintf(stderr, "[toybox] achievement toast: %s, %u points, picture %dx%d\n", title.c_str(), points,
+            toastPicture.width, toastPicture.height);
     }
 
     void Model::Ask(Dialog dialog)
@@ -391,7 +416,7 @@ namespace toybox
             outOfHealth.insert(s.path2);
         char text[160];
         snprintf(text, sizeof(text),
-            L("%s is out of health: pick another one.", "%s n'a plus de vie : choisis-en un autre."),
+            L("%s is out of health: pick another one.", "%s n'a plus de vie : choisissez-en un autre."),
             f != nullptr ? FigureName(*f).c_str() : s.path.c_str());
         Toast(text, 5);
         Touch();
@@ -673,7 +698,7 @@ namespace toybox
         if (realPortal)
         {
             Toast(L("Real portal: use the virtual portal to play it",
-                      "Portail réel : utilise le portail virtuel pour la jouer"),
+                      "Portail réel : utilisez le portail virtuel pour la jouer"),
                 5);
             return false;
         }
@@ -948,10 +973,18 @@ namespace toybox
             lightRgb = rgb;
             m_dirty = true;
         }
-        if (!toast.empty() && now >= toastUntil)
+        if (!toast.empty())
         {
-            toast.clear();
-            m_dirty = true;
+            bool reduced = gamemenu::Current().reduceMotion;
+            if (look::ToastGone(now, toastUntil, reduced))
+            {
+                toast.clear();
+                toastCaption.clear();
+                toastPicture = {};
+                m_dirty = true;
+            }
+            else if (!open && look::ToastMotion(now, toastSince, toastUntil, reduced).moving)
+                m_dirty = true; // sliding or fading over the game: one more frame (in the Toy Box it does not move)
         }
         if (holdStart != 0 && !dialogs.empty() && dialogs.back().hold)
         {
@@ -1165,49 +1198,28 @@ namespace toybox
         grid.scroll = std::clamp(grid.scroll, 0, std::max(total - grid.visibleHeight, 0));
     }
 
-    void Model::MoveGrid(Grid& grid, Command command)
+    bool Model::MoveGrid(Grid& grid, Command command)
     {
         if (grid.cells.empty())
-            return;
-        const Cell current = grid.cells[grid.cursor];
-        auto inRow = [&](int row) {
-            int best = -1;
-            for (size_t i = 0; i < grid.cells.size(); i++)
-            {
-                if (grid.cells[i].row == row && (best < 0 || std::abs(grid.cells[i].column - current.column) <
-                                                                 std::abs(grid.cells[best].column - current.column)))
-                    best = int(i);
-            }
-            return best;
-        };
-        switch (command)
-        {
-        case Command::Up:
-            for (int row = current.row - 1; row >= 0; row--)
-            {
-                if (int found = inRow(row); found >= 0)
-                {
-                    grid.cursor = found;
-                    break;
-                }
-            }
-            break;
-        case Command::Down:
-            for (int row = current.row + 1; row < grid.rows; row++)
-            {
-                if (int found = inRow(row); found >= 0)
-                {
-                    grid.cursor = found;
-                    break;
-                }
-            }
-            break;
-        case Command::Left: grid.cursor = std::max(grid.cursor - 1, 0); break;
-        case Command::Right: grid.cursor = std::min(grid.cursor + 1, int(grid.cells.size()) - 1); break;
-        default: break;
-        }
+            return false;
+        nav::Move move = command == Command::Up     ? nav::Move::Up
+                         : command == Command::Down ? nav::Move::Down
+                         : command == Command::Left ? nav::Move::Left
+                                                    : nav::Move::Right;
+        std::vector<nav::Place> places;
+        places.reserve(grid.cells.size());
+        for (const Cell& cell : grid.cells)
+            places.push_back({ cell.row, cell.column });
+        if (grid.keptAt != grid.cursor)
+            grid.keep = grid.cells[size_t(grid.cursor)].column;
+        int next = nav::GridMove(places, grid.cursor, grid.keep, move);
+        if (next < 0)
+            return false;
+        grid.cursor = next;
+        grid.keptAt = move == nav::Move::Up || move == nav::Move::Down ? next : -1;
         FixGrid(grid, 0);
         m_dirty = true;
+        return true;
     }
 
     void Model::JumpSection(Grid& grid, int step)
@@ -1233,7 +1245,7 @@ namespace toybox
         char text[96];
         switch (section.kind)
         {
-        case Section::Kind::Shelf: return L("Your figures", "Tes figurines");
+        case Section::Kind::Shelf: return L("Your figures", "Vos figurines");
         case Section::Kind::Element: return ElementLabel(Element(section.value));
         case Section::Kind::Category:
             if (Category(section.value) == Category::MagicItem)
@@ -1337,7 +1349,7 @@ namespace toybox
     {
         if (realPortal)
             return { L("Manage", "Gérer") };
-        return { L("Add a figure", "Ajouter une figurine"), L("Manage", "Gérer") };
+        return { L("Add", "Ajouter"), L("Manage", "Gérer") };
     }
 
     void Model::FocusSeat(int index)
@@ -1351,6 +1363,9 @@ namespace toybox
         {
             BuildList();
             list.cursor = 0;
+            // Rebuilt under the player's eyes (LB/RB in the grid) it starts at its first card; rebuilt while the focus is
+            // on the seats or the bar, the focus comes down onto the card nearest under it (HomeStep).
+            gridKnown = homeRow == Row::Grid;
             FixGrid(list, 0);
         }
         m_dirty = true;
@@ -1358,10 +1373,67 @@ namespace toybox
 
     void Model::FocusColumnRow(int row)
     {
-        inList = false;
+        homeRow = Row::Seats;
         column = row;
         if (row < int(seats.size()))
             FocusSeat(row);
+        m_dirty = true;
+    }
+
+    void Model::FocusBar(int index)
+    {
+        if (!OwnsAnything() || index < 0 || index >= BarCount)
+            return;
+        homeRow = Row::Bar;
+        barColumn = index;
+        m_dirty = true;
+    }
+
+    void Model::HomeStep(int step, bool wrap)
+    {
+        // Where the focus is now, across the screen: the row it lands on takes its remembered place, else the one nearest
+        // under this (docs/runtime/host/toybox_ux.md, "Navigation").
+        auto centre = [](const std::vector<nav::Span>& spans, int index) {
+            return index >= 0 && index < int(spans.size()) ? spans[size_t(index)].Centre() : 0.0f;
+        };
+        float x = homeRow == Row::Seats ? centre(seatSpans, column)
+                  : homeRow == Row::Bar
+                      ? centre(barSpans, barColumn)
+                      : (list.cells.empty() ? 0.0f : centre(gridSpans, list.cells[list.cursor].column));
+        int counts[3] = { int(seats.size() + ColumnRows().size()), OwnsAnything() ? BarCount : 0,
+            OwnsAnything() ? int(list.cells.size()) : 0 };
+        int row = int(homeRow);
+        for (int tries = 0; tries < 3; tries++)
+        {
+            row += step;
+            if (row < 0 || row > 2)
+            {
+                if (!wrap)
+                    return;
+                row = (row + 3) % 3;
+            }
+            if (counts[row] > 0)
+                break;
+        }
+        if (row == int(homeRow) || counts[row] == 0)
+            return;
+        homeRow = Row(row);
+        if (homeRow == Row::Seats)
+            column = nav::Land(column, counts[0], seatSpans, x);
+        else if (homeRow == Row::Bar)
+            barColumn = nav::Land(barColumn, BarCount, barSpans, x);
+        else if (!gridKnown)
+        {
+            // The first row's card nearest under the focus.
+            int wanted = nav::Nearest(gridSpans, x);
+            for (size_t i = 0; i < list.cells.size(); i++)
+            {
+                if (list.cells[i].row == list.cells.front().row && (wanted < 0 || list.cells[i].column <= wanted))
+                    list.cursor = int(i);
+            }
+            gridKnown = true;
+            FixGrid(list, 0);
+        }
         m_dirty = true;
     }
 
@@ -1385,19 +1457,32 @@ namespace toybox
                 OpenFilters();
             return;
         }
-        if (inList && OwnsAnything())
+        if (command == Command::NextRow || command == Command::PreviousRow)
+        {
+            if (OwnsAnything())
+                HomeStep(command == Command::NextRow ? 1 : -1, true);
+            else
+                homeRow = homeRow == Row::Seats ? Row::Grid : Row::Seats;
+            return;
+        }
+        if (homeRow == Row::Grid && OwnsAnything())
         {
             RunList(command, false);
             return;
         }
-        if (inList && !OwnsAnything())
+        if (homeRow == Row::Bar && OwnsAnything())
+        {
+            RunBar(command);
+            return;
+        }
+        if (homeRow != Row::Seats && !OwnsAnything())
         {
             // The empty state's three choices (list.cursor indexes them); up from the first goes to the seats.
             switch (command)
             {
             case Command::Up:
                 if (list.cursor == 0)
-                    inList = false;
+                    homeRow = Row::Seats;
                 list.cursor = std::max(list.cursor - 1, 0);
                 return;
             case Command::Down: list.cursor = std::min(list.cursor + 1, 2); return;
@@ -1421,7 +1506,7 @@ namespace toybox
                         Create(type);
                     Reload();
                     BuildList();
-                    inList = true;
+                    homeRow = Row::Grid;
                     Toast(L("Spyro, Gill Grunt and Trigger Happy are in My Skylanders",
                         "Spyro, Gill Grunt et Trigger Happy sont dans Mes Skylanders"));
                 }
@@ -1429,35 +1514,59 @@ namespace toybox
             default: return;
             }
         }
-        // The top row: the seats, then Add a figure and Manage. Down goes into the figures for the chosen seat.
+        // The top row: the seats, then Add a figure and Manage (one above the other at its end). Down goes to the bar.
+        int buttons = int(ColumnRows().size());
+        bool onButtons = column >= int(seats.size());
         switch (command)
         {
-        case Command::Left: FocusColumnRow((column + columnCount - 1) % columnCount); break;
-        case Command::Right: FocusColumnRow((column + 1) % columnCount); break;
-        case Command::PreviousSection: FocusColumnRow(std::max(std::min(column, int(seats.size()) - 1) - 1, 0)); break;
-        case Command::NextSection: FocusColumnRow(std::min(column + 1, int(seats.size()) - 1)); break;
+        case Command::Left:
+            if (onButtons)
+                FocusColumnRow(int(seats.size()) - 1);
+            else if (column > 0)
+                FocusColumnRow(column - 1);
+            break;
+        case Command::Right:
+            if (column < int(seats.size()) - 1)
+                FocusColumnRow(column + 1);
+            else if (!onButtons)
+                FocusColumnRow(int(seats.size()));
+            break;
+        case Command::PreviousSection:
+        case Command::NextSection:
+            FocusColumnRow(nav::SeatStep(
+                std::min(column, int(seats.size()) - 1), command == Command::NextSection ? 1 : -1, int(seats.size())));
+            break;
+        case Command::Up:
+            if (onButtons && column > int(seats.size()))
+                column--;
+            break;
         case Command::Down:
-            inList = true;
-            if (!OwnsAnything())
+            if (onButtons && column < columnCount - 1 && buttons > 1)
+                column++;
+            else if (OwnsAnything())
+                HomeStep(1, false);
+            else
+            {
+                homeRow = Row::Grid;
                 list.cursor = 0;
+            }
             break;
         case Command::Accept:
             if (column < int(seats.size()))
             {
-                inList = true;
+                // A: choose for this seat, in the grid.
+                if (OwnsAnything() && !gridKnown)
+                    HomeStep(2, false);
+                homeRow = Row::Grid;
                 if (!OwnsAnything())
                     list.cursor = 0;
             }
+            else if (column == columnCount - 1)
+                OpenManage();
             else
             {
-                std::string row = ColumnRows()[column - seats.size()];
-                if (row == L("Manage", "Gérer"))
-                    OpenManage();
-                else
-                {
-                    BuildAdd();
-                    screen = Screen::Add;
-                }
+                BuildAdd();
+                screen = Screen::Add;
             }
             break;
         case Command::Options:
@@ -1473,6 +1582,41 @@ namespace toybox
         }
     }
 
+    // The bar: the search field (A: the on-screen keyboard; a keyboard types into it from anywhere) and Filters.
+    void Model::RunBar(Command command)
+    {
+        barColumn = std::clamp(barColumn, 0, BarCount - 1);
+        switch (command)
+        {
+        case Command::Left: barColumn = 0; break;
+        case Command::Right: barColumn = BarCount - 1; break;
+        case Command::Up: HomeStep(-1, false); break;
+        case Command::Down: HomeStep(1, false); break;
+        case Command::PreviousSection:
+        case Command::NextSection:
+            FocusSeat(nav::SeatStep(seat, command == Command::NextSection ? 1 : -1, int(seats.size())));
+            break;
+        case Command::Accept:
+            if (barColumn == 0)
+                OpenSearch();
+            else
+                OpenFilters();
+            break;
+        case Command::Delete:
+            if (barColumn == 0 && !search.empty())
+                ClearSearch();
+            break;
+        case Command::Back:
+            if (!search.empty())
+                ClearSearch();
+            else
+                Close();
+            break;
+        default: break;
+        }
+        m_dirty = true;
+    }
+
     void Model::RunList(Command command, bool wheelList)
     {
         Grid& grid = list;
@@ -1480,14 +1624,9 @@ namespace toybox
         switch (command)
         {
         case Command::Up:
-            // From the first row, up to the seats.
-            if (!wheelList && (cell == nullptr || cell->row == grid.cells.front().row))
-            {
-                inList = false;
-                column = seat;
-            }
-            else
-                MoveGrid(grid, command);
+            // From the first row, up to the bar.
+            if (!MoveGrid(grid, command) && !wheelList)
+                HomeStep(-1, false);
             break;
         case Command::Down:
         case Command::Left:
@@ -1498,10 +1637,7 @@ namespace toybox
             if (wheelList)
                 JumpSection(grid, command == Command::NextSection ? 1 : -1);
             else
-            {
-                FocusSeat(std::clamp(seat + (command == Command::NextSection ? 1 : -1), 0, int(seats.size()) - 1));
-                inList = true;
-            }
+                FocusSeat(nav::SeatStep(seat, command == Command::NextSection ? 1 : -1, int(seats.size())));
             break;
         case Command::Accept:
             if (cell == nullptr)
@@ -1559,13 +1695,16 @@ namespace toybox
         }
     }
 
-    void Model::FocusCell(int index)
+    void Model::FocusCell(int index, bool scroll)
     {
         if (index < 0 || index >= int(list.cells.size()))
             return;
-        inList = true;
+        if (screen == Screen::Home)
+            homeRow = Row::Grid;
         list.cursor = index;
-        FixGrid(list, 0);
+        gridKnown = true;
+        if (scroll)
+            FixGrid(list, 0);
         m_dirty = true;
     }
 
@@ -1613,7 +1752,8 @@ namespace toybox
         {
             filtersOpen = false;
             search += utf8;
-            inList = true;
+            homeRow = Row::Grid;
+            gridKnown = true;
             BuildList();
             list.cursor = 0;
             FixGrid(list, 0);
@@ -1860,10 +2000,10 @@ namespace toybox
         entry.done = [this](bool keep, const std::string& text) {
             if (keep)
                 search = text;
-            screen = Screen::Home;
-            inList = true;
+            screen = Screen::Home; // the focus stays where Y or A was pressed
             BuildList();
             list.cursor = 0;
+            gridKnown = true;
             FixGrid(list, 0);
         };
         OpenName(entry);
@@ -1894,6 +2034,11 @@ namespace toybox
                 actions.push_back(Action::TakeOff);
             if (f.lock.Busy())
                 actions.push_back(Action::Unlock);
+            if (!model.TrapVillainsOf(f).empty())
+            {
+                actions.push_back(Action::Villain);
+                actions.push_back(Action::Evolved);
+            }
             actions.push_back(KeepsProgress(f) ? Action::EditStats : Action::Rename);
             if (f.IsSwapTop() || f.IsSwapBottom())
                 actions.push_back(Action::ChangeHalf);
@@ -1912,6 +2057,7 @@ namespace toybox
         figure = index;
         figureAction = 0;
         figureMore = false;
+        trapPick = 0;
         screen = Screen::Figure;
         m_dirty = true;
     }
@@ -1942,6 +2088,29 @@ namespace toybox
                 break;
             case Action::Unlock:
                 lines.push_back(std::string(L("It is not in use any more", "Elle n'est plus utilisée")) + "\t" + busy);
+                break;
+            case Action::Villain:
+            {
+                uint8_t pick = TrapPick();
+                const collection::Villain* chosen = nullptr;
+                for (const collection::Villain* villain : TrapVillainsOf(f))
+                    if (VillainId(*villain) == pick)
+                        chosen = villain;
+                std::string hint = chosen == nullptr
+                                       ? L("none: left / right to choose", "aucun : gauche / droite pour choisir")
+                                   : pick != f.stats.villain
+                                       ? chosen->name + L(" · A: put it in the trap", " · A : le mettre dans le piège")
+                                       : chosen->name;
+                lines.push_back(std::string(L("Villain", "Méchant")) + "\t" + (busy.empty() ? hint : busy));
+                break;
+            }
+            case Action::Evolved:
+                lines.push_back(
+                    std::string(L("Evolved", "Évolué")) + "\t" +
+                    (!busy.empty()               ? busy
+                        : f.stats.villain == 0   ? L("choose a villain first", "choisissez d'abord un méchant")
+                        : f.stats.villainEvolved ? L("on: its evolved look", "oui : son apparence évoluée")
+                                                 : L("off", "non")));
                 break;
             case Action::EditStats:
                 lines.push_back(std::string(L("Edit", "Modifier")) + "\t" +
@@ -2001,6 +2170,68 @@ namespace toybox
         m_dirty = true;
     }
 
+    std::vector<const collection::Villain*> Model::TrapVillainsOf(const Figure& f) const
+    {
+        return TrapVillains(Catalogue::Get().FindGame(game), f);
+    }
+
+    uint8_t Model::TrapPick() const
+    {
+        return trapPick != 0 || figure < 0 || figure >= int(figures.size()) ? trapPick
+                                                                            : uint8_t(figures[figure].stats.villain);
+    }
+
+    void Model::PickTrapVillain(uint8_t id)
+    {
+        std::vector<Action> actions = ActionsFor(*this, figures[figure]);
+        auto row = std::find(actions.begin(), actions.end(), Action::Villain);
+        if (row == actions.end())
+            return;
+        figureAction = int(row - actions.begin());
+        trapPick = id;
+        if (id != figures[figure].stats.villain)
+            DoFigureAction(figureAction);
+        m_dirty = true;
+    }
+
+    // The trap's villain written (collection::SetTrapVillain). On the emulated portal the trap is lifted and put back
+    // around the write, so that the game reads the new villain (it keeps what it read when the trap arrived). A real
+    // portal's trap cannot be: the player takes it off first, as Skylauncher's Edit asks.
+    void Model::PutVillain(uint8_t id, bool evolved)
+    {
+        std::string path = figures[figure].path;
+        for (const SeatState& s : seats)
+        {
+            if (s.physical && s.physicalKnown && s.physicalType == figures[figure].type)
+            {
+                trapPick = 0;
+                Toast(L("Take the trap off the portal first", "Retirez d'abord le piège du portail"), 4);
+                return;
+            }
+        }
+        std::string name;
+        for (const collection::Villain* villain : TrapVillainsOf(figures[figure]))
+            if (VillainId(*villain) == id)
+                name = villain->name;
+        int s = SeatOf(path);
+        int slot = s >= 0 ? seats[s].slot : -1;
+        if (slot >= 0)
+            PortalRemoveFigure(slot);
+        std::string error;
+        bool done = SetTrapVillain(path, id, evolved, &error);
+        if (slot >= 0)
+            PortalPlaceFigureAt(path, slot);
+        fprintf(stderr, "[toybox] trap %s: villain %u%s%s\n", figures[figure].file.c_str(), unsigned(id),
+            evolved ? " evolved" : "", done ? (slot >= 0 ? ", lifted and put back" : "") : " not written");
+        trapPick = 0;
+        Reload();
+        figure = FindFigure(path);
+        BuildList();
+        Toast(!done     ? L("Could not save: ", "Échec de l'enregistrement : ") + error
+              : evolved ? name + L(" is in the trap, evolved", " est dans le piège, évolué")
+                        : name + L(" is in the trap", " est dans le piège"));
+    }
+
     void Model::RunFigure(Command command)
     {
         int count = int(FigureActions().size());
@@ -2009,6 +2240,18 @@ namespace toybox
         case Command::Up: figureAction = (figureAction + count - 1) % count; break;
         case Command::Down: figureAction = (figureAction + 1) % count; break;
         case Command::Accept: DoFigureAction(figureAction); break;
+        case Command::Left:
+        case Command::Right:
+        {
+            // A trap's Villain row: Left / Right choose (A puts it in); its Evolved switch: either one flips it.
+            std::vector<Action> actions = ActionsFor(*this, figures[figure]);
+            Action action = figureAction < int(actions.size()) ? actions[figureAction] : Action::More;
+            if (action == Action::Villain)
+                trapPick = StepVillain(TrapVillainsOf(figures[figure]), TrapPick(), command == Command::Right ? 1 : -1);
+            else if (action == Action::Evolved)
+                DoFigureAction(figureAction);
+            break;
+        }
         case Command::PreviousSection:
         case Command::NextSection:
         {
@@ -2026,6 +2269,7 @@ namespace toybox
             int index = at == order.end() ? 0 : int(at - order.begin());
             index = (index + (command == Command::NextSection ? 1 : int(order.size()) - 1)) % int(order.size());
             figure = order[index];
+            trapPick = 0;
             figureAction = std::min(figureAction, int(FigureActions().size()) - 1);
             break;
         }
@@ -2053,7 +2297,8 @@ namespace toybox
             return;
         Action action = actions[index];
         bool writes = action == Action::EditStats || action == Action::Rename || action == Action::Restore ||
-                      action == Action::Reset || action == Action::Delete || action == Action::ChangeHalf;
+                      action == Action::Reset || action == Action::Delete || action == Action::ChangeHalf ||
+                      action == Action::Villain || action == Action::Evolved;
         if (writes && CardBusy(f))
         {
             for (const Figure* half : CardFor(f).Halves())
@@ -2100,6 +2345,28 @@ namespace toybox
                 } });
             break;
         case Action::EditStats: OpenStats(figure); break;
+        case Action::Villain:
+        {
+            // A puts the chosen villain in; with nothing new chosen, it shows the next one (A again puts it in).
+            if (TrapPick() != 0 && TrapPick() != f.stats.villain)
+            {
+                figures::TrapStats held;
+                FigureData tag;
+                bool evolved = LoadFigure(path, tag) &&
+                               figures::ReadTrapStats(tag, held) == figures::AreaState::Valid &&
+                               KeptEvolved(held, TrapPick());
+                PutVillain(TrapPick(), evolved);
+            }
+            else
+                trapPick = StepVillain(TrapVillainsOf(f), TrapPick(), 1);
+            break;
+        }
+        case Action::Evolved:
+            if (f.stats.villain == 0)
+                Toast(L("Choose a villain first", "Choisissez d'abord un méchant"));
+            else
+                PutVillain(uint8_t(f.stats.villain), !f.stats.villainEvolved);
+            break;
         case Action::ChangeHalf: OpenHalf(); break;
         case Action::Rename:
         {
@@ -2140,7 +2407,7 @@ namespace toybox
                                           : L(" is off the wheel", " n'est plus sur la roue")));
             else
                 Toast(L("The wheel is full: take a figure off it first",
-                          "La roue est pleine : retire d'abord une figurine"),
+                          "La roue est pleine : retirez d'abord une figurine"),
                     4);
             break;
         }
@@ -2180,7 +2447,7 @@ namespace toybox
             Ask({ L("Reset to new", "Remettre à neuf"),
                 FigureName(f) +
                     L(" loses its level, gold and upgrades.", " perd son niveau, son or et ses améliorations."),
-                { L("Hold A to reset", "Maintiens A pour remettre à neuf"), L("Cancel", "Annuler") }, 0, true,
+                { L("Hold A to reset", "Maintenez A pour remettre à neuf"), L("Cancel", "Annuler") }, 0, true,
                 [this, path](int c) {
                     if (c != 0)
                         return;
@@ -2206,7 +2473,7 @@ namespace toybox
                 FigureName(f) + (halves.size() > 1 ? L(" goes to the trash, both halves.",
                                                          " part à la corbeille, les deux moitiés.")
                                                    : L(" goes to the trash.", " part à la corbeille.")),
-                { L("Hold A to delete", "Maintiens A pour supprimer"), L("Cancel", "Annuler") }, 0, true,
+                { L("Hold A to delete", "Maintenez A pour supprimer"), L("Cancel", "Annuler") }, 0, true,
                 [this, path, halves](int c) {
                     if (c != 0)
                         return;
@@ -2821,6 +3088,16 @@ namespace toybox
         m_dirty = true;
     }
 
+    void Model::HoverAddCell(int index)
+    {
+        if (index < 0 || index >= int(add.cells.size()) || (index == add.cursor && !addVersions))
+            return;
+        add.cursor = index;
+        addVersions = false;
+        BuildVersions();
+        m_dirty = true;
+    }
+
     void Model::FocusVersion(int index)
     {
         if (index < 0 || index >= int(versions.size()))
@@ -2859,16 +3136,15 @@ namespace toybox
         case Command::Right:
         {
             int before = add.cursor;
-            const Cell& cell = add.cells[add.cursor];
-            if (command == Command::Right && cell.column == AddColumns - 1)
-            {
-                addVersions = true;
-                addVersion = 0;
-                break;
-            }
             MoveGrid(add, command);
             if (add.cursor != before)
                 BuildVersions();
+            else if (command == Command::Right && !versions.empty())
+            {
+                // Right at the end of a row: the versions beside the grid.
+                addVersions = true;
+                addVersion = 0;
+            }
             break;
         }
         case Command::PreviousSection:
@@ -2947,7 +3223,7 @@ namespace toybox
                     if (PutOn(target, path))
                     {
                         screen = Screen::Home;
-                        inList = true;
+                        homeRow = Row::Grid;
                         BuildList();
                         Refocus(path);
                     }
@@ -3219,7 +3495,7 @@ namespace toybox
                 TrashEntry entry = manage.trash[manage.item];
                 Ask({ L("Delete for good", "Supprimer pour de bon"),
                     entry.file + L(" cannot be brought back after this.", " ne pourra plus être récupérée."),
-                    { L("Hold A to delete for good", "Maintiens A pour supprimer"), L("Cancel", "Annuler") }, 0, true,
+                    { L("Hold A to delete for good", "Maintenez A pour supprimer"), L("Cancel", "Annuler") }, 0, true,
                     [this, entry](int c) {
                         if (c != 0)
                             return;

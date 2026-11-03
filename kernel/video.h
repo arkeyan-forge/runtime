@@ -25,5 +25,8 @@ void SetFrameRateLimit(uint32_t fps);
 // The limit set by SetFrameRateLimit.
 uint32_t FrameRateLimit();
 
+// Read-only snapshot of the automatic 60-to-30 pacing state.
+bool FrameRateFallbackActive();
+
 // 30 / the frame rate limit (at most 1; no limit counts as 240): the factor for a per-frame step the game tuned for 30 FPS.
 float FrameScale();

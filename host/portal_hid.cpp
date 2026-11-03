@@ -6,6 +6,7 @@
 // controllers only (SDL_HINT_HIDAPI_ENUMERATE_ONLY_CONTROLLERS: it drops every device whose usage page is known and is
 // not a joystick or gamepad). Windows always knows the usage page, so the portal was never listed there; the hint is
 // lifted for the portal's own enumeration. Every step is logged ("[portal] hid: ...") so a log shows where it stops.
+#include "host/portal_adpcm.h"
 #include "host/portal_backend.h"
 #include <SDL3/SDL_hidapi.h>
 #include <SDL3/SDL_hints.h>
@@ -211,6 +212,12 @@ namespace
             if (m_device == nullptr)
                 return false;
             char letter = size > 0 ? char(command[0]) : '?';
+            // The speaker on: a new line for the decoder (WriteSound).
+            if (letter == 'M' && size > 1 && command[1] != 0)
+            {
+                m_decoder.Reset();
+                m_samples = 0;
+            }
             std::string errors;
             std::vector<WriteMethod> order{ m_method };
             for (WriteMethod method : Methods)
@@ -234,6 +241,37 @@ namespace
             Say("[portal] hid: write of '" + std::string(1, letter) + "' failed (" + errors + ")");
             Close();
             return false;
+        }
+
+        // HID portals take the speaker's sound as 16-bit PCM at 8 kHz, 32 samples (64 bytes, little-endian) per write on the
+        // interrupt OUT endpoint, where the console's ADPCM is decoded first. A portal that refuses it (Windows sends only
+        // reports of the descriptor's 33 bytes) leaves the sound to the computer.
+        bool TakesSound() override { return m_device != nullptr && !m_soundRefused; }
+
+        bool WriteSound(const uint8_t* block, size_t size) override
+        {
+            if (!TakesSound())
+                return false;
+            for (size_t i = 0; i < size * 2; i++)
+            {
+                const uint8_t byte = block[i / 2];
+                const bool low = (i % 2 == 0) == portal_adpcm::LowNibbleFirst;
+                const int16_t sample = m_decoder.Decode(low ? byte & 15 : byte >> 4);
+                m_pcm[1 + m_samples * 2] = uint8_t(sample);
+                m_pcm[2 + m_samples * 2] = uint8_t(uint16_t(sample) >> 8);
+                if (++m_samples < SoundBlockSamples)
+                    continue;
+                m_samples = 0;
+                if (SDL_hid_write(m_device, m_pcm, sizeof(m_pcm)) < 0)
+                {
+                    fprintf(stderr,
+                        "[portal] hid: the portal refused a sound block (%s): the computer plays the sound\n",
+                        SDL_GetError());
+                    m_soundRefused = true;
+                    return false;
+                }
+            }
+            return true;
         }
 
         size_t Read(uint8_t* report, size_t capacity) override
@@ -309,7 +347,8 @@ namespace
                 }
             }
             m_lastCount = count;
-            m_wrote = m_read = false;
+            m_wrote = m_read = m_soundRefused = false;
+            m_samples = 0;
             SDL_hid_free_enumeration(devices);
         }
 
@@ -327,6 +366,11 @@ namespace
         WriteMethod m_method = Methods[0];
         int m_lastCount = -1;
         bool m_wrote = false, m_read = false;
+        static constexpr size_t SoundBlockSamples = 32;
+        portal_adpcm::Decoder m_decoder;
+        uint8_t m_pcm[1 + SoundBlockSamples * 2]{}; // report id 0, then the samples
+        size_t m_samples = 0;
+        bool m_soundRefused = false;
         std::set<std::string> m_said;
     };
 }

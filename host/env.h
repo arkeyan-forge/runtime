@@ -4,7 +4,7 @@
 
 // Environment variables of the games, the builder and the launcher. Ask for the current name; the older names are read
 // when it is not set, so every variable of earlier versions keeps working (test runs and scripts included):
-//   "SKY_X"          then "SSA_X"                  (games, runtime, SkyBuild)
+//   "SKY_X"          then "SSA_X"                  (games, runtime, Arkeyan-Builder)
 //   "SKY_LAUNCHER_X" then "SKYLAUNCHER_X", then "SSA_LAUNCHER_X"   (launcher; the tail of the chain is the older spellings)
 // A variable that is set, even to an empty text, wins over the older names. Names that never changed (SKYLANDERS_DATA,
 // SDL_*, GIANTS_ISO, ...) are read with plain getenv. The same file is in the launcher's src/shared/ (tools/sync_skylauncher.sh).

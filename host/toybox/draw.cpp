@@ -1,4 +1,6 @@
 #include "host/toybox/draw.h"
+#include "host/gamemenu.h"
+#include "host/toybox/hit.h"
 #include "host/collection/icons.h"
 #include "host/embedded_fonts.h"
 #include "host/glyphs.h"
@@ -6,6 +8,9 @@
 #include "host/input.h"
 #include "host/portal.h"
 #include "host/portal_backend.h"
+#include "host/toybox.h"
+#include "host/toybox/look.h"
+#include "host/toybox/trap_villain.h"
 #include <SDL3/SDL.h>
 #include <imgui.h>
 #include <algorithm>
@@ -35,27 +40,26 @@ namespace toybox
             return name;
         }
 
-        // Colours and type of the first Toy Box (the approved mockup, private/design/toybox-design), kept on purpose.
+        // The screens' colour names, on the shared palette (look.h, docs/runtime/host/ingame_ui.md).
         namespace Look
         {
-            constexpr uint32_t Text = 0xF4F1FF, TextSoft = 0xD6D2FF, TextDim = 0xB9B4E8, TextDimmer = 0x9C97D6,
-                               ChipText = 0xE4E1FF;
-            constexpr uint32_t Gold = 0xFFC233, GoldDark = 0xD98A00, GoldInk = 0x3A1C00, GoldShadow = 0x7A3E00,
-                               GoldText = 0xFFD970;
+            using namespace look::Colour;
+            constexpr uint32_t ChipText = TextSoft;
+            constexpr uint32_t Gold = Accent, GoldInk = AccentInk, GoldText = AccentText;
             constexpr uint32_t GoldBorder = 0x8A6A1A;
-            constexpr uint32_t Night = 0x0B0F2E;
-            constexpr uint32_t Panel = 0x161B4D, PanelBorder = 0x3A3F8C, CardBorder = 0x2B3070, CardSelected = 0x2A2F78;
-            constexpr uint32_t Chip = 0x1C2160, KeyCap = 0x23285E, Control = 0x4A4F9A, Button = 0x2A3070;
-            constexpr uint32_t Field = 0x0E1240, Bar = 0x48D17A, Danger = 0xF85149, DangerText = 0xFFB4AE,
-                               Waiting = 0xFFB454;
+            constexpr uint32_t Night = 0x0A0C1A;
+            constexpr uint32_t Panel = Surface, PanelBorder = Hairline, CardBorder = Hairline,
+                               CardSelected = look::Colour::Focus;
+            constexpr uint32_t Chip = Raised, KeyCap = Raised2, Button = Raised2;
+            constexpr uint32_t Field = Well, Bar = Success, Waiting = Warning;
         }
 
         imgui_software::Texture* g_background;
         std::map<std::string, imgui_software::Texture*> g_baked;
-        std::map<uint32_t, collection::Image> g_icons; // (type, kind) -> 128x128 picture
+        std::map<uint64_t, collection::Image> g_icons; // (type, variant, kind) -> 128x128 picture
         ImFont* g_bold;    // Outfit Bold: text
         ImFont* g_black;   // Outfit Black: labels, buttons
-        ImFont* g_display; // Bungee: titles and names
+        ImFont* g_display; // titles and names: Outfit Black at display sizes (look.h's type scale)
         ImDrawList* g_draw;
         uint64_t g_frameTime;
 
@@ -63,8 +67,23 @@ namespace toybox
         {
             ImVec2 min, max;
             std::function<void()> left, right, twice;
+            bool hover = true; // outlined under the pointer (not a backdrop that only catches clicks)
+            std::string target; // script proof: card, F3 row or Commands cell, independent of keyboard focus
+            std::function<void()> focus; // the pointer moving onto it moves the focus there (Pointer)
         };
         std::vector<Hit> g_hits;
+        ImVec2 g_pointer; // the mouse in canvas pixels (Pointer)
+        bool g_pointerIn;
+        int g_hovered = -1; // the hit under it, as last computed
+
+        // The topmost hit under the pointer that shows a hover outline, -1: none.
+        int HoveredHit()
+        {
+            if (!g_pointerIn)
+                return -1;
+            int i = HitAt(std::span<const Hit>(g_hits), g_pointer.x, g_pointer.y);
+            return i >= 0 && g_hits[size_t(i)].hover ? i : -1;
+        }
 
         ImU32 Rgb(uint32_t rgb, int alpha = 255)
         {
@@ -267,9 +286,25 @@ namespace toybox
                 std::max(radius - inset, 0.0f), alpha);
         }
 
-        void FocusRing(ImVec2 min, ImVec2 max, float radius, uint32_t rgb = Look::Gold)
+        // Focus, the one style of every screen: a white ring 3 px wide, outside the element (look.h). The selected seat is
+        // gold, the pointer's hover a thin grey line on the element's edge.
+        void FocusRing(ImVec2 min, ImVec2 max, float radius, uint32_t rgb = Look::FocusRing)
         {
             RoundFrame(ImVec2(min.x - 5, min.y - 5), ImVec2(max.x + 5, max.y + 5), rgb, radius + 5, 3);
+        }
+
+        // The same ring for rows 4 px apart (the F3 menu, Commands): 2 px wide, inside the gap.
+        void DenseFocusRing(ImVec2 min, ImVec2 max, float radius)
+        {
+            RoundFrame(ImVec2(min.x - 3, min.y - 3), ImVec2(max.x + 3, max.y + 3), Look::FocusRing, radius + 3, 2);
+        }
+
+        // A row or card that takes the focus: lit and ringed when focused.
+        void FocusBox(ImVec2 min, ImVec2 max, bool focused, float radius, uint32_t fill)
+        {
+            Box(min, max, focused ? Look::CardSelected : fill, Look::CardBorder, radius, 1);
+            if (focused)
+                FocusRing(min, max, radius);
         }
 
         void DashedCircle(ImVec2 center, float radius, uint32_t rgb, float thickness)
@@ -326,7 +361,14 @@ namespace toybox
         void AddHit(ImVec2 min, ImVec2 max, std::function<void()> left, std::function<void()> right = {},
             std::function<void()> twice = {})
         {
-            g_hits.push_back({ min, max, std::move(left), std::move(right), std::move(twice) });
+            // Scrolled cards are clipped when drawn; their pointer areas must stop at the same edge.
+            if (g_draw != nullptr)
+            {
+                ImVec2 clipMin = g_draw->GetClipRectMin(), clipMax = g_draw->GetClipRectMax();
+                min = ImVec2(std::max(min.x, clipMin.x), std::max(min.y, clipMin.y));
+                max = ImVec2(std::max(min.x, std::min(max.x, clipMax.x)), std::max(min.y, std::min(max.y, clipMax.y)));
+            }
+            g_hits.push_back({ min, max, std::move(left), std::move(right), std::move(twice), true, {}, {} });
         }
 
         // --- Pictures -------------------------------------------------------------------------------------------------
@@ -344,12 +386,13 @@ namespace toybox
 
         std::map<std::string, collection::Image> g_artworks; // the figure sheet's artworks, by path
 
-        const collection::Image& IconOf(const Toy* toy, VariantKind kind)
+        const collection::Image& IconOf(const Toy* toy, VariantKind kind, uint16_t variant)
         {
-            uint32_t key = uint32_t(toy != nullptr ? toy->type : 0xFFFF) << 8 | uint32_t(kind);
+            uint64_t key =
+                uint64_t(toy != nullptr ? toy->type : 0xFFFF) << 24 | uint64_t(variant) << 8 | uint64_t(kind);
             auto found = g_icons.find(key);
             if (found == g_icons.end())
-                found = g_icons.emplace(key, collection::Portrait(SSA_GAME_ID, toy, kind, 128)).first;
+                found = g_icons.emplace(key, collection::Portrait(SSA_GAME_ID, toy, kind, 128, variant)).first;
             return found->second;
         }
 
@@ -369,12 +412,13 @@ namespace toybox
         }
 
         // The round picture: the element colour, the disc's picture (or the drawn icon) over it, bilinear.
-        void Portrait(const Toy* toy, VariantKind kind, ImVec2 center, int diameter, bool grey = false)
+        void Portrait(
+            const Toy* toy, VariantKind kind, ImVec2 center, int diameter, bool grey = false, uint16_t variant = 0)
         {
-            char key[64];
-            snprintf(key, sizeof(key), "portrait %u %d %d %d", toy != nullptr ? toy->type : 0xFFFF, int(kind), diameter,
-                grey ? 1 : 0);
-            const collection::Image& image = IconOf(toy, kind);
+            char key[80];
+            snprintf(key, sizeof(key), "portrait %u %u %d %d %d", toy != nullptr ? toy->type : 0xFFFF,
+                unsigned(variant), int(kind), diameter, grey ? 1 : 0);
+            const collection::Image& image = IconOf(toy, kind, variant);
             Blit(Bake(key, diameter,
                      [&](float dx, float dy) {
                          float radius = diameter / 2.0f;
@@ -417,7 +461,7 @@ namespace toybox
 
         void FigurePortrait(const Figure& f, ImVec2 center, int diameter, bool grey = false)
         {
-            Portrait(f.toy, f.Kind(), center, diameter, grey);
+            Portrait(f.toy, f.Kind(), center, diameter, grey, f.variant);
         }
 
         // A swapper's bottom half, small at the lower right of its top's picture (one card, two halves).
@@ -611,16 +655,17 @@ namespace toybox
             TextCentered(g_black, size, center, ink, text);
         }
 
-        // A chevron drawn with two lines (no font glyph): dir 1 down, -1 up, 0 right; `size` is its width.
+        // A chevron drawn with two lines (no font glyph): dir 1 down, -1 up, 0 right, 2 left; `size` is its width.
         void Chevron(ImVec2 center, float size, uint32_t rgb, int dir)
         {
             float h = size / 2, r = size / 4;
             ImVec2 points[3];
-            if (dir == 0)
+            if (dir == 0 || dir == 2)
             {
-                points[0] = ImVec2(center.x - r, center.y - h);
-                points[1] = ImVec2(center.x + r, center.y);
-                points[2] = ImVec2(center.x - r, center.y + h);
+                float side = dir == 0 ? r : -r;
+                points[0] = ImVec2(center.x - side, center.y - h);
+                points[1] = ImVec2(center.x + side, center.y);
+                points[2] = ImVec2(center.x - side, center.y + h);
             }
             else
             {
@@ -634,34 +679,35 @@ namespace toybox
 
         void GoldButton(ImVec2 min, ImVec2 max, const std::string& label, float size, bool focused)
         {
-            RoundRect(min, max, Look::GoldDark, 14);
-            RoundRect(min, ImVec2(max.x, max.y - 5), Look::Gold, 14);
-            TextCentered(g_display, size, ImVec2((min.x + max.x) / 2, (min.y + max.y) / 2 - 2), Look::GoldInk,
+            RoundRect(min, max, Look::Gold, look::Radius::Control);
+            TextCentered(g_display, size, ImVec2((min.x + max.x) / 2, (min.y + max.y) / 2), Look::GoldInk,
                 Fit(g_display, size, label, max.x - min.x - 16));
             if (focused)
-                FocusRing(min, max, 14, Look::Text);
+                FocusRing(min, max, look::Radius::Control);
         }
 
         void PlainButton(ImVec2 min, ImVec2 max, const std::string& label, float size, bool focused,
-            uint32_t text = Look::Text, uint32_t fill = Look::Button, uint32_t border = Look::Control)
+            uint32_t text = Look::Text, uint32_t fill = Look::Button, uint32_t border = Look::Hairline)
         {
-            Box(min, max, fill, border, 12, 2);
+            Box(min, max, fill, border, look::Radius::Control, 1);
             TextCentered(g_black, size, ImVec2((min.x + max.x) / 2, (min.y + max.y) / 2), text,
                 Fit(g_black, size, label, max.x - min.x - 16));
             if (focused)
-                FocusRing(min, max, 12);
+                FocusRing(min, max, look::Radius::Control);
         }
 
+        // A screen's title: white on a short gold mark (the type scale's Title at 28).
         float Title(const std::string& text, ImVec2 at, float size)
         {
-            Text(g_display, size, ImVec2(at.x, at.y + 3), Look::GoldShadow, text);
-            Text(g_display, size, at, Look::Gold, text);
-            return Measure(g_display, size, text).x;
+            float height = Measure(g_display, size, "Ag").y;
+            RoundRect(ImVec2(at.x, at.y + height * 0.2f), ImVec2(at.x + 5, at.y + height * 0.85f), Look::Gold, 2);
+            Text(g_display, size, ImVec2(at.x + 15, at.y), Look::Text, text);
+            return Measure(g_display, size, text).x + 15;
         }
 
         void Panel(ImVec2 min, ImVec2 max, float alpha = 1)
         {
-            Box(min, max, Look::Panel, Look::PanelBorder, 22, 2, alpha);
+            Box(min, max, Look::Panel, Look::PanelBorder, look::Radius::Panel, 1, alpha);
         }
 
         // --- Button hints ---------------------------------------------------------------------------------------------
@@ -671,7 +717,7 @@ namespace toybox
         float KeyCap(ImVec2 at, float height, float size, const std::string& label)
         {
             float width = std::max(Measure(g_black, size, label).x + 14, height + 4);
-            Box(at, ImVec2(at.x + width, at.y + height), Look::KeyCap, Look::Control, 7, 2);
+            Box(at, ImVec2(at.x + width, at.y + height), Look::KeyCap, Look::Control, look::Radius::Key, 1);
             TextCentered(g_black, size, ImVec2(at.x + width / 2, at.y + height / 2), Look::Text, label);
             return width;
         }
@@ -694,14 +740,14 @@ namespace toybox
                 { 'Y', 0xE3B341, 0x2E2000 }, { 'B', 0xF85149, 0x3A0603 } };
             if (KeyboardStyle())
             {
-                const char* key = button == 'A'   ? "Enter"
-                                  : button == 'B' ? "Esc"
-                                  : button == 'X' ? "F2"
-                                  : button == 'Y' ? "F3"
-                                  : button == 'L' ? "PgUp PgDn"
-                                  : button == 'V' ? "Tab"
-                                  : button == 'F' ? "F4"
-                                                  : "Enter";
+                const std::string key = button == 'A'   ? "Enter"
+                                        : button == 'B' ? "Esc"
+                                        : button == 'X' ? "F2"
+                                        : button == 'Y' ? "F3"
+                                        : button == 'L' ? "PgUp PgDn"
+                                        : button == 'V' ? ToyboxWheelKeyName()
+                                        : button == 'F' ? "F4"
+                                                        : "Enter";
                 float width = std::max(Measure(g_black, 12, key).x + 14, 28.0f);
                 if (draw)
                     KeyCap(ImVec2(x, centerY - 13), 26, 12, key);
@@ -768,14 +814,87 @@ namespace toybox
                 TextMiddle(g_bold, 16, 32 + width + 16, 42, Look::TextDim, subtitle);
         }
 
-        void DrawToast(const Model& model, float y)
+        // The toast (look.h): a card at `centerX`, at most `maxWidth` wide, resting on `edge` (its top when `fromTop`, else
+        // its bottom). Over the game it slides in from that edge and fades; inside the Toy Box's screens it simply shows.
+        // A notice is a gold dot and up to two lines; an achievement has its picture and a caption line over its name. The
+        // lines are cut once per message, so that a frame of the slide does not allocate.
+        struct ToastLayout
         {
+            std::string text, caption;
+            float maxWidth = 0;
+            std::vector<std::string> lines;
+            float width = 0, height = 0;
+        };
+        ToastLayout g_toastLayout;
+        imgui_software::Texture g_toastPicture{ 64, 64, {} };
+        uint32_t g_toastPictureSerial = 0;
+
+        void DrawToast(const Model& model, float centerX, float maxWidth, float edge, bool fromTop, bool moving)
+        {
+            using namespace look;
             if (model.toast.empty())
                 return;
-            float width = std::min(Measure(g_black, 16, model.toast).x + 48, 1100.0f);
-            ImVec2 min(640 - width / 2, y), max(640 + width / 2, y + 44);
-            Box(min, max, Look::Night, Look::Gold, 22, 2, 0.94f);
-            TextCentered(g_black, 16, ImVec2(640, y + 22), Look::Text, Fit(g_black, 16, model.toast, width - 32));
+            Motion motion = moving ? ToastMotion(SDL_GetTicksNS(), model.toastSince, model.toastUntil,
+                                         gamemenu::Current().reduceMotion)
+                                   : Motion{};
+            if (motion.alpha <= 0)
+                return;
+            const bool achievement = !model.toastCaption.empty();
+            const bool picture = achievement && !model.toastPicture.Empty();
+            const float textSize = achievement ? Type::Label : Type::Body, lineHeight = textSize + 6;
+            const float left = Space::L + (picture ? 64 + Space::M : achievement ? 0 : 10 + Space::M);
+            ToastLayout& layout = g_toastLayout;
+            if (layout.text != model.toast || layout.caption != model.toastCaption || layout.maxWidth != maxWidth)
+            {
+                layout.text = model.toast;
+                layout.caption = model.toastCaption;
+                layout.maxWidth = maxWidth;
+                layout.lines = Wrap(g_black, textSize, model.toast, maxWidth - left - Space::L, 2);
+                float textWidth = achievement ? Measure(g_black, Type::Caption, model.toastCaption).x : 0;
+                for (const std::string& line : layout.lines)
+                    textWidth = std::max(textWidth, Measure(g_black, textSize, line).x);
+                layout.width = std::clamp(left + textWidth + Space::L, 220.0f, maxWidth);
+                float block = layout.lines.size() * lineHeight + (achievement ? Type::Caption + Space::S : 0);
+                layout.height = std::max(picture ? 64 + 2 * Space::M : 48, block + 2 * Space::M);
+            }
+            if (picture && g_toastPictureSerial != model.toastSerial)
+            {
+                g_toastPictureSerial = model.toastSerial;
+                collection::Image fitted = collection::Resize(model.toastPicture, 64, 64);
+                g_toastPicture.pixels = std::move(fitted.rgba);
+            }
+            // Baked corners are kept per alpha: steps of 1/16 keep them few.
+            const float alpha = std::round(motion.alpha * 16) / 16;
+            const float y = fromTop ? edge - motion.offset : edge - layout.height + motion.offset;
+            ImVec2 min(std::round(centerX - layout.width / 2), std::round(y)),
+                max(min.x + std::round(layout.width), min.y + std::round(layout.height));
+            RoundRect(min, max, Look::Surface, Radius::Card, 0.96f * alpha);
+            if (model.open)
+            {
+                AddHit(min, max, {});
+                g_hits.back().hover = false;
+            }
+            const int ink = int(alpha * 255 + 0.5f);
+            float textY = (min.y + max.y) / 2 - (layout.lines.size() * lineHeight) / 2;
+            if (picture)
+            {
+                ImVec2 at(min.x + Space::L, (min.y + max.y) / 2 - 32);
+                g_draw->AddImage(imgui_software::Ref(&g_toastPicture), at, ImVec2(at.x + 64, at.y + 64), ImVec2(0, 0),
+                    ImVec2(1, 1), IM_COL32(255, 255, 255, ink));
+            }
+            if (achievement)
+            {
+                float top = (min.y + max.y) / 2 - (Type::Caption + Space::S + layout.lines.size() * lineHeight) / 2;
+                Text(g_black, Type::Caption, ImVec2(min.x + left, top), Look::AccentText, model.toastCaption, ink);
+                textY = top + Type::Caption + Space::S;
+            }
+            else
+                Disc(ImVec2(min.x + Space::L + 5, (min.y + max.y) / 2), 10, Look::Accent, alpha);
+            for (const std::string& line : layout.lines)
+            {
+                Text(g_black, textSize, ImVec2(min.x + left, textY + 3), Look::Text, line, ink);
+                textY += lineHeight;
+            }
         }
 
         // The section names as a strip, the current one lit; scrolled so that it shows.
@@ -846,7 +965,8 @@ namespace toybox
         void Card(Model& model, const Figure& f, ImVec2 a, ImVec2 b, bool cursor, bool grey)
         {
             float width = b.x - a.x, cx = (a.x + b.x) / 2;
-            Box(a, b, cursor ? Look::CardSelected : Look::Panel, cursor ? Look::Gold : Look::CardBorder, 16, 2);
+            Box(a, b, cursor ? Look::CardSelected : Look::Raised, cursor ? Look::CardSelected : Look::CardBorder,
+                look::Radius::Card, 1);
             CardPortrait(model, f, ImVec2(cx, a.y + 54), 80, grey);
             if (model.OutOfHealth(f))
                 OutOfHealthCross(ImVec2(cx, a.y + 54), 26);
@@ -873,8 +993,6 @@ namespace toybox
                     4.0f, ImDrawFlags_None, 2.0f);
                 Fill(ImVec2(lock.x, lock.y + 7), ImVec2(lock.x + 16, lock.y + 18), Look::DangerText);
             }
-            if (cursor)
-                FocusRing(a, b, 16, Look::Text);
         }
 
         // Your figures for the seat: the shelf (no header: the line above the grid says what it is for), then the
@@ -886,6 +1004,16 @@ namespace toybox
             float width = max.x - min.x, gap = 12;
             float cardWidth = (width - gap * (Model::ListColumns - 1)) / Model::ListColumns,
                   cardHeight = float(grid.rowHeight - 12);
+            if (!wheelList)
+            {
+                model.gridSpans.clear();
+                for (int c = 0; c < Model::ListColumns; c++)
+                    model.gridSpans.push_back(
+                        { min.x + c * (cardWidth + gap), min.x + c * (cardWidth + gap) + cardWidth });
+            }
+            // The cursor's ring is drawn after the clip, whole: FixGrid keeps its card in view.
+            ImVec2 ringMin, ringMax;
+            float ringRadius = -1;
             g_draw->PushClipRect(ImVec2(min.x - 8, min.y), ImVec2(max.x + 8, max.y), true);
             for (size_t s = 0; s < grid.sections.size(); s++)
             {
@@ -910,35 +1038,55 @@ namespace toybox
                 if (cell.kind == Cell::Kind::Fold)
                 {
                     ImVec2 fb(min.x + width, y + 40);
-                    Box(a, fb, Look::Chip, Look::CardBorder, 12, 2);
+                    Box(a, fb, Look::Chip, Look::CardBorder, 12, 1);
                     std::string label = model.SectionLabel(section) + "   " +
                                         (section.folded ? L("A: open", "A : ouvrir") : L("A: fold", "A : replier"));
                     TextMiddle(g_black, 15, a.x + 16, y + 20, Look::TextDim, label);
                     if (cursor)
-                        FocusRing(a, fb, 12);
+                    {
+                        ringMin = a;
+                        ringMax = fb;
+                        ringRadius = 12;
+                    }
                     AddHit(a, fb, [&model, i] { model.ActivateCell(int(i)); });
+                    g_hits.back().focus = [&model, i] { model.FocusCell(int(i), false); };
                     continue;
                 }
                 if (cell.kind == Cell::Kind::Add)
                 {
-                    Box(a, b, Look::Night, Look::CardBorder, 16, 2, 0.6f);
+                    Box(a, b, Look::Night, Look::CardBorder, 16, 1, 0.6f);
                     EmptySeatPicture(ImVec2(x + cardWidth / 2, y + 54), 64);
                     TextCentered(
                         g_black, 15, ImVec2(x + cardWidth / 2, y + 110), Look::TextDim, L("Add a figure", "Ajouter"));
                     if (cursor)
-                        FocusRing(a, b, 16);
+                    {
+                        ringMin = a;
+                        ringMax = b;
+                        ringRadius = 16;
+                    }
                     AddHit(
                         a, b, [&model, i] { model.FocusCell(int(i)); }, {},
                         [&model, i] { model.ActivateCell(int(i)); });
+                    g_hits.back().focus = [&model, i] { model.FocusCell(int(i), false); };
                     continue;
                 }
                 const Figure& f = model.figures[cell.figure];
                 Card(model, f, a, b, cursor, section.foreign || model.CardBusy(f));
+                if (cursor)
+                {
+                    ringMin = a;
+                    ringMax = b;
+                    ringRadius = look::Radius::Card;
+                }
                 AddHit(
                     a, b, [&model, i] { model.FocusCell(int(i)); }, [&model, i] { model.OptionsCell(int(i)); },
                     [&model, i] { model.ActivateCell(int(i)); });
+                g_hits.back().target = "card=" + std::to_string(i);
+                g_hits.back().focus = [&model, i] { model.FocusCell(int(i), false); };
             }
             g_draw->PopClipRect();
+            if (ringRadius >= 0)
+                FocusRing(ringMin, ringMax, ringRadius);
             // "Not owned yet" beside the + card, for a seat without figures of its family.
             if (!wheelList && !grid.sections.empty() && grid.sections[0].count == 0 &&
                 grid.sections[0].kind == Section::Kind::Shelf && !model.FiltersActive())
@@ -990,15 +1138,18 @@ namespace toybox
             std::vector<Model::Tag> tags = model.Tags();
             ImVec2 fa(max.x - 150, cy - rowHeight / 2), fb(max.x, cy + rowHeight / 2);
             bool on = !tags.empty() || model.filtersOpen;
-            Box(fa, fb, on ? Look::Chip : Look::Button, on ? Look::Gold : Look::Control, 18, 2);
+            Box(fa, fb, on ? Look::Chip : Look::Button, on ? Look::Gold : Look::Control, 18, on ? 2 : 1);
             std::string label = tags.empty()
                                     ? std::string(L("Filters", "Filtres"))
                                     : std::string(L("Filters", "Filtres")) + " · " + std::to_string(tags.size());
             TextCentered(g_black, 15, ImVec2((fa.x + fb.x) / 2, cy), on ? Look::GoldText : Look::Text,
                 Fit(g_black, 15, label, fb.x - fa.x - 20));
             AddHit(fa, fb, [&model] { model.filtersOpen ? model.CloseFilters() : model.OpenFilters(); });
+            g_hits.back().focus = [&model] { model.FocusBar(1); };
             // The search field.
             ImVec2 sa(fa.x - 10 - 360, fa.y), sb(fa.x - 10, fb.y);
+            model.barSpans = { { sa.x, sb.x }, { fa.x, fb.x } };
+            bool barFocus = model.homeRow == Model::Row::Bar && model.screen == Screen::Home && !model.filtersOpen;
             Box(sa, sb, Look::Field, model.search.empty() ? Look::Control : Look::Gold, 18, 2);
             Magnifier(ImVec2(sa.x + 24, cy), model.search.empty() ? Look::TextDimmer : Look::GoldText);
             float textRight = sb.x - 46;
@@ -1020,6 +1171,9 @@ namespace toybox
                 AddHit(ImVec2(sb.x - 40, sa.y), sb, [&model] { model.ClearSearch(); });
             }
             AddHit(sa, ImVec2(sb.x - (model.search.empty() ? 0 : 40), sb.y), [&model] { model.Run(Command::View); });
+            g_hits.back().focus = [&model] { model.FocusBar(0); };
+            if (barFocus)
+                FocusRing(model.barColumn == 0 ? sa : fa, model.barColumn == 0 ? sb : fb, 18);
 
             float bottom = min.y + 36;
             if (!model.FiltersActive())
@@ -1043,7 +1197,7 @@ namespace toybox
             std::string clear = L("Clear all", "Tout effacer");
             float clearW = Measure(g_black, 14, clear).x + 28;
             ImVec2 ca(max.x - countW - 16 - clearW, ty), cb(max.x - countW - 16, ty + 28);
-            Box(ca, cb, Look::Button, Look::Control, 14, 2);
+            Box(ca, cb, Look::Button, Look::Control, 14, 1);
             TextCentered(g_black, 14, ImVec2((ca.x + cb.x) / 2, ty + 14), Look::Text, clear);
             AddHit(ca, cb, [&model] { model.ClearFilters(); });
             return bottom + 36;
@@ -1058,8 +1212,10 @@ namespace toybox
             ImVec2 pa(max.x - width, top + 4), pb(max.x, top + 4 + height);
             // A click outside closes it (the hits after this one are on the panel).
             AddHit(ImVec2(0, 0), ImVec2(1280, 720), [&model] { model.CloseFilters(); });
+            g_hits.back().hover = false;
             Panel(pa, pb);
             AddHit(pa, pb, [] {});
+            g_hits.back().hover = false;
             for (int row = 0; row <= Model::FilterRows; row++)
             {
                 ImVec2 a(pa.x + 12, pa.y + 14 + row * rowH), b(pb.x - 12, a.y + rowH - 6);
@@ -1067,18 +1223,24 @@ namespace toybox
                 float cy = (a.y + b.y) / 2;
                 if (row == Model::FilterRows)
                 {
-                    Box(a, b, Look::Button, focused ? Look::Gold : Look::Control, 12, focused ? 3 : 2);
-                    TextCentered(g_black, 15, ImVec2((a.x + b.x) / 2, cy), focused ? Look::GoldText : Look::Text,
-                        model.FilterRowLabel(row));
+                    Box(a, b, Look::Button, Look::Control, 12, 2);
+                    if (focused)
+                        FocusRing(a, b, 12);
+                    TextCentered(g_black, 15, ImVec2((a.x + b.x) / 2, cy), Look::Text, model.FilterRowLabel(row));
                     AddHit(a, b, [&model, row] {
                         model.filterRow = row;
                         model.Run(Command::Accept);
                     });
+                    g_hits.back().focus = [&model, row] {
+                        model.filterRow = row;
+                        model.Touch();
+                    };
                     continue;
                 }
-                Box(a, b, Look::Field, focused ? Look::Gold : Look::Control, 12, focused ? 3 : 2);
-                TextMiddle(
-                    g_bold, 14, a.x + 14, cy, focused ? Look::GoldText : Look::TextDim, model.FilterRowLabel(row));
+                Box(a, b, focused ? Look::CardSelected : Look::Field, Look::Control, 12, 2);
+                if (focused)
+                    FocusRing(a, b, 12);
+                TextMiddle(g_bold, 14, a.x + 14, cy, focused ? Look::Text : Look::TextDim, model.FilterRowLabel(row));
                 float vx = a.x + 130;
                 float valueRight = b.x - 34;
                 std::string value = model.FilterValueLabel(row);
@@ -1087,9 +1249,9 @@ namespace toybox
                                           : row == 1 ? !model.filterGame.empty()
                                                      : model.filterCategory >= 0);
                 g_draw->AddTriangleFilled(ImVec2(vx, cy), ImVec2(vx + 7, cy - 6), ImVec2(vx + 7, cy + 6),
-                    Rgb(focused ? Look::Gold : Look::TextDimmer));
+                    Rgb(focused ? Look::Text : Look::TextDimmer));
                 g_draw->AddTriangleFilled(ImVec2(b.x - 14, cy), ImVec2(b.x - 21, cy - 6), ImVec2(b.x - 21, cy + 6),
-                    Rgb(focused ? Look::Gold : Look::TextDimmer));
+                    Rgb(focused ? Look::Text : Look::TextDimmer));
                 TextCentered(g_black, 15, ImVec2((vx + 14 + valueRight - 8) / 2, cy), set ? Look::GoldText : Look::Text,
                     Fit(g_black, 15, value, valueRight - vx - 30));
                 float split = (vx + b.x) / 2;
@@ -1101,6 +1263,10 @@ namespace toybox
                     model.filterRow = row;
                     model.CycleFilter(row, -1);
                 });
+                g_hits.back().focus = g_hits[g_hits.size() - 2].focus = [&model, row] {
+                    model.filterRow = row;
+                    model.Touch();
+                };
             }
         }
 
@@ -1110,15 +1276,30 @@ namespace toybox
 
         void DrawSeats(Model& model)
         {
-            constexpr float Left = 32;
+            constexpr float Left = 32, Right = 1248;
+            // Add a figure and Manage, one above the other at the end of the row, as wide as the longer label; the seats
+            // share the rest (five in Trap Team).
+            std::vector<std::string> rows = model.ColumnRows();
+            for (size_t r = 0; r + 1 < rows.size(); r++)
+                rows[r] = "+ " + rows[r];
+            float buttonWidth = 0;
+            for (const std::string& row : rows)
+                buttonWidth = std::max(buttonWidth, std::ceil(Measure(g_black, 15, row).x) + 36);
+            const size_t seatCount = model.seats.size();
+            const float seatWidth =
+                std::min(SeatWidth, std::floor((Right - Left - buttonWidth - SeatGap * float(seatCount)) /
+                                               float(std::max<size_t>(seatCount, 1))));
+            bool rowFocused = model.homeRow == Model::Row::Seats && model.screen == Screen::Home;
+            model.seatSpans.clear();
             for (size_t i = 0; i < model.seats.size(); i++)
             {
                 const SeatState& s = model.seats[i];
-                float x = Left + i * (SeatWidth + SeatGap), y = SeatTop;
-                ImVec2 a(x, y), b(x + SeatWidth, y + SeatHeight);
-                bool focused = !model.inList && model.column == int(i) && model.screen == Screen::Home;
+                float x = Left + i * (seatWidth + SeatGap), y = SeatTop;
+                ImVec2 a(x, y), b(x + seatWidth, y + SeatHeight);
+                model.seatSpans.push_back({ a.x, b.x });
+                bool focused = rowFocused && model.column == int(i);
                 bool lit = model.seat == int(i);
-                Box(a, b, lit ? Look::CardSelected : Look::Panel, lit ? Look::Gold : Look::CardBorder, 16, 2);
+                Box(a, b, lit ? Look::CardSelected : Look::Panel, lit ? Look::Gold : Look::CardBorder, 16, lit ? 2 : 1);
                 ImVec2 picture(a.x + 44, y + SeatHeight / 2);
                 const Figure* f = model.SeatFigure(int(i));
                 std::string label = model.SeatLabel(int(i));
@@ -1129,8 +1310,8 @@ namespace toybox
                     const Toy* toy = s.physicalKnown ? Catalogue::Get().Find(s.physicalType) : nullptr;
                     Portrait(toy,
                         s.physicalKnown ? Catalogue::Get().Describe(toy, s.physicalVariant).kind : VariantKind::Base,
-                        picture, 64);
-                    label += L(" · on your portal", " · sur ton portail");
+                        picture, 64, false, s.physicalVariant);
+                    label += L(" · on your portal", " · sur votre portail");
                     name = s.physicalKnown ? Catalogue::Get().Describe(toy, s.physicalVariant).name
                                            : L("reading...", "lecture...");
                     if (s.physicalLevel > 0)
@@ -1184,7 +1365,7 @@ namespace toybox
                 if (!line.empty())
                     Text(g_bold, 12, ImVec2(tx, y + 62), lineColor, Fit(g_bold, 12, line, tw));
                 if (focused)
-                    FocusRing(a, b, 16, Look::Text);
+                    FocusRing(a, b, 16);
                 int index = int(i);
                 AddHit(
                     a, b, [&model, index] { model.FocusColumnRow(index); },
@@ -1197,24 +1378,24 @@ namespace toybox
                         model.Run(Command::Accept);
                     });
             }
-            // Add a figure and Manage, at the end of the row.
-            std::vector<std::string> rows = model.ColumnRows();
-            float x = Left + model.seats.size() * (SeatWidth + SeatGap) + 8, h = (SeatHeight - 10) / 2;
+            float h = (SeatHeight - 10) / 2;
             for (size_t r = 0; r < rows.size(); r++)
             {
                 int row = int(model.seats.size() + r);
                 float y = SeatTop + (rows.size() == 1 ? (SeatHeight - h) / 2 : r * (h + 10));
-                ImVec2 a(x, y), b(1248, y + h);
-                bool focused = !model.inList && model.column == row && model.screen == Screen::Home;
-                PlainButton(a, b, (rows[r] != L("Manage", "Gérer") ? "+  " : "") + rows[r], 15, focused);
+                ImVec2 a(Right - buttonWidth, y), b(Right, y + h);
+                model.seatSpans.push_back({ a.x, b.x });
+                bool focused = rowFocused && model.column == row;
+                PlainButton(a, b, rows[r], 15, focused);
                 AddHit(a, b, [&model, row] {
                     model.FocusColumnRow(row);
                     model.Run(Command::Accept);
                 });
+                g_hits.back().focus = [&model, row] { model.FocusColumnRow(row); };
             }
             if (model.realPortal)
                 TextMiddle(g_bold, 13, Left, SeatTop + SeatHeight + 16, Look::TextDim,
-                    L("Change the toys on your portal.", "Change les jouets sur ton portail."));
+                    L("Change the toys on your portal.", "Changez les jouets sur votre portail."));
         }
 
         void DrawEmpty(Model& model, ImVec2 min, ImVec2 max)
@@ -1223,7 +1404,7 @@ namespace toybox
             Text(g_display, 28, ImVec2(x, y), Look::Text, L("My Skylanders is empty", "Mes Skylanders est vide"));
             y += 50;
             Text(g_bold, 16, ImVec2(x, y), Look::TextDim,
-                L("Add the figures you want to play with.", "Ajoute les figurines avec lesquelles jouer."));
+                L("Add the figures you want to play with.", "Ajoutez les figurines avec lesquelles jouer."));
             y += 44;
             const std::string choices[] = { L("Add a figure", "Ajouter une figurine"),
                 L("Import figure files", "Importer des fichiers de figurines"),
@@ -1231,7 +1412,7 @@ namespace toybox
             for (int i = 0; i < 3; i++)
             {
                 ImVec2 a(x, y), b(x + 520, y + 54);
-                bool focused = model.inList && model.list.cursor == i;
+                bool focused = model.homeRow != Model::Row::Seats && model.list.cursor == i;
                 if (i == 2)
                     GoldButton(a, b, choices[i], 15, focused);
                 else
@@ -1240,7 +1421,7 @@ namespace toybox
                     Text(g_bold, 13, ImVec2(b.x + 16, y + 20), Look::TextDimmer,
                         L("the starter pack", "le pack de démarrage"));
                 AddHit(a, b, [&model, i] {
-                    model.inList = true;
+                    model.homeRow = Model::Row::Grid;
                     model.list.cursor = i;
                     model.Run(Command::Accept);
                 });
@@ -1252,7 +1433,7 @@ namespace toybox
         void DrawHome(Model& model)
         {
             Header(L("TOY BOX", "TOY BOX"),
-                model.GameName() + (model.realPortal ? L(" · your portal", " · ton portail") : ""));
+                model.GameName() + (model.realPortal ? L(" · your portal", " · votre portail") : ""));
             std::vector<HintItem> top;
             top.push_back({ 'B', L("Close", "Fermer") });
             Hints(1248, 44, top);
@@ -1266,7 +1447,7 @@ namespace toybox
             }
             // What the grid is for: the chosen seat, and that only what this game reads is shown.
             std::string choosing = model.realPortal
-                                       ? std::string(L("Your figures", "Tes figurines"))
+                                       ? std::string(L("Your figures", "Vos figurines"))
                                        : std::string(L("Choose for ", "Choisir pour ")) + model.SeatLabel(model.seat);
             TextMiddle(g_black, 18, min.x, min.y + 10, Look::Text, choosing);
             std::string only = model.realPortal ? L("Browse only", "Consultation seule")
@@ -1274,13 +1455,13 @@ namespace toybox
             TextMiddle(g_bold, 13, min.x + Measure(g_black, 18, choosing).x + 16, min.y + 11, Look::TextDimmer, only);
             float listTop = DrawShelfBar(model, min, max);
             DrawList(model, ImVec2(min.x, listTop), max,
-                model.inList && model.screen == Screen::Home && !model.filtersOpen, false);
+                model.homeRow == Model::Row::Grid && model.screen == Screen::Home && !model.filtersOpen, false);
             if (model.shownCount == 0 && model.FiltersActive())
             {
                 Text(g_black, 20, ImVec2(min.x, listTop + 24), Look::Text,
                     L("No figure matches", "Aucune figurine ne correspond"));
                 Text(g_bold, 14, ImVec2(min.x, listTop + 54), Look::TextDim,
-                    L("Change the search or Clear all.", "Change la recherche ou Tout effacer."));
+                    L("Change the search or Clear all.", "Modifiez la recherche ou choisissez Tout effacer."));
             }
             if (model.filtersOpen)
                 DrawFiltersPanel(model, listTop, max);
@@ -1291,7 +1472,14 @@ namespace toybox
                 hints.push_back({ 'A', L("Change", "Changer") });
                 hints.push_back({ 'B', L("Close", "Fermer") });
             }
-            else if (model.inList)
+            else if (model.homeRow == Model::Row::Bar)
+            {
+                hints.push_back({ 'A', model.barColumn == 0 ? L("Search", "Rechercher") : L("Filters", "Filtres") });
+                if (model.seats.size() > 1)
+                    hints.push_back({ 'L', L("Other seat", "Autre place") });
+                hints.push_back({ 'B', model.search.empty() ? L("Close", "Fermer") : L("Clear", "Effacer") });
+            }
+            else if (model.homeRow == Model::Row::Grid)
             {
                 const Cell* cell = model.list.cells.empty() ? nullptr : &model.list.cells[model.list.cursor];
                 if (cell != nullptr && cell->kind == Cell::Kind::Figure && !model.realPortal)
@@ -1336,17 +1524,14 @@ namespace toybox
 
         // Trap Team: the villains a trap of this element can hold, the game's own table (Game::villains), with the
         // pictures of its villain vault. Which one a trap holds is read from the tag once its place is verified
-        // (figures::TrapVillainVerified), with the evolved flag.
-        void DrawTrapVillains(const Model& model, const Figure& f, float x, float y, float width)
+        // (figures::TrapVillainVerified), with the evolved flag. The Villain row's choice is ringed in gold; a click on a
+        // picture puts that villain in the trap.
+        void DrawTrapVillains(Model& model, const Figure& f, float x, float y, float width)
         {
-            const Game* game = Catalogue::Get().FindGame(model.game);
-            std::vector<const collection::Villain*> villains;
-            for (const collection::Villain& villain :
-                game != nullptr ? game->villains : std::vector<collection::Villain>{})
-                if (villain.element == f.toy->element)
-                    villains.push_back(&villain);
+            std::vector<const collection::Villain*> villains = model.TrapVillainsOf(f);
             if (villains.empty())
                 return;
+            uint8_t pick = model.TrapPick();
             const collection::Villain* held = nullptr;
             for (const collection::Villain* villain : villains)
                 if (figures::TrapVillainVerified && f.stats.villain + figures::VillainResourceBase == villain->id)
@@ -1364,6 +1549,11 @@ namespace toybox
                 ImVec2 center(left + box / 2, y + box / 2);
                 bool escaped = held != nullptr && villain != held;
                 PictureAt(collection::VillainPicturePath(model.game, *villain, !escaped), center, int(box), true);
+                uint8_t id = VillainId(*villain);
+                if (id == pick)
+                    Ring(center, int(box) + 6, Look::Gold, 3);
+                AddHit(ImVec2(center.x - box / 2, center.y - box / 2), ImVec2(center.x + box / 2, center.y + box / 2),
+                    [&model, id] { model.PickTrapVillain(id); });
                 left += box + gap;
             }
             y += box + 8;
@@ -1447,7 +1637,7 @@ namespace toybox
                 facts.push_back(L("New: never played", "Neuve : jamais jouée"));
             else if (progress && f.state != figures::AreaState::Valid)
                 facts.push_back(L("Unreadable. Restore a backup or reset it.",
-                    "Illisible. Restaure une sauvegarde ou remets-la à neuf."));
+                    "Illisible. Restaurez une sauvegarde ou remettez-la à neuf."));
             if (progress && !nickname.empty())
                 facts.push_back(std::string(L("Nickname in the game: ", "Surnom dans le jeu : ")) + nickname);
             if (progress && f.state == figures::AreaState::Valid)
@@ -1512,7 +1702,7 @@ namespace toybox
                 ImVec2 a(min.x + 20, y), b(max.x - 20, y + rowHeight - 8);
                 bool focused = model.figureAction == int(i) && model.screen == Screen::Figure;
                 bool danger = label == L("Delete", "Supprimer") || label == L("Reset to new", "Remettre à neuf");
-                Box(a, b, focused ? Look::CardSelected : Look::Night, focused ? Look::Gold : Look::CardBorder, 12, 2);
+                FocusBox(a, b, focused, 12, Look::Raised);
                 TextMiddle(g_black, 16, a.x + 18, (a.y + b.y) / 2, danger ? Look::DangerText : Look::Text, label);
                 // More opens a list (a chevron to the right), Details unfolds lines (down, up once open).
                 int fold = label == L("Details", "Détails")                        ? 1
@@ -1524,6 +1714,17 @@ namespace toybox
                 {
                     Chevron(ImVec2(right - 6, (a.y + b.y) / 2), 14, focused ? Look::GoldText : Look::TextDim, fold);
                     right -= 28;
+                }
+                // A trap's Villain row steps with Left / Right: its two arrows, as Edit stats' fields.
+                bool stepper = focused && label == L("Villain", "Méchant");
+                float cy = (a.y + b.y) / 2, arrows = right - 20;
+                if (stepper)
+                {
+                    g_draw->AddTriangleFilled(
+                        ImVec2(arrows, cy), ImVec2(arrows + 7, cy - 6), ImVec2(arrows + 7, cy + 6), Rgb(Look::Gold));
+                    g_draw->AddTriangleFilled(ImVec2(arrows + 20, cy), ImVec2(arrows + 13, cy - 6),
+                        ImVec2(arrows + 13, cy + 6), Rgb(Look::Gold));
+                    right -= 36;
                 }
                 if (!hint.empty())
                     TextMiddle(
@@ -1542,6 +1743,12 @@ namespace toybox
                         model.FocusAction(index);
                         model.Run(Command::Accept);
                     });
+                g_hits.back().focus = [&model, index] { model.FocusAction(index); };
+                if (stepper)
+                {
+                    AddHit(ImVec2(arrows - 6, a.y), ImVec2(arrows + 10, b.y), [&model] { model.Run(Command::Left); });
+                    AddHit(ImVec2(arrows + 10, a.y), ImVec2(arrows + 26, b.y), [&model] { model.Run(Command::Right); });
+                }
                 y += rowHeight;
             }
             Footer({ { 'A', L("Do it", "Valider") }, { 'B', L("Back", "Retour") } });
@@ -1561,9 +1768,9 @@ namespace toybox
             if (model.list.cells.empty())
                 Text(g_bold, 16, ImVec2(min.x + 28, min.y + 90), Look::TextDim,
                     bottom ? L("No other bottom to choose: add one from Add a figure.",
-                                 "Pas d'autre bas à choisir : ajoute-en un avec Ajouter.")
+                                 "Pas d'autre bas à choisir : ajoutez-en un avec Ajouter.")
                            : L("No other top to choose: add one from Add a figure.",
-                                 "Pas d'autre haut à choisir : ajoutes-en un avec Ajouter."));
+                                 "Pas d'autre haut à choisir : ajoutez-en un avec Ajouter."));
             DrawList(model, ImVec2(min.x + 28, min.y + 80), ImVec2(max.x - 28, max.y - 56), true, true);
             Footer({ { 'A', L("Use this one", "Prendre celle-ci") }, { 'B', L("Back", "Retour") } });
         }
@@ -1580,7 +1787,7 @@ namespace toybox
             int playerSeat =
                 model.seats[model.seat].seat.player > 0 && model.seats[model.seat].seat.id[0] == 'p' ? model.seat : 0;
             Text(g_bold, 14, ImVec2(min.x + 24, min.y + 60), Look::TextDim,
-                std::string(L("Pick a place for the wheel of ", "Choisis une place sur la roue du ")) +
+                std::string(L("Pick a place for the wheel of ", "Choisissez une place sur la roue du ")) +
                     model.SeatLabel(playerSeat) + ":");
             std::vector<WheelPlace> places = GetWheel(model.game, model.seats[playerSeat].seat.id);
             places.resize(Model::WheelPlaces);
@@ -1643,7 +1850,7 @@ namespace toybox
                     detail = L("never played", "jamais jouée");
                 ImVec2 a(min.x + 20, y), b(max.x - 20, y + 44);
                 bool focused = model.backup == i;
-                Box(a, b, focused ? Look::CardSelected : Look::Night, focused ? Look::Gold : Look::CardBorder, 12, 2);
+                FocusBox(a, b, focused, 12, Look::Raised);
                 TextMiddle(g_black, 15, a.x + 16, y + 22, Look::Text, date);
                 TextMiddle(g_bold, 14, b.x - 16 - Measure(g_bold, 14, detail).x, y + 22, Look::TextDim, detail);
                 AddHit(a, b, [&model, i] {
@@ -1653,6 +1860,10 @@ namespace toybox
                     if (again)
                         model.Run(Command::Accept);
                 });
+                g_hits.back().focus = [&model, i] {
+                    model.backup = i;
+                    model.Touch();
+                };
                 y += 52;
             }
             Footer({ { 'A', L("Restore", "Restaurer") }, { 'B', L("Back", "Retour") } });
@@ -1730,11 +1941,9 @@ namespace toybox
             std::string label = StatLabel(row, model.LevelCap());
             Text(g_bold, 13, at, gold ? Look::Gold : Look::TextDim, label);
             ImVec2 min(at.x, at.y + Measure(g_bold, 13, label).y + 6), max(at.x + width, min.y + height);
-            Box(min, max, Look::Field,
-                focused ? Look::Gold
-                : gold  ? Look::GoldBorder
-                        : Look::Control,
-                12, focused ? 3 : 2);
+            Box(min, max, Look::Field, gold ? Look::GoldBorder : Look::Control, 12, 2);
+            if (focused)
+                FocusRing(min, max, 12);
             std::string value = StatValue(row, model);
             uint32_t color = gold ? Look::GoldText : Look::Text;
             if (value.empty())
@@ -1755,6 +1964,10 @@ namespace toybox
             if (row == 8) // opens the Upgrades screen
                 Chevron(ImVec2(max.x - 26, (min.y + max.y) / 2), 16, focused ? Look::GoldText : Look::TextDim, 0);
             AddHit(at, ImVec2(at.x + width, max.y), [&model, row] { model.FocusStatsRow(row); });
+            g_hits.back().focus = [&model, row] {
+                model.stats.row = row;
+                model.Touch();
+            };
         }
 
         void DrawStats(Model& model)
@@ -1879,7 +2092,7 @@ namespace toybox
                      greyed = collection::UpgradeGreyed(bits, upgrade);
                 float x = columnX(item.column), y = Top + 36 + item.row * Step;
                 ImVec2 a(x, y), b(x + Width, y + Card);
-                Box(a, b, focused ? Look::CardSelected : Look::Panel, focused ? Look::Gold : Look::CardBorder, 14, 2);
+                FocusBox(a, b, focused, 14, Look::Raised);
                 ImVec2 mark(a.x + 28, (a.y + b.y) / 2);
                 Disc(mark, 26, bought ? Look::Gold : Look::Field);
                 if (!bought)
@@ -1919,6 +2132,8 @@ namespace toybox
             grid.visibleHeight = int(max.y - listMin.y);
             float gap = 10, cardWidth = (max.x - min.x - gap * (Model::AddColumns - 1)) / Model::AddColumns,
                   cardHeight = float(grid.rowHeight - 8);
+            ImVec2 ringMin, ringMax;
+            bool ring = false;
             g_draw->PushClipRect(ImVec2(listMin.x - 8, listMin.y), ImVec2(max.x + 8, max.y), true);
             for (const ListSection& section : grid.sections)
             {
@@ -1936,29 +2151,38 @@ namespace toybox
                 const Toy* toy = model.addToys[cell.figure];
                 ImVec2 a(x, y), b(x + cardWidth, y + cardHeight);
                 bool cursor = int(i) == grid.cursor;
-                Box(a, b, cursor ? Look::CardSelected : Look::Panel,
-                    cursor && !model.addVersions ? Look::Gold : Look::CardBorder, 14, 2);
+                // The toy whose versions show stays lit while the focus is in them.
+                Box(a, b, cursor ? Look::CardSelected : Look::Raised, Look::CardBorder, 14, 1);
                 if (!SwapperStackOfToy(toy, 0, ImVec2(x + 34, y + cardHeight / 2), 52))
                     Portrait(toy, toy->edition, ImVec2(x + 34, y + cardHeight / 2), 48);
                 const size_t versionCount = Catalogue::Get().VersionsFor(model.game, *toy).size();
                 Text(g_black, 14, ImVec2(x + 66, y + 12), Look::Text,
-                    Fit(g_black, 14, Model::AddName(*toy), cardWidth - 74 - (versionCount == 0 ? 0 : 42)));
+                    Fit(g_black, 14, Model::AddName(*toy), cardWidth - 74));
                 int owned = 0;
                 for (const Figure& f : model.figures)
                     owned += f.type == toy->type ? 1 : 0;
-                std::string line = owned == 0   ? L("not owned", "pas à toi")
-                                   : owned == 1 ? L("owned", "à toi")
-                                                : std::string(L("owned ×", "à toi ×")) + std::to_string(owned);
+                std::string line = owned == 0   ? L("not owned", "pas à vous")
+                                   : owned == 1 ? L("owned", "à vous")
+                                                : std::string(L("owned ×", "à vous ×")) + std::to_string(owned);
                 Text(g_bold, 12, ImVec2(x + 66, y + 34), owned > 0 ? Look::Bar : Look::TextDimmer,
-                    Fit(g_bold, 12, line, cardWidth - 74));
-                if (versionCount != 0) // it has versions this game tells apart: a small badge with their count
-                    Pill(ImVec2(b.x - 30, a.y + 16), "+" + std::to_string(versionCount), Look::Gold, Look::GoldInk, 12);
+                    Fit(g_bold, 12, line, cardWidth - 74 - (versionCount == 0 ? 0 : 44)));
+                // It has versions this game tells apart: a small badge with their count, on the second line so that the
+                // name keeps the card's width.
+                if (versionCount != 0)
+                    Pill(ImVec2(b.x - 28, y + 41), "+" + std::to_string(versionCount), Look::Gold, Look::GoldInk, 12);
                 if (cursor && !model.addVersions)
-                    FocusRing(a, b, 14, Look::Text);
+                {
+                    ring = true;
+                    ringMin = a;
+                    ringMax = b;
+                }
                 int index = int(i);
                 AddHit(a, b, [&model, index] { model.FocusAddCell(index); });
+                g_hits.back().focus = [&model, index] { model.HoverAddCell(index); };
             }
             g_draw->PopClipRect();
+            if (ring)
+                FocusRing(ringMin, ringMax, 14);
 
             // Versions.
             ImVec2 pmin(844, 88), pmax(1248, 664);
@@ -1979,14 +2203,14 @@ namespace toybox
                     const Version& version = model.versions[v];
                     ImVec2 a(pmin.x + 16, y), b(pmax.x - 16, y + rowHeight - 6);
                     bool focused = model.addVersions && model.addVersion == int(v);
-                    Box(a, b, focused ? Look::CardSelected : Look::Night, focused ? Look::Gold : Look::CardBorder, 10,
-                        2);
+                    FocusBox(a, b, focused, 10, Look::Night);
                     // The version's picture (the toy's own when it has none), its name and its kind.
                     float middle = (a.y + b.y) / 2, picture = std::min(36.0f, b.y - a.y - 6);
                     if (!SwapperStackOfToy(toy, version.variant, ImVec2(a.x + 8 + picture / 2, middle), int(picture)) &&
                         !ArtworkPicture(
                             toy, version.variant, ImVec2(a.x + 8 + picture / 2, middle), int(picture), false))
-                        Portrait(toy, version.kind, ImVec2(a.x + 8 + picture / 2, middle), int(picture));
+                        Portrait(toy, version.kind, ImVec2(a.x + 8 + picture / 2, middle), int(picture), false,
+                            version.variant);
                     float textX = a.x + 16 + picture;
                     Text(g_black, 14, ImVec2(textX, middle - (version.kind == VariantKind::Base ? 9 : 17)), Look::Text,
                         Fit(g_black, 14, version.name, b.x - textX - 100));
@@ -1994,12 +2218,17 @@ namespace toybox
                         Text(g_bold, 12, ImVec2(textX, middle + 2), Look::TextDim, VariantLabel(version.kind));
                     std::string mark = version.owned == 0 ? (version.edition.empty() ? "" : L("same tag", "même puce"))
                                        : version.owned == 1
-                                           ? L("owned", "à toi")
-                                           : std::string(L("owned ×", "à toi ×")) + std::to_string(version.owned);
+                                           ? L("owned", "à vous")
+                                           : std::string(L("owned ×", "à vous ×")) + std::to_string(version.owned);
                     TextMiddle(g_bold, 12, b.x - 12 - Measure(g_bold, 12, mark).x, (a.y + b.y) / 2,
                         version.owned > 0 ? Look::Bar : Look::TextDimmer, mark);
                     int index = int(v);
                     AddHit(a, b, [&model, index] { model.FocusVersion(index); });
+                    g_hits.back().focus = [&model, index] {
+                        model.addVersions = true;
+                        model.addVersion = index;
+                        model.Touch();
+                    };
                     y += rowHeight;
                 }
             }
@@ -2061,12 +2290,15 @@ namespace toybox
                     }
                     ImVec2 a(x, y), b(x + w, y + 40);
                     bool focused = !name.onKeys && name.focus == int(i);
-                    Box(a, b, focused ? Look::CardSelected : Look::Chip, focused ? Look::Gold : Look::Control, 20, 2);
+                    FocusBox(a, b, focused, 20, Look::Raised);
                     TextCentered(g_black, 15, ImVec2(x + w / 2, y + 20), Look::Text, name.suggestions[i]);
-                    if (focused)
-                        FocusRing(a, b, 20);
                     int index = int(i);
                     AddHit(a, b, [&model, index] { model.FocusSuggestion(index); });
+                    g_hits.back().focus = [&model, index] {
+                        model.name.onKeys = false;
+                        model.name.focus = index;
+                        model.Touch();
+                    };
                     x += w + 12;
                 }
                 y += 64;
@@ -2098,11 +2330,7 @@ namespace toybox
                                    name.shift) ||
                                (keys[r][c] == "\x01"
                                               "done");
-                    Box(a, b,
-                        focused ? Look::CardSelected
-                        : lit   ? Look::Button
-                                : Look::KeyCap,
-                        focused ? Look::Gold : Look::Control, 10, 2);
+                    Box(a, b, focused ? Look::CardSelected : lit ? Look::Button : Look::KeyCap, Look::Control, 10, 1);
                     std::string label = KeyLabel(keys[r][c], name);
                     TextCentered(
                         g_black, special ? 16 : 24, ImVec2((a.x + b.x) / 2, (a.y + b.y) / 2), Look::Text, label);
@@ -2110,6 +2338,12 @@ namespace toybox
                         FocusRing(a, b, 10);
                     int row = int(r), column = int(c);
                     AddHit(a, b, [&model, row, column] { model.FocusKey(row, column); });
+                    g_hits.back().focus = [&model, row, column] {
+                        model.name.onKeys = true;
+                        model.name.keyRow = row;
+                        model.name.keyColumn = column;
+                        model.Touch();
+                    };
                     x += widths[c] + gap;
                 }
                 y += keyHeight + gap;
@@ -2146,7 +2380,9 @@ namespace toybox
                 ImVec2 a(min.x + 16, y), b(max.x - 16, y + 52);
                 bool lit = m.section == i;
                 bool focused = lit && !m.inPanel;
-                Box(a, b, lit ? Look::CardSelected : Look::Night, focused ? Look::Gold : Look::CardBorder, 12, 2);
+                Box(a, b, lit ? Look::CardSelected : Look::Raised, Look::CardBorder, 12, 1);
+                if (focused)
+                    FocusRing(a, b, 12);
                 TextMiddle(g_black, 17, a.x + 16, y + 26, Look::Text, names[i]);
                 if (counts[i] >= 0)
                     TextMiddle(g_black, 16, b.x - 16 - Measure(g_black, 16, std::to_string(counts[i])).x, y + 26,
@@ -2174,7 +2410,7 @@ namespace toybox
                            const Toy* toy = nullptr) {
                 ImVec2 a(x, y), b(pmax.x - 24, y + 50);
                 bool focused = m.inPanel && m.item == item;
-                Box(a, b, focused ? Look::CardSelected : Look::Night, focused ? Look::Gold : Look::CardBorder, 12, 2);
+                FocusBox(a, b, focused, 12, Look::Raised);
                 if (figure != nullptr)
                     FigurePortrait(*figure, ImVec2(a.x + 28, y + 25), 38);
                 else if (toy != nullptr)
@@ -2183,6 +2419,11 @@ namespace toybox
                 TextMiddle(g_bold, 13, b.x - 16 - Measure(g_bold, 13, right).x, y + 25, Look::TextDim, right);
                 int section = m.section;
                 AddHit(a, b, [&model, section, item] { model.FocusManage(section, item, true); });
+                g_hits.back().focus = [&model, item] {
+                    model.manage.inPanel = true;
+                    model.manage.item = item;
+                    model.Touch();
+                };
                 y += 58;
             };
             auto button = [&](const std::string& label) {
@@ -2229,7 +2470,7 @@ namespace toybox
             case 2:
                 heading(L("Import", "Importer"));
                 note(L("Put figure files in this folder, then import.",
-                    "Mets des fichiers de figurines dans ce dossier, puis importe."));
+                    "Mettez des fichiers de figurines dans ce dossier, puis importez."));
                 note(m.importFolder);
                 button(L("Import now", "Importer maintenant"));
                 note(L("Not available on Xbox yet.", "Pas encore disponible sur Xbox."));
@@ -2280,6 +2521,8 @@ namespace toybox
             if (model.dialogs.empty())
                 return;
             Dialog& dialog = model.dialogs.back();
+            AddHit(ImVec2(0, 0), ImVec2(CanvasWidth, CanvasHeight), {});
+            g_hits.back().hover = false;
             Fill(ImVec2(0, 0), ImVec2(CanvasWidth, CanvasHeight), Look::Night, 0.6f);
             float width = 600;
             std::vector<std::string> lines =
@@ -2315,90 +2558,263 @@ namespace toybox
                     PlainButton(a, b, dialog.buttons[i], 16, focused);
                 int index = int(i);
                 AddHit(a, b, [&model, index] { model.FocusDialogButton(index); });
+                g_hits.back().focus = [&model, index] {
+                    model.dialogs.back().focused = index;
+                    model.Touch();
+                };
                 y += 58;
             }
         }
 
         // --- The F3 menu, over the game (docs/runtime/host/gamemenu.md) ----------------------------------------------------
 
+        // A switch: a knob on a track, gold (with a dark knob) when on.
+        void Switch(ImVec2 center, bool on)
+        {
+            ImVec2 a(center.x - 22, center.y - 12), b(center.x + 22, center.y + 12);
+            RoundRect(a, b, on ? Look::Gold : Look::Control, 12);
+            Disc(ImVec2(on ? b.x - 12 : a.x + 12, center.y), 18, on ? Look::GoldInk : Look::Text);
+        }
+
+        // The Commands page: the actions down, a column per device (Model::CommandHeaders) across, then the mouse's
+        // switch, the Toy Box's keys, Reset and Back.
+        void DrawCommands(Model& model)
+        {
+            using namespace look;
+            std::vector<CommandLine> lines = model.CommandLines();
+            std::vector<std::string> headers = model.CommandHeaders();
+            const CommandsLayout layout = look::Commands(int(lines.size()), model.commandRow, !model.toast.empty());
+            ImVec2 min(SafeLeft, SafeTop), max(SafeRight, SafeBottom);
+            Panel(min, max, 0.97f);
+            Title(L("Commands", "Commandes"), ImVec2(min.x + Space::XL, min.y + Space::L), Type::Title);
+            constexpr float CellWidth = 220, Gap = Space::S;
+            const float cellsLeft = max.x - Space::XL - float(headers.size()) * (CellWidth + Gap) + Gap;
+            auto cellLeft = [&](size_t column) { return cellsLeft + float(column) * (CellWidth + Gap); };
+            const float top = layout.firstRow;
+            const int total = int(lines.size());
+            // Page buttons remain reachable with the mouse; keyboard navigation reveals its focused row too.
+            if (total > layout.capacity)
+            {
+                const float cy = min.y + 30;
+                TextMiddle(g_bold, Type::Small, max.x - 200, cy, Look::TextDim,
+                    std::to_string(layout.first + 1) + "-" + std::to_string(layout.first + layout.count) + " / " +
+                        std::to_string(total));
+                for (int direction : { -1, 1 })
+                {
+                    float x = max.x - (direction < 0 ? 96 : 56);
+                    ImVec2 a(x, cy - 14), b(x + 32, cy + 14);
+                    bool enabled = direction < 0 ? layout.first > 0 : layout.first + layout.count < total;
+                    Box(a, b, Look::Raised2, Look::Hairline, Radius::Key, 1);
+                    Chevron(ImVec2(x + 16, cy), 12, enabled ? Look::Text : Look::TextDimmer, direction < 0 ? 2 : 0);
+                    if (enabled)
+                    {
+                        int row = std::clamp(layout.first + direction * layout.capacity, 0, total - 1);
+                        AddHit(a, b, [&model, row] {
+                            if (model.waiting == Model::Waiting::None)
+                            {
+                                model.commandRow = row;
+                                model.Touch();
+                            }
+                        });
+                        g_hits.back().target = direction < 0 ? "commands=previous" : "commands=next";
+                    }
+                }
+            }
+            for (size_t c = 0; c < headers.size(); c++)
+                TextCentered(
+                    g_bold, Type::Small, ImVec2(cellLeft(c) + CellWidth / 2, top - 16), Look::TextDim, headers[c]);
+            for (int index = layout.first; index < layout.first + layout.count; index++)
+            {
+                const CommandLine& line = lines[size_t(index)];
+                float y = top + float(index - layout.first) * CommandsPitch;
+                float cy = y + layout.rowHeight / 2;
+                bool focusedRow = model.commandRow == index;
+                ImVec2 rowA(min.x + Space::M, y), rowB(max.x - Space::M, y + layout.rowHeight);
+                if (line.cells.empty())
+                {
+                    if (focusedRow)
+                    {
+                        RoundRect(rowA, rowB, Look::CardSelected, Radius::Control);
+                        DenseFocusRing(rowA, rowB, Radius::Control);
+                    }
+                    if (!line.value.empty())
+                    {
+                        TextMiddle(g_black, Type::Body, rowA.x + Space::L, cy, Look::Text, line.label);
+                        bool on = line.value == L("On", "Oui");
+                        float right = cellLeft(0) + CellWidth;
+                        Switch(ImVec2(right - 22, cy), on);
+                        TextMiddle(g_bold, Type::Small,
+                            right - 44 - Space::S - Measure(g_bold, Type::Small, line.value).x, cy,
+                            on ? Look::Text : Look::TextDim, line.value);
+                    }
+                    else
+                    {
+                        TextMiddle(g_black, Type::Body, rowA.x + Space::L, cy,
+                            index + 1 == total ? Look::TextSoft : Look::Text, line.label);
+                        if (index + 1 != total)
+                            Chevron(ImVec2(rowB.x - Space::L, cy), 12, Look::TextDim, 0);
+                    }
+                    AddHit(rowA, rowB, [&model, index] { model.FocusCommand(index, -1); });
+                    g_hits.back().target = "commands=" + std::to_string(index);
+                    continue;
+                }
+                TextMiddle(g_black, Type::Body, rowA.x + Space::L, cy, Look::Text,
+                    Fit(g_black, Type::Body, line.label, cellsLeft - rowA.x - Space::XL));
+                for (size_t c = 0; c < line.cells.size(); c++)
+                {
+                    const CommandLine::Cell& cell = line.cells[c];
+                    if (cell.text.empty())
+                        continue; // a Toy Box key has no pad or mouse cell
+                    ImVec2 a(cellLeft(c), y), b(cellLeft(c) + CellWidth, y + layout.rowHeight);
+                    bool focused = focusedRow && model.commandColumn == int(c);
+                    Box(a, b,
+                        focused         ? Look::CardSelected
+                        : cell.editable ? Look::Raised2
+                                        : Look::Surface,
+                        Look::Hairline, Radius::Control, 1);
+                    if (focused)
+                        DenseFocusRing(a, b, Radius::Control);
+                    TextCentered(g_black, Type::Small, ImVec2((a.x + b.x) / 2, cy),
+                        cell.editable ? Look::Text : Look::TextDim,
+                        Fit(g_black, Type::Small, cell.text, CellWidth - Space::XL));
+                    int column = int(c);
+                    AddHit(a, b, [&model, index, column] { model.FocusCommand(index, column); });
+                    g_hits.back().target = "commands=" + std::to_string(index) + "/" + std::to_string(column);
+                }
+            }
+            if (model.waiting != Model::Waiting::None)
+                TextMiddle(g_bold, Type::Small, min.x + Space::XL, max.y - MenuFooter / 2, Look::TextDim,
+                    model.waiting == Model::Waiting::Key
+                        ? L("Press the new key (Escape cancels)", "Appuyez sur la nouvelle touche (Échap pour annuler)")
+                    : model.waiting == Model::Waiting::PadButton
+                        ? L("Press the new button on the pad (Escape cancels)",
+                              "Appuyez sur le nouveau bouton de la manette (Échap pour annuler)")
+                        : L("Click a mouse button or turn the wheel (Escape cancels)",
+                              "Cliquez avec un bouton de la souris ou tournez la molette (Échap pour annuler)"));
+            else
+                Hints(max.x - Space::XL, max.y - MenuFooter / 2,
+                    { { 'A', L("Change", "Changer") }, { 'B', L("Back", "Retour") } });
+        }
+
+        // A sheet on the left of the safe area (look::Menu): the title, the rows as tall as fit (all 14 rows clear the
+        // hints), the note and the hints at the bottom. A row is its label on the left and its value on the right: a switch,
+        // or a value between two chevrons that the mouse steps (the left half -1, the right half +1). The focus is the
+        // white ring; gold marks what is on.
         void DrawMenu(Model& model)
         {
-            Fill(ImVec2(0, 0), ImVec2(CanvasWidth, CanvasHeight), Look::Night, 0.55f);
+            using namespace look;
+            Fill(ImVec2(0, 0), ImVec2(look::CanvasWidth, look::CanvasHeight), Look::Scrim, 0.45f);
+            if (model.commandsOpen)
+            {
+                DrawCommands(model);
+                return;
+            }
             std::vector<MenuRow> rows = model.MenuRows();
-            // Eleven rows (a game with an FXAA pass has the edge smoothing one) need a taller panel, so that the last row clears the hints.
-            const bool tall = rows.size() > 10;
-            ImVec2 min(320, tall ? 28 : 56), max(960, tall ? 700 : 676);
+            const MenuLayout layout = look::Menu(int(rows.size()));
+            ImVec2 min(layout.left, layout.top), max(layout.right, layout.bottom);
             Panel(min, max, 0.97f);
-            Title(L("GAME MENU", "MENU DU JEU"), ImVec2(min.x + 28, min.y + 20), 30);
+            float titleWidth = Title(L("Game menu", "Menu du jeu"), ImVec2(min.x + Space::XL, min.y + 22), Type::Title);
+            float nameLeft = min.x + Space::XL + titleWidth + Space::L;
+            std::string game = Fit(g_bold, Type::Small, model.GameName(), max.x - Space::XL - nameLeft);
+            Text(g_bold, Type::Small, ImVec2(max.x - Space::XL - Measure(g_bold, Type::Small, game).x, min.y + 34),
+                Look::TextDim, game);
+            const std::string& version = gamemenu::Current().version;
+            if (!version.empty())
+                Text(g_bold, Type::Caption, ImVec2(min.x + Space::XL, min.y + 54), Look::TextDim,
+                    Fit(g_bold, Type::Caption, "Version " + version, MenuWidth - 2 * Space::XL));
             bool anyNextStart = false;
             for (size_t i = 0; i < rows.size(); i++)
             {
                 const MenuRow& row = rows[i];
-                float y = min.y + 74 + float(i) * 48;
-                ImVec2 a(min.x + 24, y), b(max.x - 24, y + 44);
-                bool focused = model.menuRow == int(i);
-                bool action = row.kind == MenuRow::Kind::Action;
-                Box(a, b, focused ? Look::CardSelected : Look::Night, focused ? Look::Gold : Look::CardBorder, 12, 2);
-                std::string label = row.label + (row.nextStart ? " *" : "");
-                anyNextStart = anyNextStart || row.nextStart;
-                if (action)
-                    TextCentered(g_black, 17, ImVec2((a.x + b.x) / 2, y + 22),
-                        i + 1 == rows.size() ? Look::TextSoft : Look::GoldText, label);
-                else
-                    TextMiddle(g_black, 16, a.x + 16, y + 22, Look::Text, label);
-                int index = int(i);
-                AddHit(a, b, [&model, index] { model.FocusMenuRow(index, 0); });
-                if (action)
-                    continue;
-                // The value on the right; a slider has its bar, and "-" / "+" buttons step it.
-                float right = b.x - 14;
-                bool stepped = row.kind == MenuRow::Kind::Slider || row.kind == MenuRow::Kind::Choice;
-                if (stepped)
+                const float y = layout.firstRow + float(i) * layout.pitch, cy = y + layout.rowHeight / 2;
+                ImVec2 a(min.x + Space::M, y), b(max.x - Space::M, y + layout.rowHeight);
+                const bool focused = model.menuRow == int(i), last = i + 1 == rows.size();
+                const int index = int(i);
+                if (focused)
                 {
-                    ImVec2 plusA(right - 34, y + 7), plusB(right, y + 37), minusA(right - 34 - 130 - 8 - 34, y + 7),
-                        minusB(right - 34 - 130 - 8, y + 37);
-                    PlainButton(minusA, minusB, "-", 18, false);
-                    PlainButton(plusA, plusB, "+", 18, false);
-                    AddHit(minusA, minusB, [&model, index] { model.FocusMenuRow(index, -1); });
-                    AddHit(plusA, plusB, [&model, index] { model.FocusMenuRow(index, 1); });
-                    float centerX = (minusB.x + plusA.x) / 2;
+                    RoundRect(a, b, Look::CardSelected, Radius::Control);
+                    DenseFocusRing(a, b, Radius::Control);
+                }
+                AddHit(a, b, [&model, index] { model.FocusMenuRow(index, 0); });
+                g_hits.back().target = "menu=" + std::to_string(index);
+                auto focusRow = [&model, index] {
+                    model.menuRow = index;
+                    model.Touch();
+                };
+                g_hits.back().focus = focusRow;
+                anyNextStart = anyNextStart || row.nextStart;
+                const float right = b.x - Space::L;
+                const float valueWidth = row.kind == MenuRow::Kind::Action   ? 20
+                                         : row.kind == MenuRow::Kind::Toggle ? 44 + Space::S + 44
+                                                                             : 172;
+                std::string label = row.label + (row.nextStart ? " *" : "");
+                TextMiddle(g_black, Type::Body, a.x + Space::L, cy, last ? Look::TextSoft : Look::Text,
+                    Fit(g_black, Type::Body, label, right - valueWidth - Space::M - (a.x + Space::L)));
+                switch (row.kind)
+                {
+                case MenuRow::Kind::Action:
+                    if (!last)
+                        Chevron(ImVec2(right - 4, cy), 12, focused ? Look::Text : Look::TextDim, 0);
+                    break;
+                case MenuRow::Kind::Toggle:
+                {
+                    bool on = row.value == L("On", "Oui");
+                    Switch(ImVec2(right - 22, cy), on);
+                    float w = Measure(g_bold, Type::Small, row.value).x;
+                    TextMiddle(
+                        g_bold, Type::Small, right - 44 - Space::S - w, cy, on ? Look::Text : Look::TextDim, row.value);
+                    break;
+                }
+                case MenuRow::Kind::Choice:
+                case MenuRow::Kind::Slider:
+                {
+                    const float x0 = right - valueWidth;
+                    uint32_t mark = focused ? Look::Text : Look::TextDim;
+                    Chevron(ImVec2(x0 + 6, cy), 12, mark, 2);
+                    Chevron(ImVec2(right - 6, cy), 12, mark, 0);
+                    float mid = (x0 + right) / 2;
+                    AddHit(ImVec2(x0 - 6, a.y), ImVec2(mid, b.y), [&model, index] { model.FocusMenuRow(index, -1); });
+                    g_hits.back().target = "menu=" + std::to_string(index);
+                    g_hits.back().focus = focusRow;
+                    AddHit(ImVec2(mid, a.y), ImVec2(right + 6, b.y), [&model, index] { model.FocusMenuRow(index, 1); });
+                    g_hits.back().target = "menu=" + std::to_string(index);
+                    g_hits.back().focus = focusRow;
                     if (row.kind == MenuRow::Kind::Slider)
                     {
-                        ImVec2 track(minusB.x + 8, y + 15), trackEnd(plusA.x - 8, y + 21);
-                        RoundRect(track, trackEnd, Look::Field, 3);
+                        ImVec2 track(x0 + 22, cy - 3), trackEnd(x0 + 110, cy + 3);
+                        RoundRect(track, trackEnd, Look::Well, 3);
                         RoundRect(track,
                             ImVec2(track.x + (trackEnd.x - track.x) * float(row.percent) / 100.0f, trackEnd.y),
                             Look::Gold, 3);
-                        TextCentered(g_black, 13, ImVec2(centerX, y + 33), Look::TextDim, row.value);
+                        TextCentered(
+                            g_black, Type::Small, ImVec2((trackEnd.x + right - 12) / 2, cy), Look::Text, row.value);
                     }
                     else
-                        TextCentered(
-                            g_black, 16, ImVec2(centerX, y + 22), focused ? Look::GoldText : Look::TextSoft, row.value);
+                        TextCentered(g_black, Type::Body, ImVec2(mid, cy), focused ? Look::GoldText : Look::TextSoft,
+                            Fit(g_black, Type::Body, row.value, valueWidth - 40));
+                    break;
                 }
-                else
-                {
-                    ImVec2 pillA(right - 80, y + 8), pillB(right, y + 36);
-                    bool on = row.value == L("On", "Oui");
-                    Box(pillA, pillB, on ? Look::Bar : Look::Chip, on ? Look::Bar : Look::Control, 14, 2);
-                    TextCentered(g_black, 14, ImVec2((pillA.x + pillB.x) / 2, y + 22),
-                        on ? Look::GoldInk : Look::TextSoft, row.value);
                 }
             }
+            const float footer = max.y - MenuFooter / 2;
+            float hintsLeft =
+                Hints(max.x - Space::XL, footer, { { 'A', L("Change", "Changer") }, { 'B', L("Close", "Fermer") } });
             if (anyNextStart)
-                Text(g_bold, 13, ImVec2(min.x + 28, max.y - 34), Look::TextDim,
-                    L("* applies at the next start", "* au prochain démarrage"));
-            Hints(max.x - 28, max.y - 26, { { 'A', L("Change", "Changer") }, { 'B', L("Close", "Fermer") } });
+                TextMiddle(g_bold, Type::Caption, min.x + Space::XL, footer, Look::TextDim,
+                    Fit(g_bold, Type::Caption, L("* applies at the next start", "* au prochain démarrage"),
+                        hintsLeft - Space::L - (min.x + Space::XL)));
         }
 
-        // The FPS counter: a small readout in the top right corner, over everything.
+        // The FPS counter: a small readout in the top right corner of the safe area, over everything.
         void DrawFps(const Model& model)
         {
             if (model.fps.empty())
                 return;
-            float width = Measure(g_black, 15, model.fps).x + 24;
-            ImVec2 min(CanvasWidth - 16 - width, 12), max(CanvasWidth - 16, 40);
-            Box(min, max, Look::Night, Look::PanelBorder, 14, 2, 0.8f);
-            TextCentered(g_black, 15, ImVec2((min.x + max.x) / 2, 26), Look::Text, model.fps);
+            float width = Measure(g_black, look::Type::Small, model.fps).x + 2 * look::Space::M;
+            ImVec2 min(look::SafeRight - width, look::SafeTop), max(look::SafeRight, look::SafeTop + 26);
+            RoundRect(min, max, Look::Surface, 13, 0.8f);
+            TextCentered(
+                g_black, look::Type::Small, ImVec2((min.x + max.x) / 2, (min.y + max.y) / 2), Look::Text, model.fps);
         }
 
         // --- Over the game: the wheel, its list, the toast -------------------------------------------------------------
@@ -2476,8 +2892,8 @@ namespace toybox
             Hints(640 + width / 2, y, hints);
             if (KeyboardStyle())
                 TextCentered(g_bold, 13, ImVec2(640, 30), Look::TextSoft,
-                    L("Arrows or 1-8: aim · release Tab: swap · Esc: cancel",
-                        "Flèches ou 1-8 : viser · relâcher Tab : changer · Échap : annuler"));
+                    std::string(L("Arrows or 1-8: aim · release ", "Flèches ou 1-8 : viser · relâcher ")) +
+                        ToyboxWheelKeyName() + L(": swap · Esc: cancel", " : changer · Échap : annuler"));
             for (int i = 0; i < Model::WheelPlaces; i++)
             {
                 float angle = -1.5707963f + i * 6.2831853f / Model::WheelPlaces;
@@ -2493,7 +2909,7 @@ namespace toybox
         {
             ImVec2 min(110, 40), max(1170, 680);
             Panel(min, max, 0.95f);
-            std::string title = model.SeatLabel(model.wheel.seat) + L(": choose", " : choisis");
+            std::string title = model.SeatLabel(model.wheel.seat) + L(": choose", " : choisissez");
             float w = Title(title, ImVec2(min.x + 28, min.y + 18), 28);
             const Figure* now = model.SeatFigure(model.wheel.seat);
             if (now != nullptr)
@@ -2515,8 +2931,8 @@ namespace toybox
                 float at;
                 float rgb[3];
             };
-            static const Stop Stops[] = { { 0, { 0x3B, 0x2A, 0x8C } }, { 0.55f, { 0x16, 0x1A, 0x4A } },
-                { 1, { 0x0B, 0x0F, 0x2E } } };
+            static const Stop Stops[] = { { 0, { 0x24, 0x28, 0x58 } }, { 0.55f, { 0x11, 0x14, 0x30 } },
+                { 1, { 0x08, 0x0A, 0x1A } } };
             for (int y = 0; y < CanvasHeight; y++)
             {
                 auto* row = reinterpret_cast<uint8_t*>(texture->pixels.data() + size_t(y) * CanvasWidth);
@@ -2551,7 +2967,7 @@ namespace toybox
         };
         g_bold = add(g_embeddedOutfitBold, g_embeddedOutfitBoldSize);
         g_black = add(g_embeddedOutfitBlack, g_embeddedOutfitBlackSize);
-        g_display = add(g_embeddedBungee, g_embeddedBungeeSize);
+        g_display = g_black; // one family on every screen (look.h's type scale)
         imgui_software::Init();
         g_background = MakeBackground();
         return g_bold != nullptr && g_black != nullptr && g_display != nullptr;
@@ -2569,8 +2985,10 @@ namespace toybox
         g_hits.clear();
         bool overGame = !model.open || model.screen == Screen::Wheel || model.screen == Screen::WheelList ||
                         model.screen == Screen::Menu;
+        if (overGame)
+            gamemenu::DrawDebugScreen(g_bold);
         if (!model.open)
-            DrawToast(model, 36);
+            DrawToast(model, 640, 640, look::SafeBottom, false, true);
         else
         {
             switch (model.screen)
@@ -2590,26 +3008,47 @@ namespace toybox
             case Screen::Menu: DrawMenu(model); break;
             }
             DrawDialog(model);
-            DrawToast(model, model.screen == Screen::Menu ? 6 : overGame ? 36 : 628);
+            if (model.screen == Screen::Menu && model.commandsOpen)
+                DrawToast(model, 640, 760, look::SafeBottom - look::MenuFooter, false, false);
+            else if (model.screen == Screen::Menu)
+            {
+                // Beside the menu's sheet.
+                float left = look::SafeLeft + look::MenuWidth + look::Space::XL;
+                DrawToast(model, (left + look::SafeRight) / 2, look::SafeRight - left, look::SafeBottom, false, false);
+            }
+            else if (overGame)
+                DrawToast(model, 640, 760, look::SafeTop, true, false);
+            else
+                DrawToast(model, 640, 760, 672, false, false);
         }
-        DrawFps(model);
+        // What the pointer is on: a soft outline, independent of keyboard and pad focus.
+        g_hovered = model.open && model.screen != Screen::Wheel ? HoveredHit() : -1;
+        if (g_hovered >= 0)
+        {
+            const Hit& hit = g_hits[size_t(g_hovered)];
+            RoundFrame(ImVec2(hit.min.x - 2, hit.min.y - 2), ImVec2(hit.max.x + 2, hit.max.y + 2), Look::TextSoft,
+                std::min({ 12.0f, (hit.max.x - hit.min.x) / 2, (hit.max.y - hit.min.y) / 2 }), 2);
+        }
+        if (!model.open) // it would sit on the corner buttons of the full-screen pages
+            DrawFps(model);
         ImGui::Render();
+        // Into the caller's buffer: once it has its size, a frame (a toast sliding in) allocates nothing.
         imgui_software::Texture canvas{ CanvasWidth, CanvasHeight };
+        canvas.pixels.swap(pixels);
         if (overGame)
             canvas.pixels.assign(size_t(CanvasWidth) * CanvasHeight, 0);
         else
-            canvas.pixels = g_background->pixels;
+            canvas.pixels.assign(g_background->pixels.begin(), g_background->pixels.end());
         imgui_software::Render(ImGui::GetDrawData(), canvas);
-        pixels = std::move(canvas.pixels);
+        canvas.pixels.swap(pixels);
     }
 
     void Click(Model& model, float x, float y, int button, bool twice)
     {
-        for (auto hit = g_hits.rbegin(); hit != g_hits.rend(); ++hit)
+        if (int i = HitAt(std::span<const Hit>(g_hits), x, y); i >= 0)
         {
-            if (x < hit->min.x || y < hit->min.y || x >= hit->max.x || y >= hit->max.y)
-                continue;
-            std::function<void()> action = button == 3 ? hit->right : twice && hit->twice ? hit->twice : hit->left;
+            const Hit& hit = g_hits[size_t(i)];
+            std::function<void()> action = button == 3 ? hit.right : twice && hit.twice ? hit.twice : hit.left;
             if (action)
                 action();
             model.Touch();
@@ -2617,6 +3056,23 @@ namespace toybox
         }
         if (button == 3)
             model.Run(Command::Back);
+    }
+
+    bool Pointer(float x, float y, bool inside)
+    {
+        g_pointer = ImVec2(x, y);
+        g_pointerIn = inside;
+        // The pointer moving onto something focusable moves the focus there; a still pointer never takes it back.
+        int hovered = HoveredHit();
+        if (hovered != g_hovered && hovered >= 0 && g_hits[size_t(hovered)].focus)
+            g_hits[size_t(hovered)].focus();
+        return hovered != g_hovered;
+    }
+
+    std::string HoverTarget()
+    {
+        int i = HoveredHit();
+        return i >= 0 && !g_hits[size_t(i)].target.empty() ? g_hits[size_t(i)].target : "none";
     }
 
     int WheelPlaceAt(float x, float y)

@@ -111,13 +111,18 @@ namespace figures
         std::array<char16_t, 16> name{}; // sixteen UTF-16LE units, including any zero padding
     };
 
+    // Packed offset of the first villain record, whose first byte is the selected villain: physical 0x090 in copy A,
+    // 0x250 in B [V: a capture in play, 2026-11-02: Sheep Creep (20) written there, count 1, sequence 2].
+    constexpr size_t TrapVillainOffset = 0x10;
+    constexpr size_t TrapVillainRecordSize = 48;
+
     struct TrapStats
     {
         uint8_t dataFormat = 0; // candidate initial value [?]; preserve a read value when editing
         uint8_t villainCount = 0;
         uint8_t preloadVillain = 0; // special look, separate from evolution
         uint8_t selectedVillain = 0; // aliases villains[0].id; selecting another villain requires swapping records
-        std::array<TrapVillain, 6> villains{}; // packed +0x10 + 48*i, 36 described bytes per record
+        std::array<TrapVillain, 6> villains{}; // packed TrapVillainOffset + 48*i (TrapVillainRecordSize)
         uint8_t sequence = 0;
     };
 
@@ -154,5 +159,6 @@ namespace figures
     constexpr uint16_t MaxGold = 65000;
 
     std::string NicknameUtf8(const FigureStats& stats);
-    void SetNicknameUtf8(FigureStats& stats, const std::string& text); // cut to 16 UTF-16 units
+    void SetNicknameUtf8(
+        FigureStats& stats, const std::string& text); // 16 UTF-16 units at most; malformed bytes and controls dropped
 }
