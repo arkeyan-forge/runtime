@@ -1,4 +1,5 @@
 #include "gpu/gpu.h"
+#include "gpu/auto_scale.h"
 #include "gpu/buffer_cache.h"
 #include "gpu/context.h"
 #include <SDL3/SDL.h>
@@ -11,6 +12,7 @@
 #include <condition_variable>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <memory>
 #include <span>
 #include <string>
@@ -564,6 +566,9 @@ namespace
         return why = "discrete GPU", 2;
     }
 
+    bool g_scaleAuto = false; // the player left the resolution scale on auto (gpu/auto_scale.h)
+    const char* const AutoScaleFile = "auto_scale.txt";
+
     // The adapter, the window and the resolution scale (chosen here when it is auto), for the log.
     void LogAdapter(SDL_Window* window, uint32_t requestedScale)
     {
@@ -593,6 +598,17 @@ namespace
         {
             const char* why = "";
             gpu::g_settings.resolutionScale = AutoScale(description, capabilities, why);
+            g_scaleAuto = true;
+            // An earlier run on this adapter found the GPU the limit at a higher scale.
+            std::string remembered;
+            if (std::filesystem::path file = PlayerDataFile(AutoScaleFile); !file.empty())
+                std::getline(std::ifstream(file), remembered);
+            const uint32_t learned = gpu::autoscale::Parse(remembered, description.name);
+            if (learned != 0 && learned < gpu::g_settings.resolutionScale)
+            {
+                gpu::g_settings.resolutionScale = learned;
+                why = "an earlier run found the GPU the limit at a higher scale on this adapter: auto_scale.txt";
+            }
             fprintf(stderr, "[gpu] resolution scale auto: %u (%s; resolution_scale=1 to 10 sets it)\n",
                 gpu::g_settings.resolutionScale, why);
         }
@@ -980,11 +996,21 @@ namespace
             double fps = double(frames) / seconds, gpuShare = (ms(total.gpuWaitNs) + ms(total.presentNs)) / meanMs;
             slowWindows = fps < 0.9 * double(gpu::g_settings.fpsLimit) && gpuShare >= 0.4 ? slowWindows + 1 : 0;
             if (slowWindows == 3 && gpu::g_settings.resolutionScale > 1)
+            {
                 fprintf(stderr,
                     "[perf] hint: the GPU limits the frame rate (%.1f fps, %.0f%% of each frame waiting for it) at "
                     "resolution scale %u; resolution_scale=1 renders %u times fewer pixels\n",
                     fps, 100.0 * gpuShare, gpu::g_settings.resolutionScale,
                     gpu::g_settings.resolutionScale * gpu::g_settings.resolutionScale);
+                // Auto steps down at the next start (the scale cannot change in play); a chosen scale stays.
+                std::filesystem::path file = g_scaleAuto ? PlayerDataFile(AutoScaleFile) : std::filesystem::path();
+                if (!file.empty() && (std::ofstream(file) << gpu::autoscale::Format(
+                                          gpu::g_settings.resolutionScale - 1, c.device->getDescription().name)))
+                    fprintf(stderr,
+                        "[perf] resolution scale auto: the GPU limits the frame rate at scale %u; the next start "
+                        "renders at scale %u (%s)\n",
+                        gpu::g_settings.resolutionScale, gpu::g_settings.resolutionScale - 1, AutoScaleFile);
+            }
             // "rest" split: the renderer's own work on the game's render thread, the vblank wait, and what remains: the
             // guest's own code (game logic, its D3D calls) and the render thread's waits for the GPU thread or the guest.
             uint64_t times[uint32_t(gpu::FrameTime::Count)];

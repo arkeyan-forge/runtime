@@ -7,8 +7,10 @@
 #include "d3d/render_stats.h"
 #include "d3d/command_buffers.h"
 #include "d3d/depth_readback.h"
+#include "d3d/tiled_depth.h"
 #include "d3d/device.h"
 #include "d3d/render_scale.h"
+#include "d3d/vertex_pairs.h"
 #include "d3d/ring.h"
 #include "d3d/shaders.h"
 #include "d3d/step_pacer.h"
@@ -34,6 +36,10 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <array>
+#if defined(__APPLE__)
+#include <mach/mach_time.h>
+#endif
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -1025,16 +1031,11 @@ namespace
         draw.viewport.width *= targetScale;
         draw.viewport.height *= targetScale;
 
-        int32_t left = int32_t(Read32(device + Device::Scissor)), top = int32_t(Read32(device + Device::Scissor + 4));
-        int32_t right = int32_t(Read32(device + Device::Scissor + 8)),
-                bottom = int32_t(Read32(device + Device::Scissor + 12));
-        left *= targetScale;
-        top *= targetScale;
-        right *= targetScale;
-        bottom *= targetScale;
-        draw.scissor =
-            plume::RenderRect(std::clamp(left, 0, int32_t(size.width)), std::clamp(top, 0, int32_t(size.height)),
-                std::clamp(right, 0, int32_t(size.width)), std::clamp(bottom, 0, int32_t(size.height)));
+        const d3d::Rect scissor = d3d::DrawScissor(Read32(device + Device::ScissorTestEnable) != 0,
+            { int32_t(Read32(device + Device::Scissor)), int32_t(Read32(device + Device::Scissor + 4)),
+                int32_t(Read32(device + Device::Scissor + 8)), int32_t(Read32(device + Device::Scissor + 12)) },
+            targetScale, int32_t(size.width), int32_t(size.height));
+        draw.scissor = plume::RenderRect(scissor.left, scissor.top, scissor.right, scissor.bottom);
 
         // Alpha test (XenosRecomp clips alpha below the threshold).
         uint32_t colorControl = GpuRegister(device, Reg::RB_COLORCONTROL);
@@ -1190,6 +1191,24 @@ namespace
         std::fill(std::begin(streamSlots), std::end(streamSlots), ~0u);
         uint32_t streamGuest[16], streamBytes[16], streamStride[16];
         g_streamData.resize(gpu::MaxVertexStreams);
+        // Vertex data is byte-swapped in 32-bit words, which swaps the halves of 16-bit component pairs; for
+        // texture coordinates the translated shaders swap them back (.yxwz) when told to. Any other input in such a
+        // format (a SHORT4N position) is swapped back here, on a CPU copy of its stream.
+        auto sixteenBitPairs = [](gpu::Format host) {
+            return host == gpu::Format::R16G16_FLOAT || host == gpu::Format::R16G16_SINT ||
+                   host == gpu::Format::R16G16_SNORM || host == gpu::Format::R16G16_UNORM ||
+                   host == gpu::Format::R16G16B16A16_FLOAT || host == gpu::Format::R16G16B16A16_SINT ||
+                   host == gpu::Format::R16G16B16A16_SNORM || host == gpu::Format::R16G16B16A16_UNORM;
+        };
+        uint32_t pairStreams = 0;
+        for (uint32_t i = 0; i < elementCount; i++)
+        {
+            uint32_t element = declaration + 0x34 + i * 12;
+            uint32_t stream = g_memory.Read<uint16_t>(element);
+            if (stream < 16 && g_memory.Read<uint8_t>(element + 9) != 5 &&
+                sixteenBitPairs(xenos::VertexFormat(Read32(element + 4)).host))
+                pairStreams |= 1u << stream;
+        }
         for (uint32_t i = 0; i < elementCount; i++)
         {
             uint32_t element = declaration + 0x34 + i * 12;
@@ -1216,14 +1235,8 @@ namespace
             if (floatIndices)
                 draw.specConstants |= gpu::SpecConstant::BlendIndicesFloat;
 
-            // Vertex data is byte-swapped in 32-bit words, which swaps the halves of 16-bit component pairs; for
-            // texture coordinates the translated shaders swap them back (.yxwz) when told to.
-            bool sixteenBitPairs =
-                format.host == gpu::Format::R16G16_FLOAT || format.host == gpu::Format::R16G16_SINT ||
-                format.host == gpu::Format::R16G16_SNORM || format.host == gpu::Format::R16G16_UNORM ||
-                format.host == gpu::Format::R16G16B16A16_FLOAT || format.host == gpu::Format::R16G16B16A16_SINT ||
-                format.host == gpu::Format::R16G16B16A16_SNORM || format.host == gpu::Format::R16G16B16A16_UNORM;
-            if (usage == 5 && sixteenBitPairs)
+            const bool pairs = sixteenBitPairs(format.host);
+            if (usage == 5 && pairs)
                 draw.swappedTexcoords |= 1u << usageIndex;
 
             if (streamSlots[stream] == ~0u)
@@ -1251,7 +1264,7 @@ namespace
                 streamGuest[stream] = guest;
                 streamBytes[stream] = bytes;
                 streamStride[stream] = stride;
-                if (upData == 0 && !expand && !g_dump.active)
+                if (upData == 0 && !expand && !g_dump.active && ((pairStreams >> stream) & 1) == 0)
                 {
                     // Keep the converted vertices on the GPU: level geometry is shared by many draws.
                     uint32_t begin = uint32_t(std::min<uint64_t>(uint64_t(vertexStart) * stride, bytes));
@@ -1266,6 +1279,12 @@ namespace
                     xenos::SwapEndian(data.data(), data.size(), 2);
                     draw.streams[slot] = { data.data(), bytes, stride, false, {} };
                 }
+            }
+
+            if (usage != 5 && pairs)
+            {
+                std::vector<uint8_t>& data = g_streamData[streamSlots[stream]];
+                d3d::SwapHalfPairs(data.data(), data.size(), streamStride[stream], offset, format.size);
             }
 
             gpu::VertexInput& input = draw.inputs[draw.inputCount++];
@@ -1531,13 +1550,15 @@ namespace
         if (g_dump.active)
         {
             fprintf(stderr,
-                "[dump] prim %u count %u first %u idx %d vp %.1f %.1f %.1f %.1f z %.2f-%.2f sc %d %d %d %d pos %.3f "
+                "[dump] prim %u count %u first %u idx %d vp %.1f %.1f %.1f %.1f z %.2f-%.2f sc %d %d %d %d (test %u) "
+                "pos %.3f "
                 "%.3f blend %d %d/%d mask %x spec %x "
                 "depthctl %08x stencil %08x targets %u%s vs %016llx ps %016llx sumode %08x polyoffset %g %g %g %g\n",
                 primitive, draw.count, draw.first, draw.indices != nullptr, draw.viewport.x, draw.viewport.y,
                 draw.viewport.width, draw.viewport.height, draw.viewport.minDepth, draw.viewport.maxDepth,
-                draw.scissor.left, draw.scissor.top, draw.scissor.right, draw.scissor.bottom, draw.positionScale[0],
-                draw.positionScale[1], draw.blend[0].enabled, int(draw.blend[0].srcColor), int(draw.blend[0].dstColor),
+                draw.scissor.left, draw.scissor.top, draw.scissor.right, draw.scissor.bottom,
+                Read32(device + Device::ScissorTestEnable), draw.positionScale[0], draw.positionScale[1],
+                draw.blend[0].enabled, int(draw.blend[0].srcColor), int(draw.blend[0].dstColor),
                 draw.blend[0].writeMask, draw.specConstants, GpuRegister(device, Reg::RB_DEPTHCONTROL),
                 GpuRegister(device, Reg::RB_STENCILREFMASK), draw.colorTargetCount,
                 draw.depthTarget != nullptr ? "+depth" : "", static_cast<unsigned long long>(g_drawVertexShader),
@@ -1710,6 +1731,20 @@ namespace
     // thread, loosely tied to the frame (before or after the next swap), and reads whatever is in memory.
     std::atomic<uint32_t> g_cpuReadDepth;
 
+    // The render thread's (Resolve's) only.
+    std::shared_ptr<const d3d::TiledDepthLayout> DepthLayout(uint32_t pitch, uint32_t rows)
+    {
+        static std::shared_ptr<const d3d::TiledDepthLayout> last;
+        if (last != nullptr && last->pitch == pitch && last->rows == rows)
+            return last;
+        last = std::make_shared<const d3d::TiledDepthLayout>(d3d::MakeTiledDepthLayout(pitch, rows));
+        if (!last->split)
+            fprintf(stderr, "[render] depth write-back: pitch %u is not tile by tile; untiled per texel\n", pitch);
+        return last;
+    }
+
+    uint32_t GuestDepth(uint32_t hostDepth) { return ByteSwap(Float32To20e4(std::bit_cast<float>(hostDepth)) << 8); }
+
     void WriteBackDepth(const xenos::TextureFetch& fetch, const gpu::Texture* texture, uint32_t x, uint32_t y,
         uint32_t width, uint32_t height)
     {
@@ -1730,16 +1765,29 @@ namespace
         uint32_t left = x / scale, top = y / scale;
         uint32_t right = std::min((x + width) / scale, level.width),
                  bottom = std::min((y + height) / scale, level.height);
+        std::shared_ptr<const d3d::TiledDepthLayout> layout = tiled ? DepthLayout(pitch, rows) : nullptr;
         gpu::RequestReadback(texture, scale,
             [=](const uint32_t* depth, uint32_t depthWidth, uint32_t depthHeight, std::vector<uint32_t>& out) {
                 out.assign(size_t(pitch) * rows, 0);
-                for (uint32_t row = top; row < std::min(bottom, depthHeight); row++)
-                    for (uint32_t column = left; column < std::min(right, depthWidth); column++)
+                const uint32_t rowEnd = std::min(bottom, depthHeight), columnEnd = std::min(right, depthWidth);
+                for (uint32_t row = top; row < rowEnd; row++)
+                {
+                    const uint32_t* source = depth + size_t(row) * depthWidth;
+                    if (!tiled)
+                        for (uint32_t column = left; column < columnEnd; column++)
+                            out[size_t(row) * pitch + column] = GuestDepth(source[column]);
+                    else if (layout->split)
                     {
-                        uint32_t offset = tiled ? xenos::Tiled2D(column, row, pitch, 2) / 4 : row * pitch + column;
-                        out[offset] = ByteSwap(
-                            Float32To20e4(std::bit_cast<float>(depth[size_t(row) * depthWidth + column])) << 8);
+                        // layout->Offset(column, row), its row part once a row.
+                        const uint32_t tileRow = ((row >> 5) * (pitch >> 5)) << 10;
+                        const uint16_t* inTile = layout->inTile.data() + (row & 31) * 32;
+                        for (uint32_t column = left; column < columnEnd; column++)
+                            out[tileRow + ((column >> 5) << 10) + inTile[column & 31]] = GuestDepth(source[column]);
                     }
+                    else
+                        for (uint32_t column = left; column < columnEnd; column++)
+                            out[xenos::Tiled2D(column, row, pitch, 2) / 4] = GuestDepth(source[column]);
+                }
             });
     }
 
@@ -1949,11 +1997,22 @@ void d3d::Draw(uint32_t device, uint32_t primitive, uint32_t first, uint32_t cou
 
 namespace
 {
+    // For durations only (the perf log's renderer time, two calls a draw): mach_absolute_time costs a third of
+    // steady_clock::now on macOS (6 against 19 ns).
     uint64_t NowNs()
     {
+#if defined(__APPLE__)
+        static const mach_timebase_info_data_t timebase = [] {
+            mach_timebase_info_data_t info;
+            mach_timebase_info(&info);
+            return info;
+        }();
+        return mach_absolute_time() * timebase.numer / timebase.denom;
+#else
         return uint64_t(
             std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
                 .count());
+#endif
     }
 
     // The perf log's renderer time (gpu::AddFrameTime) for one hooked D3D call: all of it but what Exclude runs (the

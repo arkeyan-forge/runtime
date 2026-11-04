@@ -288,10 +288,12 @@ namespace
 
     // An IGA archive: entry 0 stored ("plain.txt"), entry 1 one LZMA chunk ("packed.txt"), entry 2 a stored IGZ. v8:
     // Giants' layout [V]; v10: Swap Force's [V] (big-endian, 16-byte entries { ?, offset, size, mode }, chunks
-    // 0x800-aligned); v11: Trap Team's [V] (name table at 0x28, 64-bit; 16-byte entries { offset, ?, size, mode }).
-    std::vector<uint8_t> MakeIga(const std::vector<uint8_t>& igz, uint32_t version = 8)
+    // 0x800-aligned); v11: Trap Team's [V] (name table at 0x28, 64-bit; 16-byte entries { offset, ?, size, mode }); v11
+    // big-endian: SuperChargers' [V] (the name table's position high word first; v10's entries and chunks).
+    std::vector<uint8_t> MakeIga(const std::vector<uint8_t>& igz, uint32_t version = 8, bool bigEndian = false)
     {
-        const bool big = version == 10;
+        const bool big = version == 10 || bigEndian;
+        const bool entriesAsV10 = version == 10 || (version == 11 && big);
         const uint32_t count = 3, header = version == 8 ? 0x34 : 0x38, entrySize = version == 8 ? 12 : 16;
         const size_t align = big ? 0x800 : 0x100;
         auto Put32 = [big](std::vector<uint8_t>& bytes, size_t at, uint32_t value) {
@@ -319,6 +321,8 @@ namespace
             Put32(archive, 0x1C, 0x100), Put32(archive, 0x20, uint32_t(table.size()));
         else if (version == 10)
             Put32(archive, 0x2C, 0x100), Put32(archive, 0x30, uint32_t(table.size()));
+        else if (big)
+            Put32(archive, 0x28, 0), Put32(archive, 0x2C, 0x100), Put32(archive, 0x30, uint32_t(table.size()));
         else
             Put32(archive, 0x28, 0x100), Put32(archive, 0x2C, 0), Put32(archive, 0x30, uint32_t(table.size()));
         memcpy(&archive[0x100], table.data(), table.size());
@@ -328,14 +332,14 @@ namespace
         auto entry = [&](uint32_t i, uint32_t offset, uint32_t size, uint32_t flags) {
             // The word that is no offset, size or mode is filled with a value that would break a reader taking it for one.
             size_t slot = header + 4 * count + entrySize * i;
-            if (version == 11)
+            if (version == 11 && !entriesAsV10)
                 Put32(archive, slot, offset), Put32(archive, slot + 4, 0xFFFFFF00), Put32(archive, slot + 8, size),
                     Put32(archive, slot + 12, flags);
             else
             {
                 slot += entrySize - 12;
                 Put32(archive, slot, offset), Put32(archive, slot + 4, size), Put32(archive, slot + 8, flags);
-                if (version == 10)
+                if (entriesAsV10)
                     Put32(archive, slot - 4, 0xFFFFFF00);
             }
         };
@@ -438,15 +442,18 @@ namespace
         CHECK(!art::alchemy::IgzFile::Parse(std::vector<uint8_t>(0x900, 0)));
         CHECK(archive->Version() == 8 && archive->Verified() && file->Version() == 6 && file->Verified());
 
-        // Every version of the reader's tables reads its own fixture: IGA v8 [V], v10 [V], v11 [V]; IGZ v6 [V], v7, v8, v9.
+        // Every version of the reader's tables reads its own fixture: IGA v8 [V], v10 [V], v11 [V] in both byte orders;
+        // IGZ v6 [V], v7, v8, v9.
         // The [?] versions only check that the reader follows its table: the table itself is from public descriptions.
         auto versions = art::alchemy::IgaVersions();
-        CHECK(versions.size() == 3 && versions[0].version == 8 && versions[0].verified && versions[1].version == 10 &&
-              versions[1].verified && versions[2].version == 11 && versions[2].verified);
+        CHECK(versions.size() == 4 && versions[0].version == 8 && versions[0].verified && versions[1].version == 10 &&
+              versions[1].verified && versions[2].version == 11 && versions[2].verified && !versions[2].bigEndian &&
+              versions[3].version == 11 && versions[3].verified && versions[3].bigEndian);
         for (const art::alchemy::FormatVersion& igaVersion : versions)
             for (const art::alchemy::FormatVersion& igzVersion : art::alchemy::IgzVersions())
             {
-                std::vector<uint8_t> other = MakeIga(MakeIgz(0xB9BCDC57, igzVersion.version), igaVersion.version);
+                std::vector<uint8_t> other =
+                    MakeIga(MakeIgz(0xB9BCDC57, igzVersion.version), igaVersion.version, igaVersion.bigEndian);
                 auto read = [&other](uint64_t offset, size_t size, uint8_t* to) {
                     if (offset + size > other.size())
                         return false;

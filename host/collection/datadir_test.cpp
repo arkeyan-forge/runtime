@@ -130,6 +130,7 @@ namespace
         CHECK(GameFolderName("ssa") == "SSA" && GameFolderName("giants") == "Giants");
         CHECK(GameFolderName("swapforce") == "SwapForce" && Game("swapforce") == Root() / "SwapForce");
         CHECK(GameFolderName("trapteam") == "TrapTeam" && Game("trapteam") == Root() / "TrapTeam");
+        CHECK(GameFolderName("superchargers") == "SuperChargers");
     }
 
     void TestMac()

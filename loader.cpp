@@ -2,6 +2,7 @@
 #include "kernel/objects.h"
 #include "memory.h"
 #include "platform/platform.h"
+#include "thunk_slot.h"
 #include <cstdio>
 #include <cstdlib>
 #include <mutex>
@@ -249,8 +250,8 @@ LoadedModule LoadXex(const std::vector<uint8_t>& xex)
 uint32_t CreateHostThunk(PPCFunc* function)
 {
     // Thunks take words of the zero padding between code sections, from the end of the code range down: no
-    // translated function starts there, and a run of 16 zero words is never code.
-    constexpr uint32_t PaddingWords = 16;
+    // translated function starts there, and a run of 16 zero words is never code. A title whose code is one section
+    // has no such run (only lone zero words between functions): then any zero word no function starts at.
     static std::mutex mutex;
     static uint32_t next = PPC_CODE_BASE + PPC_CODE_SIZE;
 
@@ -259,19 +260,16 @@ uint32_t CreateHostThunk(PPCFunc* function)
     };
 
     std::lock_guard lock(mutex);
-    uint32_t run = 0;
-    for (uint32_t address = next - 4; address >= PPC_CODE_BASE; address -= 4)
+    uint32_t thunk = FindThunkSlot(next, PPC_CODE_BASE, 16, isPadding);
+    if (thunk == 0)
+        thunk = FindThunkSlot(next, PPC_CODE_BASE, 1, isPadding);
+    if (thunk != 0)
     {
-        run = isPadding(address) ? run + 1 : 0;
-        if (run == PaddingWords)
-        {
-            uint32_t thunk = address + (PaddingWords - 1) * 4;
-            SetEntryReadOnly(thunk, false);
-            PPC_LOOKUP_FUNC(g_memory.base, thunk) = function;
-            SetEntryReadOnly(thunk, true);
-            next = thunk;
-            return thunk;
-        }
+        SetEntryReadOnly(thunk, false);
+        PPC_LOOKUP_FUNC(g_memory.base, thunk) = function;
+        SetEntryReadOnly(thunk, true);
+        next = thunk;
+        return thunk;
     }
 
     fprintf(stderr, "No code padding left for a host thunk\n");

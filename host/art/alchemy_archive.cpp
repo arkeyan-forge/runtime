@@ -298,14 +298,16 @@ namespace art::alchemy
         // name table's position at 0x2C and size at 0x30, 16-byte entries { ?, offset, size, mode }, chunks 0x800-aligned
         // (games/swapforce/docs/art.md). v11 is Trap Team's [V: all 1916 archives of its disc, listed and unpacked]: little-
         // endian, header 0x38, the name table's position (64-bit) at 0x28 and size at 0x30, 16-byte entries { offset, ?,
-        // size, mode }, chunks 0x100-aligned; the second word is no offset or size we need [?].
+        // size, mode }, chunks 0x100-aligned; the second word is no offset or size we need [?]. v11 big-endian is
+        // SuperChargers' [V: shaders_xenon.pak, its 105 entries unpacked]: header 0x38, the name table's position (64-bit,
+        // high word first) at 0x28 and size at 0x30, v10's 16-byte entries { ?, offset, size, mode }, chunks 0x800-aligned.
         struct IgaLayout
         {
             uint32_t version;
             uint32_t header; // header size: the name hashes follow it
             uint32_t namesAt; // header offset of the name table's file position
             uint32_t namesSize; // ... and of its size
-            bool namesAt64; // the position is 64-bit (little-endian)
+            bool namesAt64; // the position is 64-bit (in the file's byte order)
             bool bigEndian; // every header and table field (not the chunks' u16 sizes)
             uint32_t entrySize; // bytes per entry
             uint32_t offsetWord, sizeWord, modeWord; // the entry's words (4 bytes each) holding these
@@ -316,6 +318,7 @@ namespace art::alchemy
             { 8, 0x34, 0x1C, 0x20, false, false, 12, 0, 1, 2, 0x100, true },
             { 10, 0x38, 0x2C, 0x30, false, true, 16, 1, 2, 3, 0x800, true },
             { 11, 0x38, 0x28, 0x30, true, false, 16, 0, 2, 3, 0x100, true },
+            { 11, 0x38, 0x28, 0x30, true, true, 16, 1, 2, 3, 0x800, true },
         };
     }
 
@@ -323,7 +326,7 @@ namespace art::alchemy
     {
         std::vector<FormatVersion> out;
         for (const IgaLayout& layout : IgaLayouts)
-            out.push_back({ layout.version, layout.verified });
+            out.push_back({ layout.version, layout.verified, layout.bigEndian });
         return out;
     }
 
@@ -348,7 +351,8 @@ namespace art::alchemy
         uint32_t count = u32(header + 0x0C), namesSize = u32(header + layout->namesSize);
         uint64_t namesAt = u32(header + layout->namesAt);
         if (layout->namesAt64)
-            namesAt |= uint64_t(u32(header + layout->namesAt + 4)) << 32;
+            namesAt = big ? namesAt << 32 | u32(header + layout->namesAt + 4)
+                          : namesAt | uint64_t(u32(header + layout->namesAt + 4)) << 32;
         const size_t stride = 4 + layout->entrySize;
         if (count == 0 || count > 0x100000 || layout->header + stride * uint64_t(count) > length)
             return std::nullopt;
@@ -554,7 +558,7 @@ namespace art::alchemy
     {
         std::vector<FormatVersion> out;
         for (const IgzLayout& layout : IgzLayouts)
-            out.push_back({ layout.version, layout.verified });
+            out.push_back({ layout.version, layout.verified, false });
         return out;
     }
 

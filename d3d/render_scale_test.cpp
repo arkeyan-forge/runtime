@@ -69,12 +69,29 @@ namespace
         }
         CHECK(d3d::ScaleHostKernel(Guest, 1).constants == Guest.constants);
     }
+
+    void TestDrawScissor()
+    {
+        using d3d::Rect;
+        // The test off: the whole target, whatever the device holds (an empty rectangle, the default 65535s).
+        Rect full = d3d::DrawScissor(false, { 0, 720, 0, 720 }, 2, 2560, 1440);
+        CHECK(full.left == 0 && full.top == 0 && full.right == 2560 && full.bottom == 1440);
+        // The test on: scaled, then clamped to the target.
+        Rect on = d3d::DrawScissor(true, { 10, 20, 640, 65535 }, 2, 2560, 1440);
+        CHECK(on.left == 20 && on.top == 40 && on.right == 1280 && on.bottom == 1440);
+        Rect empty = d3d::DrawScissor(true, { 0, 720, 0, 720 }, 1, 1280, 720);
+        CHECK(empty.right <= empty.left);
+        Rect negative = d3d::DrawScissor(true, { -5, -5, 100, 100 }, 1, 1280, 720);
+        CHECK(negative.left == 0 && negative.top == 0);
+    }
+
 }
 
 int main()
 {
     TestTableScale();
     TestHostKernel();
+    TestDrawScissor();
     fprintf(stderr, "%d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }

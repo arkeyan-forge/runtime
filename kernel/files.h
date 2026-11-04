@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -16,3 +17,7 @@ std::filesystem::path HostFileName(std::string_view name);
 
 // A UTF-8 path from the environment or SDL.
 std::filesystem::path Utf8Path(std::string_view path);
+
+// steady_clock nanoseconds (since its epoch) of the guest's last successful file open, 0 before the first: the 60 -> 30
+// fallback (kernel/video.cpp) counts no frame in the 5 s after one, the game loading.
+uint64_t LastFileOpenNs();

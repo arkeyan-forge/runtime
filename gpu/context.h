@@ -177,6 +177,9 @@ namespace gpu::detail
     uint64_t AlignUp(uint64_t value, uint64_t alignment);
     // True once the device is lost: the public gpu functions return at once (no device calls, no log spam).
     bool DeviceLost();
+    // A file of the player's data for this game (SKY_SAVE_DIR, else the game's data folder), next to pipelines.bin;
+    // empty without one (no shader cache: the GPU test).
+    std::filesystem::path PlayerDataFile(const char* name);
     // D3D12: "[gpu] step N: <what> (thread T)" for the first 40 steps of the run, with the device state, so a console
     // log shows which call came first after a removal.
     void Step(const char* what);

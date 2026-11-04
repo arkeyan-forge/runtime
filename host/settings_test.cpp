@@ -119,49 +119,76 @@ int main()
     CHECK(run.settings.fpsAutoFallback && run.warnings.size() == 1);
     CHECK(DescribeSettings(run.settings).find("fps auto fallback on") != std::string::npos);
 
-    // Three misses in the rolling 30-frame window, recovery, short returns and disabling while active.
+    // Twenty misses in the rolling 120-frame window, recovery, short returns and disabling while active.
     {
         using Change = FrameRateFallback::Change;
         FrameRateFallback startup;
-        startup.Sample(true, true);
-        startup.Sample(true, true);
+        for (int i = 0; i < 19; i++)
+            CHECK(startup.Sample(true, true) == Change::None);
         CHECK(startup.Sample(true, true) == Change::Halved && startup.fitsToRestore == 600);
         FrameRateFallback fallback;
+        for (int i = 0; i < 600; i++)
+            CHECK(fallback.Sample(true, false) == Change::None);
+        // A burst of 19 slow frames (a load, a camera cut) keeps 60.
+        for (int i = 0; i < 19; i++)
+            CHECK(fallback.Sample(true, true) == Change::None);
         for (int i = 0; i < 120; i++)
             CHECK(fallback.Sample(true, false) == Change::None);
-        CHECK(fallback.Sample(true, true) == Change::None);
-        for (int i = 0; i < 28; i++)
+        // The burst has left the window; 20 misses spread over it halve.
+        for (int i = 0; i < 10; i++)
+            CHECK(fallback.Sample(true, true) == Change::None);
+        for (int i = 0; i < 50; i++)
             CHECK(fallback.Sample(true, false) == Change::None);
-        CHECK(fallback.Sample(true, true) == Change::None);
-        // The oldest miss has now left the window.
-        CHECK(fallback.Sample(true, true) == Change::None);
+        for (int i = 0; i < 9; i++)
+            CHECK(fallback.Sample(true, true) == Change::None);
         CHECK(fallback.Sample(true, true) == Change::Halved && fallback.active);
         CHECK(fallback.fitsToRestore == 300);
+        // 30 not held (17 late frames in 300, more than 1 in 20): the count starts again.
+        for (int i = 0; i < 300; i++)
+            CHECK(fallback.Sample(true, i % 18 == 0) == Change::None);
+        // A late frame now and then (15 in 300, 1 in 20) does not hold 60 back.
         for (int i = 0; i < 299; i++)
-            CHECK(fallback.Sample(true, false) == Change::None);
-        CHECK(fallback.Sample(true, true) == Change::None); // a late frame breaks the consecutive fits
-        for (int i = 0; i < 299; i++)
-            CHECK(fallback.Sample(true, false) == Change::None);
-        CHECK(fallback.Sample(true, false) == Change::Restored && !fallback.active);
+            CHECK(fallback.Sample(true, i % 20 == 19) == Change::None);
+        CHECK(fallback.Sample(true, true) == Change::Restored && !fallback.active);
         for (int cycle = 0; cycle < 6; cycle++)
         {
-            fallback.Sample(true, true);
-            fallback.Sample(true, true);
+            for (int i = 0; i < 19; i++)
+                fallback.Sample(true, true);
             CHECK(fallback.Sample(true, true) == Change::Halved);
-            CHECK(fallback.fitsToRestore == std::min(300u << (cycle + 1), 9000u));
+            CHECK(fallback.fitsToRestore == std::min(300u << (cycle + 1), 1800u));
             for (uint32_t i = 1; i < fallback.fitsToRestore; i++)
                 CHECK(fallback.Sample(true, false) == Change::None);
             CHECK(fallback.Sample(true, false) == Change::Restored);
         }
-        for (int i = 0; i < 120; i++)
+        for (int i = 0; i < 600; i++)
             fallback.Sample(true, false);
-        fallback.Sample(true, true);
-        fallback.Sample(true, true);
+        for (int i = 0; i < 19; i++)
+            fallback.Sample(true, true);
         CHECK(fallback.Sample(true, true) == Change::Halved && fallback.fitsToRestore == 300);
         CHECK(fallback.Sample(false, true) == Change::None && !fallback.active);
         for (int i = 0; i < 100; i++)
             CHECK(fallback.Sample(false, true) == Change::None && !fallback.active);
         CHECK(fallback.Sample(true, true) == Change::None); // re-enabling starts fresh
+    }
+    // A load's frames (a file opened in the last 5 s) are not counted; after it the window starts empty, and a game at
+    // 30 is back at 60 at once.
+    {
+        using Change = FrameRateFallback::Change;
+        FrameRateFallback fallback;
+        for (int i = 0; i < 600; i++)
+            fallback.Sample(true, false);
+        for (int i = 0; i < 19; i++)
+            CHECK(fallback.Sample(true, true) == Change::None);
+        for (int i = 0; i < 200; i++)
+            CHECK(fallback.Sample(true, true, true) == Change::None && !fallback.active);
+        for (int i = 0; i < 19; i++)
+            CHECK(fallback.Sample(true, true) == Change::None);
+        CHECK(fallback.Sample(true, true) == Change::Halved);
+        for (int i = 0; i < 50; i++)
+            CHECK(fallback.Sample(true, false, true) == Change::None && fallback.active);
+        CHECK(fallback.Sample(true, false) == Change::Restored && !fallback.active && fallback.fitsToRestore == 300);
+        for (int i = 0; i < 19; i++)
+            CHECK(fallback.Sample(true, true) == Change::None);
     }
     CHECK(run.settings.glyphs == "auto");
     CHECK(run.settings.gamepad.empty() && run.settings.language.empty() && run.settings.arguments.empty());

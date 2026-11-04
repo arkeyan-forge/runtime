@@ -1,5 +1,6 @@
 #include "kernel/video.h"
 #include "game.h"
+#include "kernel/files.h"
 #include "kernel/frame_limiter.h"
 #include "host/settings.h"
 #include "host/settings_fallback.h"
@@ -228,7 +229,13 @@ void WaitForFlip(uint32_t presentInterval)
     // fps_limit 60: halve the rate while the frames miss their blank, unless the player turned it off (g_halfRate).
     if (g_fpsLimit == 60 && vblanks == 1)
     {
-        const auto change = g_halfRate.Sample(FpsAutoFallback(), g_vblanks > g_lastFlip + 1);
+        // A load: up to 5 s after a file open (Swap Force decodes a figure for ~4 s after opening its files).
+        constexpr uint64_t LoadingNs = 5'000'000'000;
+        const uint64_t opened = LastFileOpenNs(), now = uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                                      std::chrono::steady_clock::now().time_since_epoch())
+                                                          .count());
+        const auto change =
+            g_halfRate.Sample(FpsAutoFallback(), g_vblanks > g_lastFlip + 1, opened != 0 && now - opened < LoadingNs);
         static bool told = false;
         static uint32_t logged = 0;
         if (change == FrameRateFallback::Change::Halved)
@@ -237,7 +244,7 @@ void WaitForFlip(uint32_t presentInterval)
                 ToyboxNotice("30 FPS: 60 not held", "30 FPS : 60 non tenu");
             if (logged++ < 20)
                 fprintf(stderr,
-                    "[video] fps limit 60: frames miss their 16.7 ms blank, shown at 30 FPS until they fit again\n");
+                    "[video] fps limit 60: frames miss their 16.7 ms blank: drop to 30 FPS until they fit again\n");
         }
         else if (change == FrameRateFallback::Change::Restored && logged++ < 20)
             fprintf(stderr, "[video] fps limit 60: frames fit in a blank again, back to 60 FPS\n");

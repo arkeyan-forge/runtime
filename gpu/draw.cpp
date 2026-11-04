@@ -1465,3 +1465,14 @@ void gpu::detail::ReadDebugDrawSnapshot(DebugSnapshot& result)
     }
     result.drawTimeBuilds = g_pipelineList.drawBuilds;
 }
+
+std::filesystem::path gpu::detail::PlayerDataFile(const char* name)
+{
+#if defined(SSA_SHADER_CACHE)
+    std::filesystem::path list = PipelineListPath();
+    return list.empty() ? list : list.parent_path() / name;
+#else
+    (void)name;
+    return {};
+#endif
+}

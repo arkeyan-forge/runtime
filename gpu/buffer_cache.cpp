@@ -12,6 +12,7 @@
 
 #define XXH_INLINE_ALL
 #include <xxhash.h>
+#include "gpu/range_hash.h"
 
 using namespace plume;
 using namespace gpu::detail;
@@ -162,8 +163,17 @@ namespace
     // SKY_BUFFER_STATS: cache activity every 60 submissions.
     struct Stats
     {
-        uint64_t acquire, staged, stagedBytes, promoted, hashed, hashedBytes, rewritten, evicted;
+        uint64_t acquire, staged, stagedBytes, promoted, hashed, hashedBytes, hashedDistinctBytes, rewritten, evicted;
     } g_stats;
+    const bool g_statsOn = skyenv::Get("SKY_BUFFER_STATS") != nullptr;
+    // The ranges hashed this frame, when g_statsOn: how much of the hashing overlaps (the same bytes in several keys).
+    std::vector<std::pair<uint32_t, uint32_t>> g_hashedRanges;
+    gpu::RangeHasher g_hasher;
+    // SKY_RANGE_HASH=0: every range hashed whole, as before the chunks (to measure).
+    const bool g_chunkedHash = [] {
+        const char* value = skyenv::Get("SKY_RANGE_HASH");
+        return value == nullptr || value[0] != '0';
+    }();
 
     uint32_t Swap32(uint32_t value)
     {
@@ -274,9 +284,13 @@ namespace
             // Drawn from in an earlier frame too: keep it resident, converted again only when the guest data changed.
             if (entry.validatedFrame != g_frame)
             {
-                uint64_t hash = XXH3_64bits(data, bytes);
+                uint64_t hash = g_chunkedHash
+                                    ? g_hasher.Hash(static_cast<const uint8_t*>(data), guestAddress, bytes, g_frame)
+                                    : XXH3_64bits(data, bytes);
                 g_stats.hashed++;
                 g_stats.hashedBytes += bytes;
+                if (g_statsOn)
+                    g_hashedRanges.emplace_back(guestAddress, guestAddress + bytes);
                 if (entry.resident.block == nullptr || hash != entry.contentHash)
                 {
                     g_stats.promoted += entry.resident.block == nullptr;
@@ -367,17 +381,31 @@ void gpu::BufferCacheFrameDone(uint64_t completed)
         }
     }
 
-    static bool stats = skyenv::Get("SKY_BUFFER_STATS") != nullptr;
-    if (stats && g_frame % 60 == 0)
+    if (g_statsOn)
+    {
+        std::sort(g_hashedRanges.begin(), g_hashedRanges.end());
+        uint32_t end = 0;
+        for (const auto& [from, to] : g_hashedRanges)
+        {
+            if (to > std::max(from, end))
+                g_stats.hashedDistinctBytes += to - std::max(from, end);
+            end = std::max(end, to);
+        }
+        g_hashedRanges.clear();
+    }
+    if (g_statsOn && g_frame % 60 == 0)
     {
         fprintf(stderr,
-            "[buffers] frame %llu, per frame: acquire %.0f staged %.1f (%.2f MB) promoted %.1f hashed %.0f (%.2f MB) "
-            "rewritten %.1f evicted %.1f; entries %zu, resident %.1f MB in %zu blocks\n",
+            "[buffers] frame %llu, per frame: acquire %.0f staged %.1f (%.2f MB) promoted %.1f hashed %.0f (%.2f MB, "
+            "%.2f MB distinct, %.2f MB read) rewritten %.1f evicted %.1f; entries %zu, resident %.1f MB in %zu "
+            "blocks\n",
             (unsigned long long)g_frame, g_stats.acquire / 60.0, g_stats.staged / 60.0,
             g_stats.stagedBytes / 60.0 / 1048576.0, g_stats.promoted / 60.0, g_stats.hashed / 60.0,
-            g_stats.hashedBytes / 60.0 / 1048576.0, g_stats.rewritten / 60.0, g_stats.evicted / 60.0, g_entries.size(),
+            g_stats.hashedBytes / 60.0 / 1048576.0, g_stats.hashedDistinctBytes / 60.0 / 1048576.0,
+            g_hasher.hashedBytes / 60.0 / 1048576.0, g_stats.rewritten / 60.0, g_stats.evicted / 60.0, g_entries.size(),
             g_residentBytes / 1048576.0, g_blocks.size());
         g_stats = {};
+        g_hasher.hashedBytes = 0;
     }
 }
 

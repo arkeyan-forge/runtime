@@ -28,6 +28,7 @@ namespace art::alchemy
     {
         uint32_t version;
         bool verified;
+        bool bigEndian = false; // IGA only: v11 comes in both byte orders
     };
     std::vector<FormatVersion> IgaVersions();
     std::vector<FormatVersion> IgzVersions();

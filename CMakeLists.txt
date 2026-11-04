@@ -18,6 +18,8 @@ elseif(SSA_GAME STREQUAL "swapforce")
     set(SSA_BUNDLE_ID SSFRecomp)
 elseif(SSA_GAME STREQUAL "trapteam")
     set(SSA_BUNDLE_ID TTRecomp)
+elseif(SSA_GAME STREQUAL "superchargers")
+    set(SSA_BUNDLE_ID SSCRecomp)
 else()
     set(SSA_BUNDLE_ID SSARecomp)
 endif()
@@ -284,6 +286,27 @@ add_executable(SSAToyboxTrapTest host/toybox/trap_villain_test.cpp host/toybox/t
 target_include_directories(SSAToyboxTrapTest PRIVATE .)
 target_link_libraries(SSAToyboxTrapTest PRIVATE SDL3::SDL3-static)
 
+# The remembered "resolution scale auto" step-down's file line: ./SSAAutoScaleTest
+add_executable(SSAAutoScaleTest gpu/auto_scale_test.cpp)
+target_include_directories(SSAAutoScaleTest PRIVATE .)
+
+# The depth write-back's tile-by-tile offsets against xenos::Tiled2D: ./SSATiledDepthTest
+add_executable(SSATiledDepthTest d3d/tiled_depth_test.cpp d3d/xenos.cpp)
+target_include_directories(SSATiledDepthTest PRIVATE .)
+target_link_libraries(SSATiledDepthTest PRIVATE plume SSAXenonUtils SDL3::SDL3-static)
+
+# The buffer cache's range hash (chunks shared by overlapping ranges): ./SSARangeHashTest
+add_executable(SSARangeHashTest gpu/range_hash_test.cpp)
+target_include_directories(SSARangeHashTest PRIVATE . ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/xxHash)
+
+# 16-bit vertex component pairs back in order after the 32-bit swap: ./SSAVertexPairsTest
+add_executable(SSAVertexPairsTest d3d/vertex_pairs_test.cpp)
+target_include_directories(SSAVertexPairsTest PRIVATE .)
+
+# Where host thunks go in the code's padding: ./SSAThunkSlotTest
+add_executable(SSAThunkSlotTest thunk_slot_test.cpp)
+target_include_directories(SSAThunkSlotTest PRIVATE .)
+
 # The frame rate limiter's schedule and wait, with a fake clock: ./SSAFrameLimiterTest
 add_executable(SSAFrameLimiterTest kernel/frame_limiter_test.cpp)
 target_include_directories(SSAFrameLimiterTest PRIVATE .)
@@ -441,6 +464,10 @@ add_executable(SSAGameDataTest host/collection/game_data_test.cpp host/collectio
     host/collection/portable_pack.cpp host/collection/json.cpp ${SSA_PLATFORM_SOURCES})
 target_include_directories(SSAGameDataTest PRIVATE .)
 target_link_libraries(SSAGameDataTest PRIVATE SDL3::SDL3-static)
+
+# The file list of the kit and of an installed game, and its checker (synthetic files, scratch folders only): ./SSAFileListTest <scratch dir>
+add_executable(SSAFileListTest host/collection/file_list_test.cpp host/collection/file_list.cpp host/collection/datadir.cpp)
+target_include_directories(SSAFileListTest PRIVATE .)
 
 # The disc reader on damaged and crafted images (synthetic files, scratch folders only): ./SSAVfsTest <scratch dir>
 add_executable(SSAVfsTest vfs_test.cpp vfs.cpp host/collection/portable_pack.cpp host/collection/json.cpp

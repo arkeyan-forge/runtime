@@ -95,6 +95,8 @@ namespace datadir
             return "SwapForce"; // two words
         if (id == "trapteam")
             return "TrapTeam";
+        if (id == "superchargers")
+            return "SuperChargers";
         std::string name(id);
         if (name.size() <= 3)
             std::transform(

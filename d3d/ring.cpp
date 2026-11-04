@@ -8,6 +8,9 @@
 #include <chrono>
 #include <mutex>
 #include <utility>
+#if defined(__APPLE__)
+#include <os/lock.h>
+#endif
 #include <ppc_config.h>
 #include <ppc_context.h>
 
@@ -21,7 +24,22 @@ namespace
 
     constexpr uint32_t WriteCursor = 0x30;       // device: the last word written
 
-    std::mutex g_mutex;
+#if defined(__APPLE__)
+    // Taken ~30 times a draw (GpuRegister, GpuRegisters, GpuFloatConstants): an unfair lock costs less than a pthread
+    // mutex there.
+    class RingMutex
+    {
+    public:
+        void lock() { os_unfair_lock_lock(&m_lock); }
+        void unlock() { os_unfair_lock_unlock(&m_lock); }
+
+    private:
+        os_unfair_lock m_lock = OS_UNFAIR_LOCK_INIT;
+    };
+#else
+    using RingMutex = std::mutex;
+#endif
+    RingMutex g_mutex;
     uint32_t g_cursor;
     uint32_t g_jumps;
     std::array<uint32_t, RegisterCount> g_values;

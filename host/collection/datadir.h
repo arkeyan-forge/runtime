@@ -23,7 +23,8 @@
 namespace datadir
 {
     std::filesystem::path Root();
-    // A game's folder from its catalogue id: "ssa" is "SSA", "giants" is "Giants", "swapforce" is "SwapForce", "trapteam" is "TrapTeam".
+    // A game's folder from its catalogue id: "ssa" is "SSA", "giants" is "Giants", "swapforce" is "SwapForce", "trapteam" is "TrapTeam",
+    // "superchargers" is "SuperChargers".
     std::string GameFolderName(std::string_view id);
     std::filesystem::path Game(std::string_view id = "ssa");
     std::filesystem::path LauncherIni();

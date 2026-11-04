@@ -27,6 +27,7 @@ namespace fs = std::filesystem;
 namespace
 {
     const auto g_processStart = std::chrono::steady_clock::now(); // set at start-up, like SKY_FRAME_TIMES's origin
+    std::atomic<uint64_t> g_lastOpenNs{ 0 };
     constexpr uint32_t StatusSuccess = 0;
     constexpr uint32_t StatusBufferOverflow = 0x80000005;
     constexpr uint32_t StatusNoMoreFiles = 0x80000006;
@@ -503,7 +504,13 @@ namespace
         }
 
         if (status == StatusSuccess)
+        {
             ::game::NoteFileOpen(file->path);
+            g_lastOpenNs.store(uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                   std::chrono::steady_clock::now().time_since_epoch())
+                                       .count()),
+                std::memory_order_relaxed);
+        }
         // The time since start (the same origin as SKY_FRAME_TIMES) times the loads (tools/perf/load_times.py).
         fprintf(stderr, "[file] open %s -> 0x%08X at %.3f s\n", file->path.c_str(), status,
             std::chrono::duration<double>(std::chrono::steady_clock::now() - g_processStart).count());
@@ -630,8 +637,9 @@ PPC_FUNC(__imp__NtReadFile)
 
     if (TraceFiles())
     {
-        fprintf(stderr, "[file] read %s @%llu len %u -> %u (event 0x%X apc 0x%X)\n", file->path.c_str(),
-            (unsigned long long)position, length, read, ctx.r4.u32, ctx.r5.u32);
+        fprintf(stderr, "[file] read %s @%llu len %u -> %u (event 0x%X apc 0x%X) at %.3f s\n", file->path.c_str(),
+            (unsigned long long)position, length, read, ctx.r4.u32, ctx.r5.u32,
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - g_processStart).count());
     }
 
     uint32_t status = file->directory            ? StatusInvalidDeviceRequest
@@ -1101,3 +1109,5 @@ PPC_FUNC(__imp__NtDeviceIoControlFile)
     WriteIoStatus(ctx.r7.u32, StatusInvalidDeviceRequest, 0);
     ctx.r3.u64 = StatusInvalidDeviceRequest;
 }
+
+uint64_t LastFileOpenNs() { return g_lastOpenNs.load(std::memory_order_relaxed); }
