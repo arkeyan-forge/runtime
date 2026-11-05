@@ -862,6 +862,7 @@ namespace
             std::lock_guard lock(g_mutex);
             if (DeviceLost())
                 return;
+            SettleCopies(texture);
             RenderCommandList& list = Record();
             Transition(list, *texture, RenderTextureLayout::COPY_DEST, RenderBarrierStage::COPY);
             list.copyTextureRegion(RenderTextureCopyLocation::Subresource(texture->texture.get(), mipLevel, arraySlice),
@@ -1093,6 +1094,8 @@ void gpu::detail::PresentNow(const Texture* image)
         SDL_Delay(16);
         return;
     }
+    if (image != nullptr)
+        SettleCopies(image);
     Context& c = *g_context;
     uint32_t imageIndex = 0;
     RenderTexture* target;
@@ -1238,6 +1241,7 @@ bool gpu::detail::ReadbackNow(
     Context& c = *g_context;
     if (texture == nullptr || DeviceLost())
         return false;
+    SettleCopies(texture);
 
     width = texture->desc.width;
     height = texture->desc.height;
@@ -1291,6 +1295,7 @@ void gpu::RequestReadback(const Texture* texture, uint32_t step, ReadbackConvert
         Context::RawReadback& slot = c.rawReadbacks[c.frames & 1];
         if (texture == nullptr || slot.pending || DeviceLost())
             return;
+        SettleCopies(texture);
 
         slot.width = texture->desc.width / step;
         slot.height = texture->desc.height / step;

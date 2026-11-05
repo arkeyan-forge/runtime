@@ -318,4 +318,7 @@ namespace gpu::detail
         const plume::RenderRect& region, uint32_t slice);
     void ResolveDepthNow(
         gpu::Texture* destination, uint32_t x, uint32_t y, gpu::Texture* source, const plume::RenderRect& region);
+    // Records the deferred resolve copies (draw.cpp, CopyTextureNow) that read or write `texture`, every one for nullptr:
+    // before anything else on the GPU thread reads or writes it. Under g_mutex.
+    void SettleCopies(const gpu::Texture* texture);
 }
