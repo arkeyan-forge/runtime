@@ -83,8 +83,9 @@ namespace game
 
         // [<game>] nightmare_from_start: the game's hardest difficulty offered from a new game, whatever the save says, and
         // locked again when the setting is off; the save is never written for it. nullptr: the game has no locked
-        // difficulty (Spyro's Adventure has none to choose, Giants' hardest is open from the start; Swap Force's Nightmare
-        // is locked until the story is beaten).
+        // difficulty (Spyro's Adventure has none to choose, Giants' hardest is open from the start, SuperChargers offers
+        // Nightmare from the start; Swap Force's and Imaginators' Nightmare is locked until the story is beaten; Trap
+        // Team's is too, its check not hooked yet).
         void (*SetNightmareFromStart)(bool on) = nullptr;
 
         // The level a file open starts ("level_027", the first component of the disc path it opens, lower case; empty for
