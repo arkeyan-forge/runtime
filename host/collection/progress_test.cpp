@@ -185,13 +185,19 @@ namespace
         achievements::List cached = achievements::ReadCache(folder, "fr");
         CHECK(cached.items.size() == direct.items.size());
         bool same = cached.items.size() == direct.items.size();
+        // The cache keeps each text on one line: a tab or a line break is a space there (SuperChargers' French
+        // descriptions end with line breaks).
+        auto oneLine = [](std::string text) {
+            std::replace_if(text.begin(), text.end(), [](char c) { return c == '\t' || c == '\n' || c == '\r'; }, ' ');
+            return text;
+        };
         for (size_t i = 0; same && i < cached.items.size(); i++)
         {
             const auto& a = cached.items[i];
             const auto& b = direct.items[i];
             same = a.id == b.id && a.gamerscore == b.gamerscore && a.imageId == b.imageId && a.hidden == b.hidden &&
-                   a.name == b.name && a.unlockedDescription == b.unlockedDescription &&
-                   a.lockedDescription == b.lockedDescription &&
+                   a.name == oneLine(b.name) && a.unlockedDescription == oneLine(b.unlockedDescription) &&
+                   a.lockedDescription == oneLine(b.lockedDescription) &&
                    fs::file_size(achievements::CachedImage(folder, a.imageId)) == b.imagePng.size();
         }
         CHECK(same);
