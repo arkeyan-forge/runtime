@@ -28,6 +28,8 @@
 #include "game.h"
 #include "game_hooks.h"
 #include "memory.h"
+#include "platform/clock.h"
+#include "write_watch.h"
 #include <algorithm>
 #include <atomic>
 #include <bit>
@@ -37,9 +39,6 @@
 #include <cstdio>
 #include <cstring>
 #include <array>
-#if defined(__APPLE__)
-#include <mach/mach_time.h>
-#endif
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -177,6 +176,8 @@ namespace
         uint64_t sampleHash = 0; // GuestSampleHash then
         uint64_t fullFrame = 0; // the frame of the next full check
         uint64_t glyphHash = 0; // the guest hash of the button glyph it holds (host/glyphs.h); 0: the game's texture
+        // writewatch::Watch of the guestHash bytes before their last full hash: unwritten since, guestHash holds.
+        uint64_t watchStamp = 0, watchBytes = 0;
     };
     std::unordered_map<uint64_t, HostTexture> g_textures;
 
@@ -303,21 +304,42 @@ namespace
 
     struct TextureStats
     {
-        uint64_t checks = 0, full = 0, bytes = 0, sampled = 0, missed = 0, changed = 0;
+        uint64_t checks = 0, full = 0, bytes = 0, sampled = 0, missed = 0, changed = 0, unwritten = 0, watchMissed = 0;
     } g_textureStats;
     const bool g_textureStatsOn = skyenv::Get("SKY_TEXTURE_STATS") != nullptr;
 
-    // The texture's guest hash this frame: GuestContentHash, or the last one when its sample says it did not change.
+    // The texture's guest hash this frame: GuestContentHash, or the last one when nothing wrote its pages since (the
+    // write watch: exact) or its sample says it did not change.
     uint64_t CheckGuestContent(
         HostTexture& host, uint64_t key, const xenos::TextureFetch& fetch, const xenos::TextureFormatInfo& info)
     {
         g_textureStats.checks++;
         uint64_t bytes = GuestContentBytes(fetch, info);
-        if (bytes < SampledBytes || PhysicalToGuest(fetch.BaseAddress()) == 0)
+        uint32_t guest = PhysicalToGuest(fetch.BaseAddress());
+        const void* data = guest != 0 ? g_memory.Translate(guest) : nullptr;
+        if (host.texture != nullptr && data != nullptr && bytes == host.watchBytes &&
+            writewatch::Unchanged(data, bytes, host.watchStamp))
+        {
+            g_textureStats.unwritten++;
+            if (!writewatch::Checking())
+                return host.guestHash;
+            if (GuestContentHash(fetch, info) != host.guestHash)
+            {
+                g_textureStats.watchMissed++;
+                fprintf(stderr, "[textures] the write watch missed a change: %08X format %u %ux%u, %llu bytes\n",
+                    fetch.BaseAddress(), fetch.Format(), fetch.Width(), fetch.Height(), (unsigned long long)bytes);
+            }
+        }
+        if (bytes < SampledBytes || guest == 0)
         {
             g_textureStats.full++;
             g_textureStats.bytes += bytes;
-            return GuestContentHash(fetch, info);
+            uint64_t stamp = data != nullptr ? writewatch::Watch(data, bytes) : 0;
+            uint64_t hash = GuestContentHash(fetch, info);
+            host.guestHash = hash;
+            host.watchStamp = stamp;
+            host.watchBytes = bytes;
+            return hash;
         }
         uint64_t sample = GuestSampleHash(fetch, bytes);
         if (host.texture != nullptr && sample == host.sampleHash && g_frame < host.fullFrame)
@@ -336,6 +358,7 @@ namespace
         }
         g_textureStats.full++;
         g_textureStats.bytes += bytes;
+        uint64_t stamp = writewatch::Watch(data, bytes);
         uint64_t hash = GuestContentHash(fetch, info);
         bool changed = host.texture != nullptr && hash != host.guestHash;
         g_textureStats.changed += changed;
@@ -344,6 +367,8 @@ namespace
         host.fullFrame = g_frame + (host.fullFrame == 0 ? 1 + key % FullCheckFrames : changed ? 1 : FullCheckFrames);
         host.guestHash = hash;
         host.sampleHash = sample;
+        host.watchStamp = stamp;
+        host.watchBytes = bytes;
         return hash;
     }
 
@@ -511,20 +536,24 @@ namespace
     // The perf log's texture time: hashing the guest data, copying it and (without the GPU thread) decoding it. A texture
     // already checked this frame (most draws' textures) returns before the timer: its two clock reads cost more than the
     // lookup.
-    gpu::Texture* TextureFor(const xenos::TextureFetch& fetch)
+    // `entry`: the texture's entry in g_textures (nullptr if it has none), for the caller's own reads of it.
+    gpu::Texture* TextureFor(const xenos::TextureFetch& fetch, HostTexture*& entry)
     {
         if (fetch.Type() != 2 || fetch.Dimension() == 2)
+        {
+            auto found = g_textures.find(TextureKey(fetch));
+            entry = found != g_textures.end() ? &found->second : nullptr;
             return nullptr; // 3D textures: not yet (a 1D one is a 2D texture of one row, as the translated shaders sample it)
+        }
         const xenos::TextureFormatInfo& info = xenos::TextureFormat(fetch.Format());
         uint64_t key = TextureKey(fetch);
         HostTexture& host = g_textures[key];
+        entry = &host;
         if (host.resolved || info.host == gpu::Format::UNKNOWN || host.checkedFrame == g_frame)
             return host.texture;
-        auto start = std::chrono::steady_clock::now();
+        const uint64_t start = PlatformNowNs();
         gpu::Texture* texture = TextureForUntimed(fetch, info, key, host);
-        gpu::AddFrameTime(gpu::FrameTime::Textures,
-            uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start)
-                    .count()));
+        gpu::AddFrameTime(gpu::FrameTime::Textures, PlatformNowNs() - start);
         return texture;
     }
 
@@ -1057,16 +1086,15 @@ namespace
                 fetch.dword[i] = fetchConstants[slot * 6 + i];
             if (fetch.Type() != 2)
                 continue;
-            draw.textures[slot] = TextureFor(fetch);
-            auto host = g_textures.find(TextureKey(fetch));
-            if (host != g_textures.end() && host->second.glyphHash != 0)
+            HostTexture* host;
+            draw.textures[slot] = TextureFor(fetch, host);
+            if (host != nullptr && host->glyphHash != 0)
             {
-                g_drawGlyphs[slot] = host->second.glyphHash;
+                g_drawGlyphs[slot] = host->glyphHash;
                 glyphBound = true;
             }
-            draw.swizzles[slot] = SwizzleFor(fetch, host != g_textures.end() && host->second.swapRB);
-            if (host != g_textures.end() && host->second.resolved &&
-                gpu::Desc(host->second.texture).width != fetch.Width())
+            draw.swizzles[slot] = SwizzleFor(fetch, host != nullptr && host->swapRB);
+            if (host != nullptr && host->resolved && gpu::Desc(host->texture).width != fetch.Width())
                 draw.scaledTextures |= 1u << slot; // a resolve: resolution-scale times its guest size
             draw.samplers[slot] = SamplerFor(fetch);
         }
@@ -1085,9 +1113,9 @@ namespace
                     fetch.dword[i] = vertexFetch[slot * 6 + i];
                 if ((vs->samplers & (1u << slot)) == 0 || fetch.Type() != 2)
                     continue;
-                draw.vertexTextures[slot] = TextureFor(fetch);
-                auto host = g_textures.find(TextureKey(fetch));
-                draw.vertexSwizzles[slot] = SwizzleFor(fetch, host != g_textures.end() && host->second.swapRB);
+                HostTexture* host;
+                draw.vertexTextures[slot] = TextureFor(fetch, host);
+                draw.vertexSwizzles[slot] = SwizzleFor(fetch, host != nullptr && host->swapRB);
                 draw.vertexSamplers[slot] = SamplerFor(fetch);
             }
         }
@@ -1193,22 +1221,31 @@ namespace
         g_streamData.resize(gpu::MaxVertexStreams);
         // Vertex data is byte-swapped in 32-bit words, which swaps the halves of 16-bit component pairs; for
         // texture coordinates the translated shaders swap them back (.yxwz) when told to. Any other input in such a
-        // format (a SHORT4N position) is swapped back here, on a CPU copy of its stream.
+        // format (a SHORT4N position, FLOAT16_4 normals) is swapped back when its stream is converted: by the buffer
+        // cache (pairWords), or on a CPU copy where the cache is not used or the mask cannot describe the element.
         auto sixteenBitPairs = [](gpu::Format host) {
             return host == gpu::Format::R16G16_FLOAT || host == gpu::Format::R16G16_SINT ||
                    host == gpu::Format::R16G16_SNORM || host == gpu::Format::R16G16_UNORM ||
                    host == gpu::Format::R16G16B16A16_FLOAT || host == gpu::Format::R16G16B16A16_SINT ||
                    host == gpu::Format::R16G16B16A16_SNORM || host == gpu::Format::R16G16B16A16_UNORM;
         };
-        uint32_t pairStreams = 0;
+        uint64_t pairWords[16] = {};
+        uint32_t unmaskedPairStreams = 0;
         for (uint32_t i = 0; i < elementCount; i++)
         {
             uint32_t element = declaration + 0x34 + i * 12;
             uint32_t stream = g_memory.Read<uint16_t>(element);
-            if (stream < 16 && g_memory.Read<uint8_t>(element + 9) != 5 &&
-                sixteenBitPairs(xenos::VertexFormat(Read32(element + 4)).host))
-                pairStreams |= 1u << stream;
+            xenos::VertexFormatInfo format = xenos::VertexFormat(Read32(element + 4));
+            if (stream < 16 && g_memory.Read<uint8_t>(element + 9) != 5 && sixteenBitPairs(format.host))
+            {
+                uint64_t words = d3d::PairWords(g_memory.Read<uint16_t>(element + 2), format.size);
+                pairWords[stream] |= words;
+                unmaskedPairStreams |= uint32_t(words == 0) << stream;
+            }
         }
+        // The cached streams start at vertexStart (IssueDraw moves the draw's base to match), so do their CPU copies.
+        const bool fromVertexStart = upData == 0 && !expand && !g_dump.active;
+        uint32_t cachedStreams = 0;
         for (uint32_t i = 0; i < elementCount; i++)
         {
             uint32_t element = declaration + 0x34 + i * 12;
@@ -1264,24 +1301,30 @@ namespace
                 streamGuest[stream] = guest;
                 streamBytes[stream] = bytes;
                 streamStride[stream] = stride;
-                if (upData == 0 && !expand && !g_dump.active && ((pairStreams >> stream) & 1) == 0)
+                uint32_t begin = 0, end = bytes;
+                if (fromVertexStart)
+                {
+                    begin = uint32_t(std::min<uint64_t>(uint64_t(vertexStart) * stride, bytes));
+                    end = uint32_t(std::clamp<uint64_t>(uint64_t(vertexEnd) * stride, begin, bytes));
+                }
+                if (fromVertexStart && ((unmaskedPairStreams >> stream) & 1) == 0)
                 {
                     // Keep the converted vertices on the GPU: level geometry is shared by many draws.
-                    uint32_t begin = uint32_t(std::min<uint64_t>(uint64_t(vertexStart) * stride, bytes));
-                    uint32_t end = uint32_t(std::clamp<uint64_t>(uint64_t(vertexEnd) * stride, begin, bytes));
                     draw.streams[slot] = { nullptr, end - begin, stride, false,
-                        gpu::CacheVertices(g_memory.Translate(guest + begin), guest + begin, end - begin) };
+                        gpu::CacheVertices(
+                            g_memory.Translate(guest + begin), guest + begin, end - begin, stride, pairWords[stream]) };
+                    cachedStreams |= 1u << stream;
                 }
                 else
                 {
-                    data.assign(static_cast<uint8_t*>(g_memory.Translate(guest)),
-                        static_cast<uint8_t*>(g_memory.Translate(guest)) + bytes);
+                    data.assign(static_cast<uint8_t*>(g_memory.Translate(guest + begin)),
+                        static_cast<uint8_t*>(g_memory.Translate(guest + begin)) + (end - begin));
                     xenos::SwapEndian(data.data(), data.size(), 2);
-                    draw.streams[slot] = { data.data(), bytes, stride, false, {} };
+                    draw.streams[slot] = { data.data(), end - begin, stride, false, {} };
                 }
             }
 
-            if (usage != 5 && pairs)
+            if (usage != 5 && pairs && ((cachedStreams >> stream) & 1) == 0)
             {
                 std::vector<uint8_t>& data = g_streamData[streamSlots[stream]];
                 d3d::SwapHalfPairs(data.data(), data.size(), streamStride[stream], offset, format.size);
@@ -1997,24 +2040,6 @@ void d3d::Draw(uint32_t device, uint32_t primitive, uint32_t first, uint32_t cou
 
 namespace
 {
-    // For durations only (the perf log's renderer time, two calls a draw): mach_absolute_time costs a third of
-    // steady_clock::now on macOS (6 against 19 ns).
-    uint64_t NowNs()
-    {
-#if defined(__APPLE__)
-        static const mach_timebase_info_data_t timebase = [] {
-            mach_timebase_info_data_t info;
-            mach_timebase_info(&info);
-            return info;
-        }();
-        return mach_absolute_time() * timebase.numer / timebase.denom;
-#else
-        return uint64_t(
-            std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
-                .count());
-#endif
-    }
-
     // The perf log's renderer time (gpu::AddFrameTime) for one hooked D3D call: all of it but what Exclude runs (the
     // guest's own function, the vblank wait, the present), which nested hooks count themselves.
     class RendererTimer
@@ -2023,14 +2048,14 @@ namespace
         template <typename F>
         void Exclude(F&& function)
         {
-            uint64_t start = NowNs();
+            uint64_t start = PlatformNowNs();
             function();
-            m_excluded += NowNs() - start;
+            m_excluded += PlatformNowNs() - start;
         }
-        ~RendererTimer() { gpu::AddFrameTime(gpu::FrameTime::Renderer, NowNs() - m_start - m_excluded); }
+        ~RendererTimer() { gpu::AddFrameTime(gpu::FrameTime::Renderer, PlatformNowNs() - m_start - m_excluded); }
 
     private:
-        uint64_t m_start = NowNs();
+        uint64_t m_start = PlatformNowNs();
         uint64_t m_excluded = 0;
     };
 }
@@ -2173,11 +2198,11 @@ PPC_FUNC(GAME_HOOK(D3DDevice_Swap))
     CaptureSwap(ctx);
     auto ready = std::chrono::steady_clock::now();
     timer.Exclude([&] {
-        uint64_t waitStart = NowNs();
+        uint64_t waitStart = PlatformNowNs();
         WaitForFlip(
             Read32(ctx.r3.u32 +
                    Device::PresentInterval)); // D3DRS_PRESENTINTERVAL: the console shows frames at vertical blanks
-        gpu::AddFrameTime(gpu::FrameTime::VblankWait, NowNs() - waitStart);
+        gpu::AddFrameTime(gpu::FrameTime::VblankWait, PlatformNowNs() - waitStart);
     });
     {
         std::lock_guard lock(g_mutex);
@@ -2252,10 +2277,12 @@ PPC_FUNC(GAME_HOOK(D3DDevice_Swap))
         {
             fprintf(stderr,
                 "[textures] last 60 frames, per frame: %.1f checked, %.1f hashed whole (%.2f MB), %.1f by sample; "
-                "%llu changes of sampled textures found, %llu missed by the sample\n",
+                "%llu changes of sampled textures found, %llu missed by the sample; %.1f unwritten (write watch), "
+                "%llu missed by it\n",
                 g_textureStats.checks / 60.0, g_textureStats.full / 60.0, g_textureStats.bytes / 60.0 / 1048576,
                 g_textureStats.sampled / 60.0, (unsigned long long)g_textureStats.changed,
-                (unsigned long long)g_textureStats.missed);
+                (unsigned long long)g_textureStats.missed, g_textureStats.unwritten / 60.0,
+                (unsigned long long)g_textureStats.watchMissed);
             g_textureStats = {};
         }
         g_stats = {};

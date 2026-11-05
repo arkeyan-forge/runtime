@@ -215,6 +215,37 @@ bool PlatformProtectReadOnly(void* address, size_t size, bool readOnly)
 #endif
 }
 
+size_t PlatformPageSize()
+{
+    SYSTEM_INFO info;
+    GetSystemInfo(&info);
+    return info.dwPageSize;
+}
+
+namespace
+{
+    bool (*volatile g_writeFaultFilter)(void* address);
+
+    // A write to a page write_watch.cpp made read-only; anything else goes on to the other handlers. ExceptionInformation:
+    // [0] 1 for a write, [1] the address.
+    LONG WINAPI OnWriteFault(EXCEPTION_POINTERS* pointers)
+    {
+        const EXCEPTION_RECORD& record = *pointers->ExceptionRecord;
+        bool (*filter)(void*) = g_writeFaultFilter;
+        if (filter != nullptr && record.ExceptionCode == EXCEPTION_ACCESS_VIOLATION && record.NumberParameters >= 2 &&
+            record.ExceptionInformation[0] == 1 && filter(reinterpret_cast<void*>(record.ExceptionInformation[1])))
+            return EXCEPTION_CONTINUE_EXECUTION;
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+}
+
+bool PlatformInstallWriteFaultFilter(bool (*handled)(void* address))
+{
+    g_writeFaultFilter = handled;
+    static void* const installed = AddVectoredExceptionHandler(1, OnWriteFault);
+    return installed != nullptr;
+}
+
 void PlatformStartThread(size_t stackSize, std::function<void()> body)
 {
     // The stack size is a reservation: pages are committed as the stack grows.

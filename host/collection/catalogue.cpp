@@ -25,7 +25,7 @@ namespace collection
             "chrome", "flocked", "series", "lightcore", "eons_elite", "alt_deco", "event", "shape", "other" };
         const char* const KindNames[] = { "Standard", "Legendary", "Dark", "Crystal Clear", "Glow in the Dark",
             "Metallic", "Gold", "Silver", "Chrome", "Flocked", "Series", "LightCore", "Eon's Elite", "Alternate deco",
-            "Event and exclusive", "Trap shape", "Other" };
+            "Event and exclusive", "Shape", "Other" };
         static_assert(
             std::size(ElementIds) == size_t(Element::Count) && std::size(CategoryIds) == size_t(Category::Count));
         static_assert(
@@ -41,6 +41,19 @@ namespace collection
                     return int(i);
             }
             return int(N);
+        }
+
+        // A toy whose variant id is its shape (Trap Team's traps, Imaginators' crystals), not a decoration.
+        bool Shaped(const Toy* toy)
+        {
+            return toy->category == Category::Trap || toy->category == Category::CreationCrystal;
+        }
+
+        // SuperChargers and later write the year and a flag on the plain figure too (0x4000 vehicles and trophies,
+        // 0x4100 SuperChargers, 0x5000 Senseis: the owner's dumps) [V]: no decoration, the toy itself.
+        bool PlainLater(const Toy* toy, uint16_t variant)
+        {
+            return !Shaped(toy) && (variant >> 12) >= 4 && (variant & 0xFF) == 0;
         }
 
         bool ReadToy(const Json& json, Toy& toy, std::string& error)
@@ -304,7 +317,8 @@ namespace collection
             if (!v.sameTag && v.id == variant)
                 entry = &v;
         }
-        if (variant == 0 || (entry != nullptr && entry->kind == VariantKind::Base))
+        if (variant == 0 || (entry != nullptr && entry->kind == VariantKind::Base) ||
+            (entry == nullptr && PlainLater(toy, variant)))
             return reading;
         // A game tells a variant apart when the toy has a definition for it: Giants' and Swap Force's tables carry a figure's
         // id as bit flags (11: repose, 10: alternate deco or Legendary, 9: LightCore) and a deco in the low byte, and only a
@@ -314,7 +328,7 @@ namespace collection
         // Swap Force the same [?]; Trap Team and later games are taken to tell every variant of the older years apart [?].
         const int newest = game->year - 2011;
         auto known = [&](const Variant& v) {
-            if (v.sameTag || v.kind == VariantKind::Base || toy->category == Category::Trap || int(v.id >> 12) > newest)
+            if (v.sameTag || v.kind == VariantKind::Base || Shaped(toy) || int(v.id >> 12) > newest)
                 return false;
             if (newest >= 3)
                 return true;
@@ -330,9 +344,9 @@ namespace collection
             reading.exact = true;
             return reading;
         }
-        if (toy->category == Category::Trap)
+        if (Shaped(toy))
         {
-            // A trap's variant is its shape: every game that reads the toy reads its shapes.
+            // A trap's or a crystal's variant is its shape: every game that reads the toy reads its shapes.
             if (entry != nullptr && newest >= 3)
             {
                 reading.seen = entry;
@@ -381,7 +395,9 @@ namespace collection
     VariantInfo Catalogue::Describe(const Toy* toy, uint16_t variant) const
     {
         std::string base = toy != nullptr ? toy->name : "Unknown toy";
-        if (variant == 0)
+        if (variant == 0 || (toy != nullptr && PlainLater(toy, variant) &&
+                                std::none_of(toy->variants.begin(), toy->variants.end(),
+                                    [&](const Variant& v) { return !v.sameTag && v.id == variant; })))
             return { base, toy != nullptr ? toy->edition : VariantKind::Base, toy != nullptr };
         if (toy != nullptr)
         {
@@ -396,7 +412,7 @@ namespace collection
             const Variant* same = nullptr;
             int fits = 0;
             for (const Variant& known : toy->variants)
-                if (!known.sameTag && toy->category != Category::Trap && (known.id & 0x0FFF) == (variant & 0x0FFF))
+                if (!known.sameTag && !Shaped(toy) && (known.id & 0x0FFF) == (variant & 0x0FFF))
                     same = &known, fits++;
             if (fits == 1)
                 return { same->name, same->kind, false };
@@ -408,7 +424,7 @@ namespace collection
         char text[64];
         int year = variant >> 12, deco = variant & 0xFF;
         VariantInfo info{ {}, VariantKind::Other, false };
-        if (toy != nullptr && toy->category == Category::Trap)
+        if (toy != nullptr && Shaped(toy))
         {
             snprintf(text, sizeof(text), " (shape %04X)", variant);
             info = { base + text, VariantKind::Shape, false };

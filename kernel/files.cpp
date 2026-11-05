@@ -6,6 +6,7 @@
 #include "kernel/overlapped.h"
 #include "thread.h"
 #include "vfs.h"
+#include "write_watch.h"
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -621,6 +622,8 @@ PPC_FUNC(__imp__NtReadFile)
 
     uint64_t position = TransferPosition(*file, ctx.r10.u32);
     uint32_t read = 0;
+    // A system call writes the buffer: watched pages would make it fail instead of faulting.
+    writewatch::WillWrite(g_memory.Translate(buffer), length);
     if (!file->OnHost())
     {
         read = g_disc.Read(*file->entry, position, g_memory.Translate(buffer), length);

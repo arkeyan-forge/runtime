@@ -113,6 +113,10 @@ namespace game
         // The levels that are the game's own menus (game::LevelStarted's names: its front end), where the mouse does
         // nothing and the pointer is not held. The menus inside a level (pause) cannot be told from play.
         std::span<const std::string_view> menuLevels = {};
+
+        // The widest full-resolution scene (fullScene) a wide window gets: past it the scene keeps the window's shape at a
+        // smaller height (d3d/ultrawide.h). 0: no limit. SuperChargers stops in its hub with a 2560x720 scene (32:9).
+        uint32_t maxSceneWidth = 0;
     };
 
     // The adapter of the game being built, defined by games/<id>/adapter.cpp.

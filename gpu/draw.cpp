@@ -2,6 +2,7 @@
 #include "gpu/buffer_cache.h"
 #include "gpu/context.h"
 #include "host/collection/datadir.h"
+#include "platform/clock.h"
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_stdinc.h>
 #include <SDL3/SDL_timer.h>
@@ -156,6 +157,9 @@ namespace
         std::vector<std::unique_ptr<RenderSampler>> samplers;
         std::vector<gpu::SamplerState> samplerStates; // by slot
         std::unordered_map<uint64_t, uint32_t> samplerSlots; // by hash of the SamplerState bytes
+        // The slot each sampler register of the last draw used (pixel, then vertex): most draws keep their samplers,
+        // and comparing the state costs less than hashing it.
+        uint32_t lastSamplerSlots[gpu::MaxSamplers + gpu::MaxVertexSamplers] = {};
 
         std::vector<uint8_t> shaderCode; // decompressed shader cache of the running backend
         // Shaders and pipelines are also built by the precompile threads (PrecompilePipelines), which never take g_mutex.
@@ -262,6 +266,15 @@ namespace
         g_draw->heaps[SamplerHeap]->setSampler(slot, g_draw->samplers.back().get());
         g_draw->samplerSlots[key] = slot;
         return slot;
+    }
+
+    // SamplerSlot for sampler register `index`, through the slot it had at the last draw.
+    uint32_t SamplerSlotOf(uint32_t index, const gpu::SamplerState& state)
+    {
+        uint32_t& last = g_draw->lastSamplerSlots[index];
+        if (last < g_draw->samplerStates.size() && memcmp(&g_draw->samplerStates[last], &state, sizeof(state)) == 0)
+            return last;
+        return last = SamplerSlot(state);
     }
 
 #if defined(SSA_SHADER_CACHE) // the pipeline list and its precompiling start from the shader cache
@@ -911,14 +924,21 @@ namespace
     {
         RenderBuffer* buffer;
         uint64_t offset = AllocateStaging(std::max<uint64_t>(size, 4), buffer, alignment);
-        if (auto mapped = static_cast<uint8_t*>(buffer->map()))
+        if (uint8_t* mapped = StagingMemory())
             memcpy(mapped + offset, data, size);
         else
             CheckDeviceLost();
-        buffer->unmap();
         if (address != nullptr)
             *address = buffer->getDeviceAddress() + offset;
         return buffer->at(offset);
+    }
+
+    // A group's hash as it enters gpu::Draw's mirror hash: its index mixed in, so equal groups at two places do not
+    // cancel each other.
+    uint64_t MixGroupHash(uint64_t hash, uint32_t group)
+    {
+        uint64_t value = (hash + group * 0x9E3779B97F4A7C15ull) * 0xC2B2AE3D27D4EB4Full;
+        return value ^ (value >> 29);
     }
 
     uint32_t SwapConstant(uint32_t value)
@@ -936,7 +956,7 @@ namespace
     uint64_t g_lastConstantsId;
     RenderBufferReference g_lastConstants;
 
-    RenderBufferReference UploadConstants(const void* guest, uint64_t id, uint64_t* address)
+    RenderBufferReference UploadConstants(const void* guest, uint64_t id, uint64_t given, uint64_t* address)
     {
         constexpr uint64_t Size = 2 * gpu::FloatConstantCount * 16;
         if (id != 0 && id == g_lastConstantsId)
@@ -945,7 +965,7 @@ namespace
             return g_lastConstants;
         }
         g_lastConstantsId = id;
-        uint64_t hash = XXH3_64bits(guest, Size);
+        uint64_t hash = given != 0 ? given : XXH3_64bits(guest, Size);
         auto it = g_frameConstants.find(hash);
         if (it != g_frameConstants.end())
         {
@@ -956,7 +976,7 @@ namespace
 
         RenderBuffer* buffer;
         uint64_t offset = AllocateStaging(Size, buffer, ConstantAlignment);
-        auto mapped = static_cast<uint8_t*>(buffer->map());
+        uint8_t* mapped = StagingMemory();
         if (mapped == nullptr)
         {
             CheckDeviceLost();
@@ -968,7 +988,6 @@ namespace
         auto* source = static_cast<const uint32_t*>(guest);
         for (uint32_t i = 0; i < 2 * gpu::FloatConstantCount * 4; i++)
             destination[i] = SwapConstant(source[i]);
-        buffer->unmap();
 
         RenderBufferReference reference = buffer->at(offset);
         *address = buffer->getDeviceAddress() + offset;
@@ -1104,6 +1123,14 @@ void gpu::Draw(const DrawDesc& draw)
     // A copy for the GPU thread, with the data the draw points at (valid only until the caller's next draw). Guest
     // constants go to the GPU thread's own copy, as the groups of 16 registers that changed since the last draw.
     static std::array<uint32_t, 2 * FloatConstantCount * 4> mirror; // the GPU thread's copy
+    // The GPU thread's hash of `mirror`: the XOR of each group's hash mixed with its index, updated as groups change.
+    static std::array<uint64_t, 2 * FloatConstantCount / 4> groupHashes;
+    static uint64_t mirrorHash = [] {
+        uint64_t hash = 0;
+        for (uint32_t group = 0; group < 2 * FloatConstantCount / 4; group++)
+            hash ^= MixGroupHash(0, group);
+        return hash;
+    }();
     static std::array<uint32_t, 2 * FloatConstantCount / 4> sentVersions;
     static bool versionsSent;
     static uint64_t constantsId;
@@ -1137,7 +1164,13 @@ void gpu::Draw(const DrawDesc& draw)
             memcpy(groups, changed, count);
             Enqueue([words, groups, count] {
                 for (uint32_t i = 0; i < count; i++)
-                    memcpy(mirror.data() + groups[i] * GroupWords, words + i * GroupWords, GroupWords * 4);
+                {
+                    const uint32_t group = groups[i];
+                    memcpy(mirror.data() + group * GroupWords, words + i * GroupWords, GroupWords * 4);
+                    const uint64_t hash = XXH3_64bits(words + i * GroupWords, GroupWords * 4);
+                    mirrorHash ^= MixGroupHash(groupHashes[group], group) ^ MixGroupHash(hash, group);
+                    groupHashes[group] = hash;
+                }
             });
             versionsSent = draw.guestConstantGroups != nullptr;
             if (versionsSent)
@@ -1146,6 +1179,11 @@ void gpu::Draw(const DrawDesc& draw)
         }
         copy->guestConstants = mirror.data();
         copy->guestConstantsId = constantsId;
+        Enqueue([copy] {
+            copy->guestConstantsHash = mirrorHash | 1; // 0 means "not given"
+            DrawNow(*copy);
+        });
+        return;
     }
     Enqueue([copy] { DrawNow(*copy); });
 }
@@ -1158,10 +1196,10 @@ void gpu::detail::DrawNow(const DrawDesc& draw)
     // The perf log's draw time (gpu.cpp LogPerf).
     struct Timer
     {
-        uint64_t start = SDL_GetTicksNS();
+        uint64_t start = PlatformNowNs();
         ~Timer()
         {
-            g_context->perf.drawNs += SDL_GetTicksNS() - start;
+            g_context->perf.drawNs += PlatformNowNs() - start;
             g_context->perf.draws++;
         }
     } timer;
@@ -1190,7 +1228,7 @@ void gpu::detail::DrawNow(const DrawDesc& draw)
         Texture* texture = draw.textures[i];
         if (texture == nullptr)
             continue;
-        shared.sampler[i] = SamplerSlot(draw.samplers[i]);
+        shared.sampler[i] = SamplerSlotOf(i, draw.samplers[i]);
         Transition(list, *texture, RenderTextureLayout::SHADER_READ, RenderBarrierStage::GRAPHICS);
         uint32_t slot = TextureSlot(texture, draw.swizzles[i]);
         switch (HeapOf(*texture))
@@ -1205,7 +1243,7 @@ void gpu::detail::DrawNow(const DrawDesc& draw)
         Texture* texture = draw.vertexTextures[i];
         if (texture == nullptr)
             continue;
-        shared.vertexSampler[i] = SamplerSlot(draw.vertexSamplers[i]);
+        shared.vertexSampler[i] = SamplerSlotOf(MaxSamplers + i, draw.vertexSamplers[i]);
         Transition(list, *texture, RenderTextureLayout::SHADER_READ, RenderBarrierStage::GRAPHICS);
         shared.vertexTexture2D[i] = TextureSlot(texture, draw.vertexSwizzles[i]);
     }
@@ -1231,8 +1269,8 @@ void gpu::detail::DrawNow(const DrawDesc& draw)
     RenderBufferReference vertexConstants, pixelConstants, pulledVertices;
     if (draw.guestConstants != nullptr)
     {
-        vertexConstants = pixelConstants =
-            UploadConstants(draw.guestConstants, draw.guestConstantsId, &push.vertexShaderConstants);
+        vertexConstants = pixelConstants = UploadConstants(
+            draw.guestConstants, draw.guestConstantsId, draw.guestConstantsHash, &push.vertexShaderConstants);
         pixelConstants.offset += FloatConstantCount * 16;
         push.pixelShaderConstants = push.vertexShaderConstants + FloatConstantCount * 16;
     }

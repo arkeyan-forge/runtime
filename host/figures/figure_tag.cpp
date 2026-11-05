@@ -22,9 +22,20 @@ namespace figures
             0x01 }; // stands for the checksum while it is computed (05 00 in the first areas)
         constexpr uint8_t AccessReadOnly[4] = { 0x0F, 0x0F, 0x0F, 0x69 };
         constexpr uint8_t AccessReadWrite[4] = { 0x7F, 0x0F, 0x08, 0x69 };
+        constexpr uint8_t Access2016[4] = { 0xFF, 0x07, 0x80, 0x69 };
+        constexpr uint8_t SignatureKey2016 = 0x51;
 
         bool IsTrailer(size_t block) { return block % 4 == 3; }
         bool IsTrap(const FigureData& tag) { return ToyType(tag) >= 210 && ToyType(tag) <= 220; }
+        bool IsCrystal(const FigureData& tag) { return IsCrystalType(ToyType(tag)); }
+        // Blocks 34 and 62 of an Imaginators toy: the second half of its factory signature, stored as it is (never
+        // encrypted): a tag our tools make keeps them zero, a real one keeps its own.
+        bool IsSignatureBlock(const FigureData& tag, size_t block)
+        {
+            return (block == 34 || block == 62) && ToyType(tag) >= 600 && ToyType(tag) <= 699;
+        }
+        // Traps and crystals: one pair of 21 data blocks instead of the character areas.
+        bool IsPairLayout(const FigureData& tag) { return IsTrap(tag) || IsCrystal(tag); }
         bool IsZero(const uint8_t* data, size_t size)
         {
             for (size_t i = 0; i < size; i++)
@@ -119,10 +130,32 @@ namespace figures
             Put16(a.data() + 0x0E, HeaderChecksum(a.data()));
         }
 
-        int NewestTrap(const TrapArea& a, const TrapArea& b)
+        // A crystal's copy: the trap's checksums, 0x0A over 16 blocks (the 21st is the factory signature's).
+        bool CrystalValid(const TrapArea& a)
         {
-            bool validA = TrapValid(a), validB = TrapValid(b);
+            return Le16(a.data() + 0x0E) == HeaderChecksum(a.data()) &&
+                   Le16(a.data() + 0x0C) == FigureChecksum(a.data() + 0x10, 3 * FigureBlockSize) &&
+                   Le16(a.data() + 0x0A) == FigureChecksum(a.data() + 0x40, 16 * FigureBlockSize);
+        }
+
+        void SealCrystal(TrapArea& a)
+        {
+            Put16(a.data() + 0x0A, FigureChecksum(a.data() + 0x40, 16 * FigureBlockSize));
+            Put16(a.data() + 0x0C, FigureChecksum(a.data() + 0x10, 3 * FigureBlockSize));
+            Put16(a.data() + 0x0E, HeaderChecksum(a.data()));
+        }
+
+        // The newer of two copies (0, 1), -1 if neither is valid: adjacent sequences modulo 256.
+        int NewestOf(bool validA, bool validB, const TrapArea& a, const TrapArea& b)
+        {
             return validA && validB ? (uint8_t(a[9] + 1) == b[9] ? 1 : 0) : validA ? 0 : validB ? 1 : -1;
+        }
+
+        int NewestTrap(const TrapArea& a, const TrapArea& b) { return NewestOf(TrapValid(a), TrapValid(b), a, b); }
+
+        int NewestCrystal(const TrapArea& a, const TrapArea& b)
+        {
+            return NewestOf(CrystalValid(a), CrystalValid(b), a, b);
         }
 
         uint16_t FirstChecksum(const uint8_t* a)
@@ -283,7 +316,7 @@ namespace figures
         for (size_t block = 8; block < FigureBlockCount; block++)
         {
             uint8_t* data = plain.data() + block * FigureBlockSize;
-            if (!IsTrailer(block) && !IsZero(data, FigureBlockSize))
+            if (!IsTrailer(block) && !IsSignatureBlock(tag, block) && !IsZero(data, FigureBlockSize))
                 BlockCipher(tag, block).Decrypt(data, data);
         }
         return plain;
@@ -293,13 +326,15 @@ namespace figures
     {
         // Every block of an area in use is encrypted, zero or not (the title does the same); other zero blocks are
         // left zero, as on a new figure.
-        bool trap = IsTrap(plain);
+        bool trap = IsPairLayout(plain);
         bool areaUsed[2], extraUsed[2];
         for (int i = 0; i < 2; i++)
         {
             TrapArea packed = trap ? PackTrap(plain, i) : TrapArea{};
-            areaUsed[i] = trap ? !IsZero(packed.data(), packed.size())
-                               : !AreaBlank(plain.data() + AreaBlocks[i] * FigureBlockSize);
+            // A crystal's 21st block is its signature, there on a blank one too: the area is in use by the 20 others.
+            size_t used = IsCrystal(plain) ? 20 * FigureBlockSize : packed.size();
+            areaUsed[i] =
+                trap ? !IsZero(packed.data(), used) : !AreaBlank(plain.data() + AreaBlocks[i] * FigureBlockSize);
             uint8_t extra[ExtraSize];
             PackExtra(plain, ExtraBlocks[i], extra);
             extraUsed[i] = !trap && !ExtraBlank(extra);
@@ -308,7 +343,7 @@ namespace figures
         FigureData tag = plain;
         for (size_t block = 8; block < FigureBlockCount; block++)
         {
-            if (IsTrailer(block))
+            if (IsTrailer(block) || IsSignatureBlock(plain, block))
                 continue;
             uint8_t* data = tag.data() + block * FigureBlockSize;
             bool inUsedArea = false;
@@ -336,6 +371,15 @@ namespace figures
             std::array<uint8_t, 6> key = SectorKeyA(tag.data(), sector);
             memcpy(trailer, key.data(), key.size());
             memcpy(trailer + 6, sector == 0 ? AccessReadOnly : AccessReadWrite, 4);
+        }
+        // A toy of 2016 (Imaginators: variant 0x5000 and up) has its own sector-0 trailer, and its last byte names the
+        // public key the game checks the factory signature with: without 0x51 the game does not even check it [V: every
+        // retail dump of the owner's; the run of 2026-11-05].
+        if (Variant(tag) >= 0x5000)
+        {
+            uint8_t* trailer = tag.data() + 3 * FigureBlockSize;
+            memcpy(trailer + 6, Access2016, 4);
+            trailer[15] = SignatureKey2016;
         }
     }
 
@@ -474,6 +518,22 @@ namespace figures
 
     AreaState ReadStats(const FigureData& tag, FigureStats& stats)
     {
+        if (IsCrystal(tag))
+        {
+            // The fields a character shares with a crystal, so lists, search and edits treat it as one.
+            CrystalStats crystal;
+            AreaState state = ReadCrystalStats(tag, crystal);
+            stats = {};
+            stats.experience = crystal.experience;
+            stats.gold = crystal.gold;
+            stats.playSeconds = crystal.playSeconds;
+            stats.sequence = crystal.sequence;
+            for (char c : crystal.name)
+                stats.nickname += char16_t(uint8_t(c));
+            stats.lastPlaced = crystal.lastPlaced;
+            stats.lastReset = crystal.created;
+            return state;
+        }
         if (IsTrap(tag))
         {
             TrapStats trap;
@@ -533,7 +593,7 @@ namespace figures
 
     AreaState ReadExtraState(const FigureData& tag)
     {
-        if (IsTrap(tag))
+        if (IsPairLayout(tag))
             return AreaState::Blank; // traps have no character extra pair
         FigureData plain = Decrypt(tag);
         uint8_t extra[ExtraSize];
@@ -557,6 +617,23 @@ namespace figures
 
     void WriteStats(FigureData& tag, const FigureStats& unchecked)
     {
+        if (IsCrystal(tag))
+        {
+            // The shared fields (ReadStats) back into the crystal; its creation and battle class stay.
+            CrystalStats crystal;
+            if (ReadCrystalStats(tag, crystal) != AreaState::Valid)
+                return;
+            crystal.experience = std::min(unchecked.experience, MaxCrystalExperience);
+            crystal.gold = std::min(unchecked.gold, MaxGold);
+            crystal.playSeconds = unchecked.playSeconds;
+            crystal.name.clear();
+            for (char16_t unit : unchecked.nickname)
+                crystal.name += unit < 0x100 ? char(unit) : '?';
+            crystal.lastPlaced = ClampDate(unchecked.lastPlaced);
+            crystal.created = ClampDate(unchecked.lastReset);
+            WriteCrystalStats(tag, crystal);
+            return;
+        }
         if (IsTrap(tag))
             return; // character fields overlap trap records; use WriteTrapStats
         // Whatever the caller passes, the figure never gets more than the games allow (experience of level 10 in the
@@ -599,10 +676,22 @@ namespace figures
         a[0x13] = stats.platforms;
         Put16(a + 0x14, stats.ssaHat);
         memcpy(a + 0x18, stats.owner.data(), stats.owner.size());
-        memset(a + 0x20, 0, 0x10);
-        memset(a + 0x40, 0, 0x10);
-        for (size_t i = 0; i < stats.nickname.size() && i < 16; i++)
-            Put16(a + (i < 8 ? 0x20 + i * 2 : 0x40 + (i - 8) * 2), stats.nickname[i]);
+        // The nickname's bytes only when it changes: past its end SuperChargers keeps a vehicle's own data (0x4E) [V].
+        std::u16string stored;
+        for (size_t i = 0; i < 16; i++)
+        {
+            char16_t unit = char16_t(Le16(a + (i < 8 ? 0x20 + i * 2 : 0x40 + (i - 8) * 2)));
+            if (unit == 0)
+                break;
+            stored += unit;
+        }
+        if (stored != stats.nickname)
+        {
+            memset(a + 0x20, 0, 0x10);
+            memset(a + 0x40, 0, 0x10);
+            for (size_t i = 0; i < stats.nickname.size() && i < 16; i++)
+                Put16(a + (i < 8 ? 0x20 + i * 2 : 0x40 + (i - 8) * 2), stats.nickname[i]);
+        }
         WriteDate(a + 0x50, stats.lastPlaced);
         Put32(a + 0x56, stats.heroicChallenges);
         Put16(a + 0x5A, stats.heroPoints);
@@ -640,6 +729,273 @@ namespace figures
             }
         }
         tag = Encrypt(plain);
+    }
+
+    const char* BattleClassName(int battleClass)
+    {
+        static const char* const names[] = { "Knight", "Bowslinger", "Quickshot", "Ninja", "Brawler", "Smasher",
+            "Sorcerer", "Swashbuckler", "Sentinel", "Bazooker" };
+        return battleClass >= 1 && battleClass <= 10 ? names[battleClass - 1] : "";
+    }
+
+    const std::array<CrystalParam, CrystalParamCount>& CrystalParams()
+    {
+        // The disc's LooseData/GlobalCYOSParams.igz (CCYOSRecipeFormat and its settings lists), in its order: each
+        // parameter's name, range and width (a slider's 4 bits and a colour's 7 are the settings' own; the others the
+        // bits of their count of values).
+        static const std::array<CrystalParam, CrystalParamCount> params = { {
+            { "weaponR", CrystalParamKind::Gear, 30000, 30999, 10 },
+            { "weaponL", CrystalParamKind::Gear, 30000, 30999, 10 },
+            { "Back Attachment (Wings / Backpack)", CrystalParamKind::Gear, 13000, 13999, 10 },
+            { "Hat", CrystalParamKind::Gear, 14000, 14999, 10 },
+            { "armorLeg", CrystalParamKind::Gear, 11000, 11999, 10 },
+            { "armorArm", CrystalParamKind::Gear, 10000, 10999, 10 },
+            { "armorShoulder", CrystalParamKind::Gear, 12000, 12999, 10 },
+            { "Ear", CrystalParamKind::Gear, 16000, 16999, 10 },
+            { "parametricLowerBodyMass", CrystalParamKind::Shape, 0, 8, 4 },
+            { "parametricUpperBodyMass", CrystalParamKind::Shape, 0, 8, 4 },
+            { "parametricHeight", CrystalParamKind::Shape, 0, 8, 4 },
+            { "muscleScale", CrystalParamKind::Shape, 0, 8, 4 },
+            { "head scale", CrystalParamKind::Shape, 0, 8, 4 },
+            { "scaleTailWidth", CrystalParamKind::Shape, 0, 8, 4 },
+            { "head", CrystalParamKind::Body, 0, 999, 10 },
+            { "torso", CrystalParamKind::Body, 1000, 1999, 10 },
+            { "arms", CrystalParamKind::Body, 2000, 2999, 10 },
+            { "legs", CrystalParamKind::Body, 3000, 3999, 10 },
+            { "tail", CrystalParamKind::Body, 15000, 15099, 7 },
+            { "Head Skin Primary", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Head Skin Secondary", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Head Aux 1", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Head Aux 2", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Head Aux 3", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Ear Skin", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Arms Skin Primary", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Arms Skin Secondary", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Arms Aux 1", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Arms Aux 2", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Arms Aux 3", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Torso Skin Primary", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Torso Skin Secondary", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Torso Aux 1", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Torso Aux 2", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Torso Aux 3", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Legs Skin Primary", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Legs Skin Secondary", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Legs Aux 1", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Legs Aux 2", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Legs Aux 3", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Eye Pupil", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Eye Sclera", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Tail Skin Primary", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Tail Skin Secondary", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Ears Primary", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Ears Secondary", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Ears Tertiary", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Helmet Primary", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Helmet Secondary", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Helmet Tertiary", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Arm Guards Primary", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Arm Guards Secondary", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Arm Guards Tertiary", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Shoulder Guards Primary", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Shoulder Guards Secondary", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Shoulder Guards Tertiary", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Backpack Primary", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Backpack Secondary", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Backpack Tertiary", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Leg Guards Primary", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Leg Guards Secondary", CrystalParamKind::Colour, 0, 127, 7 },
+            { "Leg Guards Tertiary", CrystalParamKind::Colour, 0, 127, 7 },
+            { "SecondaryPower", CrystalParamKind::Choice, 20000, 20999, 10 },
+            { "TertiaryPower", CrystalParamKind::Choice, 21000, 21999, 10 },
+            { "Class", CrystalParamKind::Choice, 0, 63, 7 },
+            { "Aura", CrystalParamKind::Choice, 33134, 33166, 6 },
+            { "soundTheme", CrystalParamKind::Choice, 32600, 32799, 8 },
+            { "eyeMaterial", CrystalParamKind::Choice, 33167, 33199, 6 },
+            { "catchphrase1", CrystalParamKind::Choice, 32000, 32199, 8 },
+            { "catchphrase2", CrystalParamKind::Choice, 32200, 32399, 8 },
+            { "musicTheme", CrystalParamKind::Choice, 32400, 32599, 8 },
+            { "voice", CrystalParamKind::Choice, 32800, 32999, 8 },
+            { "voiceFx", CrystalParamKind::Choice, 33000, 33099, 7 },
+            { "PrimaryPower", CrystalParamKind::Choice, 22000, 22499, 9 },
+        } };
+        return params;
+    }
+
+    int CrystalParamIndex(const char* name)
+    {
+        const auto& params = CrystalParams();
+        for (size_t i = 0; i < params.size(); i++)
+            if (strcmp(params[i].name, name) == 0)
+                return int(i);
+        return -1;
+    }
+
+    bool NeedsFactorySignature(uint16_t toyType) { return toyType >= 600 && toyType <= 699; }
+
+    bool HasFactorySignature(const FigureData& tag)
+    {
+        return NeedsFactorySignature(ToyType(tag)) && !IsZero(tag.data() + 2 * FigureBlockSize, FigureBlockSize) &&
+               !IsZero(tag.data() + 4 * FigureBlockSize, FigureBlockSize);
+    }
+
+    uint32_t CrystalLevelExperience(int level)
+    {
+        if (level <= 1)
+            return 0;
+        if (level <= MaxLevelSwapForce)
+            return LevelExperience[level - 1];
+        return 220000 + 20000 * uint32_t(std::min(level, MaxCrystalLevel) - 21);
+    }
+
+    int CrystalLevel(uint32_t experience)
+    {
+        int level = 1;
+        while (level < MaxCrystalLevel && experience >= CrystalLevelExperience(level + 1))
+            level++;
+        return level;
+    }
+
+    namespace
+    {
+        constexpr size_t CrystalRecipeBytes = 69; // 547 bits
+
+        void ReadRecipe(const TrapArea& area, CrystalStats& stats)
+        {
+            stats.hasRecipe = Le32(&area[CrystalRecipeFormatOffset]) == CrystalRecipeFormat;
+            if (!stats.hasRecipe)
+                return;
+            size_t bit = 0;
+            const auto& params = CrystalParams();
+            for (size_t i = 0; i < params.size(); i++)
+            {
+                uint32_t value = 0;
+                for (uint8_t k = 0; k < params[i].bits; k++, bit++)
+                    value |= uint32_t((area[CrystalRecipeOffset + bit / 8] >> (bit % 8)) & 1) << k;
+                stats.creation[i] = uint16_t(value);
+            }
+            stats.battleClass = uint8_t(stats.creation[size_t(CrystalParamIndex("Class"))]);
+        }
+
+        void WriteRecipe(TrapArea& area, const CrystalStats& stats)
+        {
+            Put32(&area[CrystalRecipeFormatOffset], CrystalRecipeFormat);
+            CrystalStats values = stats;
+            if (stats.battleClass >= 1 && stats.battleClass <= 10)
+                values.creation[size_t(CrystalParamIndex("Class"))] = stats.battleClass;
+            memset(&area[CrystalRecipeOffset], 0, CrystalRecipeBytes);
+            size_t bit = 0;
+            for (size_t i = 0; i < CrystalParams().size(); i++)
+            {
+                uint32_t value = std::min<uint32_t>(values.creation[i], (1u << CrystalParams()[i].bits) - 1);
+                for (uint8_t k = 0; k < CrystalParams()[i].bits; k++, bit++)
+                    area[CrystalRecipeOffset + bit / 8] |= uint8_t(((value >> k) & 1) << (bit % 8));
+            }
+        }
+
+        void WriteCrystalFields(TrapArea& area, const CrystalStats& stats)
+        {
+            uint32_t experience = std::min(stats.experience, MaxCrystalExperience);
+            area[0] = uint8_t(experience);
+            area[1] = uint8_t(experience >> 8);
+            area[2] = uint8_t(experience >> 16);
+            Put16(&area[0x03], std::min(stats.gold, MaxGold));
+            Put32(&area[0x05], stats.playSeconds);
+            memset(&area[0x20], 0, CrystalNameSize);
+            for (size_t i = 0, n = 0; i < stats.name.size() && n < CrystalNameSize - 1; i++)
+            {
+                if (stats.name[i] >= 0x20 && stats.name[i] < 0x7F)
+                    area[0x20 + n++] = uint8_t(stats.name[i]);
+            }
+            WriteDate(&area[0x40], ClampDate(stats.lastPlaced));
+            WriteDate(&area[0x50], ClampDate(stats.created));
+            if (stats.hasRecipe)
+                WriteRecipe(area, stats);
+        }
+    }
+
+    AreaState ReadCrystalStats(const FigureData& tag, CrystalStats& stats)
+    {
+        stats = {};
+        if (!IsCrystal(tag))
+            return AreaState::Damaged;
+        FigureData plain = Decrypt(tag);
+        TrapArea a = PackTrap(plain, 0), b = PackTrap(plain, 1);
+        int newest = NewestCrystal(a, b);
+        if (newest < 0)
+        {
+            // The signature block (the 21st) is there on every crystal, made or not.
+            bool blank = IsZero(a.data(), 20 * FigureBlockSize) && IsZero(b.data(), 20 * FigureBlockSize);
+            return blank ? AreaState::Blank : AreaState::Damaged;
+        }
+        const TrapArea& area = newest == 0 ? a : b;
+        stats.experience = area[0] | area[1] << 8 | area[2] << 16;
+        stats.gold = Le16(&area[0x03]);
+        stats.playSeconds = Le32(&area[0x05]);
+        stats.sequence = area[0x09];
+        for (size_t i = 0; i < CrystalNameSize && area[0x20 + i] != 0; i++)
+            stats.name += char(area[0x20 + i]);
+        stats.lastPlaced = ReadDate(&area[0x40]);
+        stats.created = ReadDate(&area[0x50]);
+        ReadRecipe(area, stats);
+        return AreaState::Valid;
+    }
+
+    bool WriteCrystalStats(FigureData& tag, const CrystalStats& stats)
+    {
+        if (!IsCrystal(tag))
+            return false;
+        FigureData plain = Decrypt(tag);
+        TrapArea a = PackTrap(plain, 0), b = PackTrap(plain, 1);
+        int newest = NewestCrystal(a, b);
+        if (newest < 0)
+            return false;
+        TrapArea area = newest == 0 ? a : b;
+        uint8_t sequence = area[0x09];
+        CrystalStats read;
+        ReadRecipe(area, read);
+        CrystalStats edited = stats;
+        if (!stats.hasRecipe && read.hasRecipe)
+        {
+            // Only the class changes: the creation stays as stored.
+            edited.creation = read.creation;
+            edited.hasRecipe = true;
+        }
+        WriteCrystalFields(area, edited);
+        // The inactive copy first, as the trap writer; the signature block is each copy's own and stays.
+        int first = 1 - newest;
+        for (int i = 0; i < 2; i++)
+        {
+            int copy = i == 0 ? first : newest;
+            TrapArea out = area;
+            memcpy(
+                out.data() + 20 * FigureBlockSize, (copy == 0 ? a : b).data() + 20 * FigureBlockSize, FigureBlockSize);
+            out[0x09] = uint8_t(sequence + 1 + i);
+            SealCrystal(out);
+            UnpackTrap(plain, copy, out);
+        }
+        tag = Encrypt(plain);
+        return true;
+    }
+
+    FigureData CreateCrystal(uint16_t toyType, uint16_t variant, const CrystalStats& stats)
+    {
+        if (!IsCrystalType(toyType))
+            throw std::invalid_argument("not a creation crystal");
+        FigureData tag = CreateFigure(toyType, variant);
+        FigureData plain = Decrypt(tag);
+        TrapArea area{};
+        area[0x70] = 0x30; // every made crystal of the dumps [?]
+        CrystalStats made = stats;
+        made.hasRecipe = true;
+        WriteCrystalFields(area, made);
+        for (int copy = 0; copy < 2; copy++)
+        {
+            area[0x09] = uint8_t(stats.sequence + 1 + copy);
+            SealCrystal(area);
+            UnpackTrap(plain, copy, area);
+        }
+        return Encrypt(plain);
     }
 
     std::string NicknameUtf8(const FigureStats& stats)

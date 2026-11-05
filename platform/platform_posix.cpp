@@ -21,6 +21,7 @@
 namespace
 {
     void (*g_onFault)(const char* description, const void* address);
+    std::atomic<bool (*)(void* address)> g_writeFaultFilter;
 
     // The thread printing a fault report. A fault on another thread meanwhile waits for the report to end the
     // process; a fault inside the report itself ends it at once.
@@ -193,6 +194,18 @@ namespace
 
     void OnSignal(int signal, siginfo_t* info, void* context)
     {
+        if (signal == SIGSEGV || signal == SIGBUS)
+        {
+            bool (*filter)(void*) = g_writeFaultFilter.load(std::memory_order_acquire);
+            if (filter != nullptr && filter(info->si_addr))
+                return;
+        }
+        if (g_onFault == nullptr)
+        {
+            // Only the write fault filter is installed (a unit test): the access faults again into the default action.
+            ::signal(signal, SIG_DFL);
+            return;
+        }
         bool expected = false;
         if (!g_reporting.compare_exchange_strong(expected, true))
         {
@@ -259,6 +272,22 @@ bool PlatformProtectNoAccess(void* address, size_t size) { return mprotect(addre
 bool PlatformProtectReadOnly(void* address, size_t size, bool readOnly)
 {
     return mprotect(address, size, readOnly ? PROT_READ : PROT_READ | PROT_WRITE) == 0;
+}
+
+size_t PlatformPageSize() { return size_t(sysconf(_SC_PAGESIZE)); }
+
+bool PlatformInstallWriteFaultFilter(bool (*handled)(void* address))
+{
+    g_writeFaultFilter.store(handled, std::memory_order_release);
+    if (g_onFault == nullptr)
+    {
+        struct sigaction action{};
+        action.sa_sigaction = OnSignal;
+        action.sa_flags = SA_SIGINFO | SA_ONSTACK;
+        sigaction(SIGSEGV, &action, nullptr);
+        sigaction(SIGBUS, &action, nullptr);
+    }
+    return true;
 }
 
 void PlatformStartThread(size_t stackSize, std::function<void()> body)

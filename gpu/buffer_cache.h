@@ -22,9 +22,11 @@ namespace gpu
         uint64_t offset = 0;
     };
 
-    // `data` points at `bytes` guest bytes starting at `guestAddress`, keyed by (guestAddress, bytes).
-    // Vertex data is swapped 8-in-32.
-    BufferRange CacheVertices(const void* data, uint32_t guestAddress, uint32_t bytes);
+    // `data` points at `bytes` guest bytes starting at `guestAddress`, keyed by (guestAddress, bytes, stride, pairWords).
+    // Vertex data is swapped 8-in-32, except the words of `pairWords` (bit i: word i of each `stride`-byte vertex,
+    // d3d::PairWords), swapped 8-in-16: 16-bit pairs that are not texture coordinates (d3d/vertex_pairs.h).
+    BufferRange CacheVertices(
+        const void* data, uint32_t guestAddress, uint32_t bytes, uint32_t stride = 0, uint64_t pairWords = 0);
     // 16-bit indices, swapped 8-in-16; also gives the smallest and largest index of the range.
     BufferRange CacheIndices(
         const void* data, uint32_t guestAddress, uint32_t bytes, uint32_t& minIndex, uint32_t& maxIndex);

@@ -515,6 +515,73 @@ namespace
             CHECK(Delete(path));
     }
 
+    // SuperChargers' and Imaginators' toys: a plain figure's year-and-flag id reads as the toy, a crystal's shape as its
+    // name, a crystal shows its battle class.
+    void TestLaterGames()
+    {
+        using namespace collection;
+        const Catalogue& catalogue = Catalogue::Get();
+        const Toy* fiesta = catalogue.Find(3400);
+        const Toy* vehicle = catalogue.Find(3227);
+        const Toy* crystal = catalogue.Find(682);
+        CHECK(fiesta != nullptr && vehicle != nullptr && vehicle->category == Category::Vehicle && crystal != nullptr &&
+              crystal->category == Category::CreationCrystal && crystal->element == Element::Air);
+        VariantInfo plain = catalogue.Describe(fiesta, 0x4100);
+        CHECK(plain.name == "Fiesta" && plain.kind == VariantKind::Base && plain.known);
+        CHECK(catalogue.Describe(vehicle, 0x4000).name == "Crypt Crusher");
+        CHECK(catalogue.Describe(catalogue.Find(601), 0x5000).name == "King Pen");
+        CHECK(catalogue.Describe(fiesta, 0x4515).name == "Frightful Fiesta");
+        CHECK(catalogue.Describe(catalogue.Find(3500), 0x4000).name == "Sky Trophy");
+        Catalogue::Reading seen = catalogue.Read("superchargers", fiesta, 0x4100);
+        CHECK(seen.works && seen.kind == VariantKind::Base);
+        VariantInfo shape = catalogue.Describe(crystal, 0x5202);
+        CHECK(shape.name == "Air Angel Crystal" && shape.kind == VariantKind::Shape);
+        CHECK(catalogue.Describe(crystal, 0x5299).kind == VariantKind::Shape); // an unlisted shape stays a shape
+        seen = catalogue.Read("imaginators", crystal, 0x5207);
+        CHECK(seen.works && seen.exact && seen.seen != nullptr && seen.seen->name == "Air Lantern Crystal");
+        CHECK(!catalogue.Read("superchargers", crystal, 0x5207).works); // SuperChargers does not read crystals
+
+        std::string made = Create(682, 0x5202);
+        Figure figure;
+        CHECK(Read(made, figure) && figure.DisplayName() == "Air Angel Crystal" && !HasProgress(figure) &&
+              figure.state == figures::AreaState::Blank && LevelText(figure, "imaginators") == "Ready to create" &&
+              LevelText(figure, "imaginators", true) == "À créer");
+        CHECK(BattleClassText(4) == "Ninja" && BattleClassText(1, true) == "Chevalier" && BattleClassText(11).empty());
+        // Its first creation, then an edit: the class and the level show on the card.
+        figures::CrystalStats creation;
+        creation.name = "ZAPPER";
+        creation.battleClass = 7;
+        creation.experience = 6000; // level 5
+        std::string why;
+        CHECK(WriteCrystal(made, creation, &why) && Read(made, figure) && figure.state == figures::AreaState::Valid &&
+              figure.level == 5 && LevelText(figure, "imaginators") == "Virtual · Sorcerer · Level 5" &&
+              figures::NicknameUtf8(figure.stats) == "ZAPPER");
+        figures::CrystalStats back;
+        CHECK(ReadCrystal(made, back) == figures::AreaState::Valid && back.hasRecipe && back.battleClass == 7);
+        back.experience = figures::CrystalLevelExperience(42);
+        CHECK(WriteCrystal(made, back) && Read(made, figure) && figure.level == 42 &&
+              LevelText(figure, "imaginators", true) == "Virtuel · Sorcier · Niveau 42");
+        CHECK(std::string(VirtualToyText("de")).rfind("Virtuell", 0) == 0 &&
+              std::string(VirtualToyText("xx")) == VirtualToyText("en"));
+        CHECK(Read(made, figure) && figure.missingSignature); // made here: no factory signature
+        FigureData other3 = figures::CreateCrystal(683, 0x5209, back);
+        CHECK(ReplaceDump(made, other3) && Read(made, figure) && figure.type == 683 && figure.level == 42);
+        std::string other = Create(3227);
+        CHECK(!WriteCrystal(other, back, &why) && why == "not a creation crystal" && Delete(other));
+        CHECK(Delete(made));
+
+        // A vehicle's gearbits: only once the game used it (its first use writes the fields beside them).
+        std::string car = Create(3227), fiestaDump = Create(3400), error;
+        CHECK(!SetGearbits(car, 500, &error) && error == "never used by the game");
+        CHECK(!SetGearbits(fiestaDump, 500, &error) && error == "not a vehicle");
+        figures::FigureStats used;
+        used.platforms = 2;
+        used.giantsExperience = 9;
+        CHECK(WriteStats(car, used) && SetGearbits(car, 500) && Read(car, figure) &&
+              figures::Gearbits(figure.stats) == 500 && figure.stats.giantsExperience == 9 && !HasProgress(figure));
+        CHECK(Delete(car) && Delete(fiestaDump));
+    }
+
     // A blank LightCore toy: the Giants toy with its own variant, as the Toy Box creates it. Last, so that the counts
     // the other tests make are not changed.
     void TestGiants()
@@ -1724,6 +1791,7 @@ int main(int argc, char** argv)
     TestPortalOverview();
     TestGiants();
     TestTrapTeam();
+    TestLaterGames();
     TestUpgrades();
     TestWheel();
 

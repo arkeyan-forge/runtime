@@ -143,6 +143,15 @@ else()
     endif()
 endif()
 
-# datadir.cpp: draw.cpp keeps pipelines.bin in the game folder (the game executable compiles it itself).
-add_executable(SSARecompGpuTest selftest.cpp ../host/collection/datadir.cpp)
+# datadir.cpp: draw.cpp keeps pipelines.bin in the game folder (the game executable compiles it itself); the write watch
+# and the platform layer under it: the buffer cache asks the watch (the game executable compiles them too).
+set(SSA_GPU_TEST_PLATFORM ../platform/platform_posix.cpp)
+if(WIN32)
+    set(SSA_GPU_TEST_PLATFORM ../platform/platform_win32.cpp)
+    set_source_files_properties(../platform/platform_win32.cpp PROPERTIES COMPILE_DEFINITIONS _WIN32_WINNT=0x0A00)
+endif()
+add_executable(SSARecompGpuTest selftest.cpp ../host/collection/datadir.cpp ../write_watch.cpp ${SSA_GPU_TEST_PLATFORM})
+if(WIN32)
+    target_link_libraries(SSARecompGpuTest PRIVATE winmm)
+endif()
 target_link_libraries(SSARecompGpuTest PRIVATE SSARecompGpu)

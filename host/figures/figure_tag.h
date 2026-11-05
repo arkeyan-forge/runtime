@@ -147,6 +147,98 @@ namespace figures
     // Invalid toy family or storage ID (>46), or evolved with no villain, throws std::invalid_argument.
     FigureData CreateTrap(uint16_t toyType, uint16_t variant = 0, uint16_t villain = 0, bool evolved = false);
 
+    // SuperChargers' vehicles (toy types 3200-3299) keep the character layout [V: runs of 2026-11-04, docs/runtime/host/
+    // figures.md "SuperChargers' vehicles"]. On first use the game writes the first pair (owner, dates, platform, 0x14 = 1,
+    // 0x16 bit 0) and the extra pair with +0x03 = 9 and +0x06 = 9 [?], then adds the gearbits the vehicle collects to the
+    // extra area's +0x08 (where FigureStats::swapForceExperience sits for a character). 0x4E of the first area is the
+    // vehicle's own byte [?]; its mods (bought in the garage) are not mapped [?]. WriteStats keeps all of them.
+    inline bool IsVehicleType(uint16_t toyType) { return toyType >= 3200 && toyType <= 3299; }
+    constexpr uint32_t MaxGearbits = 65535; // the field's room as the game was seen to use it [?]
+    inline uint32_t Gearbits(const FigureStats& stats) { return stats.swapForceExperience; }
+    inline void SetGearbits(FigureStats& stats, uint32_t gearbits)
+    {
+        stats.swapForceExperience = gearbits < MaxGearbits ? gearbits : MaxGearbits;
+    }
+
+    // Imaginators' creation crystals (toy types 680-689, one per element; the variant's low byte is the crystal's shape)
+    // [V: the owner's dumps, docs/runtime/host/figures.md "Imaginators' crystals"]. The trap's pair of 21 data blocks
+    // (A from block 8, B from 36, packed without trailers), the trap's three checksums except that 0x0A covers 16 blocks
+    // (0x40-0x13F): the last packed block (physical 34 and 62) is part of the factory signature with blocks 2 and 4,
+    // never written. Packed offsets:
+    //   0x00 experience (24 bits), 0x03 gold, 0x05 play time (s), 0x09 sequence, 0x20-0x3F name (8-bit, zero ended),
+    //   0x40 last placed, 0x50 created (dates as the first area's), 0x60-0x6F and 0x70 = 0x30 [?, kept],
+    //   0x78 the recipe format's hash (LE32 0x458D186A), 0x7C the creation: CrystalParams() in order, each the value
+    //   minus its minimum on `bits` bits, least significant bit first, 547 bits [V: the disc's GlobalCYOSParams.igz and
+    //   every made crystal of the dumps].
+    constexpr uint16_t FirstCrystalType = 680, LastCrystalType = 689;
+    inline bool IsCrystalType(uint16_t toyType) { return toyType >= FirstCrystalType && toyType <= LastCrystalType; }
+    constexpr size_t CrystalNameSize = 32;
+    constexpr uint32_t MaxCrystalExperience = 0xFFFFFF;
+    constexpr size_t CrystalRecipeFormatOffset = 0x78, CrystalRecipeOffset = 0x7C;
+    constexpr uint32_t CrystalRecipeFormat = 0x458D186A; // CCYOSRecipeFormat's hash on the disc
+
+    enum class CrystalParamKind : uint8_t
+    {
+        Gear, // an attachment (weapons, backpack, hat, armour, ears): a part id
+        Shape, // a slider 0-8 (height, muscles, head size...)
+        Body, // a body part (head, torso, arms, legs, tail): a part id
+        Colour, // a palette index 0-127
+        Choice // class, powers, aura, eyes, voice, sounds, music, catch phrases
+    };
+    struct CrystalParam
+    {
+        const char* name; // the game's own parameter name
+        CrystalParamKind kind;
+        int32_t min, max; // the game's ids: stored is id - min; all ones is "none" (a crystal with no tail)
+        uint8_t bits;
+    };
+    // The 74 parameters of a creation in the order the tag stores them (the disc's recipe format) [V].
+    constexpr size_t CrystalParamCount = 74;
+    const std::array<CrystalParam, CrystalParamCount>& CrystalParams();
+    // Index of a parameter by its name ("Class", "head", "Head Skin Primary"), -1 if none.
+    int CrystalParamIndex(const char* name);
+
+    struct CrystalStats
+    {
+        uint32_t experience = 0;
+        uint16_t gold = 0;
+        uint32_t playSeconds = 0;
+        uint8_t sequence = 0;
+        std::string name; // as stored: 8-bit characters, at most 31
+        Date lastPlaced, created;
+        uint8_t battleClass = 0; // 1-10 (BattleClassName), the creation's "Class"; 0: not made yet
+        bool hasRecipe = false; // the recipe format's hash is there: `creation` holds the stored values
+        std::array<uint16_t, CrystalParamCount> creation{}; // stored values (id - min), CrystalParams() order
+    };
+
+    // "Knight", "Bowslinger", "Quickshot", "Ninja", "Brawler", "Smasher", "Sorcerer", "Swashbuckler", "Sentinel",
+    // "Bazooker" for 1-10 [V: 55 made crystals of the dumps, named by class]; empty otherwise.
+    const char* BattleClassName(int battleClass);
+
+    // Imaginators' toys (types 600-699: Senseis, crystals) carry a factory signature in blocks 2, 4, 34 and 62 that the game
+    // checks: a crystal without one is "maybe corrupted, repair it" in the game [V: run of 2026-11-04]. True when the tag
+    // is such a toy and blocks 2 and 4 are not zero; such a toy made by our tools (CreateFigure) has none.
+    bool NeedsFactorySignature(uint16_t toyType);
+    bool HasFactorySignature(const FigureData& tag);
+
+    // A creation's level: the game's own table (every class's character data on the disc, an igIntIntHashTable):
+    // levels 1-20 are the older games' 20, then 20000 more each, up to 80 at 1400000 [V]. Without the Senseis' training
+    // a creation stops at 20 [?].
+    constexpr int MaxCrystalLevel = 80;
+    uint32_t CrystalLevelExperience(int level); // experience to reach `level` (1: 0)
+    int CrystalLevel(uint32_t experience);
+
+    // Blank: a crystal nobody made a character on yet (the game's creator fills it).
+    AreaState ReadCrystalStats(const FigureData& tag, CrystalStats& stats);
+    // Writes the known fields into both copies (inactive first, adjacent sequences), keeping every other byte of the
+    // newest valid copy and the signature blocks; with `hasRecipe` the creation too. False leaves the tag unchanged:
+    // not a crystal, damaged pair, or a blank crystal (CreateCrystal makes the first creation). The name keeps printable
+    // ASCII only.
+    bool WriteCrystalStats(FigureData& tag, const CrystalStats& stats);
+    // A crystal with a creation, as the game's creator leaves one (both copies, the recipe format, the creation). The tag
+    // has no factory signature: the real game refuses it unless the port skips that check [?].
+    FigureData CreateCrystal(uint16_t toyType, uint16_t variant, const CrystalStats& stats);
+
     // All the experience a figure has (the three parts), and setting it (the first 33000 go to the first area, the next
     // 63500 to Giants' part, the rest to Swap Force's).
     uint32_t TotalExperience(const FigureStats& stats);

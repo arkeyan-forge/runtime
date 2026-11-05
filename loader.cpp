@@ -41,8 +41,12 @@ namespace
     // Indirect calls to code XenonRecomp didn't treat as a function start land here instead of a null pointer.
     void UnmappedFunction(PPCContext& ctx, uint8_t*)
     {
+#ifdef PPC_CONFIG_CTR_AS_LOCAL
+        fprintf(stderr, "Indirect call to unrecompiled guest code (lr=0x%08X)\n", uint32_t(ctx.lr));
+#else
         fprintf(
             stderr, "Indirect call to unrecompiled guest code (ctr=0x%08X lr=0x%08X)\n", ctx.ctr.u32, uint32_t(ctx.lr));
+#endif
         abort();
     }
 
