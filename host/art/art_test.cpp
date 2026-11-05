@@ -898,6 +898,15 @@ namespace
             }
             CHECK(collection::GamePortraitPath(game, *catalogue.Find(602), 0x5403)
                     .ends_with("collection_macetriceratops_legendary.png"));
+            // The creation parts' names (game_text.cpp), in the disc's French and Dutch: a head, a weapon, a primary power;
+            // English, which this disc does not have, gets its first language.
+            CHECK(got.partNames && again.partNames);
+            CHECK(collection::PartName(game, 6, "fr") == "Tête d'oiseau" &&
+                  collection::PartName(game, 6, "nl") == "Veertastisch" &&
+                  collection::PartName(game, 6, "en") == "Tête d'oiseau");
+            CHECK(collection::PartName(game, 30100, "fr") == "Arc elfique" &&
+                  collection::PartName(game, 22001, "nl") == "Multischot");
+            CHECK(collection::PartName(game, 999, "fr").empty()); // no such part
             return; // no upgrades in the manifest
         }
         if (strcmp(game, "superchargers") == 0)

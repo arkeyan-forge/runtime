@@ -579,6 +579,12 @@ namespace
         used.giantsExperience = 9;
         CHECK(WriteStats(car, used) && SetGearbits(car, 500) && Read(car, figure) &&
               figures::Gearbits(figure.stats) == 500 && figure.stats.giantsExperience == 9 && !HasProgress(figure));
+        // Its garage upgrades on the card: bits 0-4 the shield's, 5-9 the weapon's (0x0023 = shield 2, weapon 1).
+        CHECK(LevelText(figure, "superchargers") == "Shield 0 · Weapon 0");
+        used.upgrades = 0x0023;
+        CHECK(WriteStats(car, used) && Read(car, figure) &&
+              LevelText(figure, "superchargers") == "Shield 2 · Weapon 1" &&
+              LevelText(figure, "superchargers", true) == "Bouclier 2 · Arme 1");
         CHECK(Delete(car) && Delete(fiestaDump));
     }
 

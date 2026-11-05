@@ -373,6 +373,8 @@ namespace art
             std::vector<Materials> artworkMaterials;
             // The toys' upgrades (game_text.cpp): the manifest's "upgrades" part as it is.
             collection::Json upgrades;
+            // Imaginators' creation parts' names (game_text.cpp): the manifest's "parts" part as it is.
+            collection::Json parts;
         };
 
         std::vector<Materials> ReadMaterials(const collection::Json& json)
@@ -426,6 +428,7 @@ namespace art
                     m.artworksFolder = json["artworks"]["folder"].AsString();
                     m.artworkMaterials = ReadMaterials(json["artworks"]["materials"]);
                     m.upgrades = json["upgrades"];
+                    m.parts = json["parts"];
                     if (!m.game.empty())
                         out.push_back(std::move(m));
                 }
@@ -962,6 +965,18 @@ namespace art
                 ExtractUpgrades(game, where->upgrades, disc, file);
             }
             result.upgrades = std::filesystem::is_regular_file(file, exists);
+        }
+        if ((parts & PartNames) && where != nullptr && where->parts.IsObject())
+        {
+            // Read once, as the upgrades.
+            std::filesystem::path file = collection::PartFile(game);
+            std::error_code exists;
+            if (!file.empty() && !std::filesystem::is_regular_file(file, exists))
+            {
+                std::filesystem::create_directories(file.parent_path(), error);
+                ExtractPartNames(game, where->parts, disc, file);
+            }
+            result.partNames = std::filesystem::is_regular_file(file, exists);
         }
         return result;
     }

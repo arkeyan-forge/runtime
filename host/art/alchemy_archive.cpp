@@ -610,6 +610,8 @@ namespace art::alchemy
             for (uint32_t table = 0; table < std::size(layout.tables); table++)
                 if (id == layout.tables[table])
                     file.m_fixups.push_back({ table, Fixup{ count, p + start, p + length } });
+            if (layout.tagged)
+                file.m_records.push_back({ id, Fixup{ count, p + start, p + length } });
             p += length;
         }
         // The class names, one NUL-terminated string each: an object's first word is its index here.
@@ -649,6 +651,21 @@ namespace art::alchemy
             if (id == type)
                 return &fixup;
         return nullptr;
+    }
+
+    std::vector<uint32_t> IgzFile::RecordWords(std::string_view tag) const
+    {
+        std::vector<uint32_t> out;
+        if (tag.size() != 4)
+            return out;
+        // Stored byte-swapped, as the layouts' tables (Swapped).
+        const uint32_t id = uint32_t(uint8_t(tag[3])) << 24 | uint32_t(uint8_t(tag[2])) << 16 |
+                            uint32_t(uint8_t(tag[1])) << 8 | uint8_t(tag[0]);
+        for (const auto& [stored, record] : m_records)
+            if (stored == id)
+                for (size_t at = record.start; at + 4 <= record.end; at += 4)
+                    out.push_back(Be32(at));
+        return out;
     }
 
     std::vector<uint64_t> IgzFile::ObjectOffsets() const

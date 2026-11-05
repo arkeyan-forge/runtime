@@ -117,10 +117,11 @@ namespace
         if (g_portraitsLoaded)
             return;
         g_portraitsLoaded = true;
-        // This game's portraits from the player's disc, cached in its data folder (docs/runtime/host/game_art.md).
-        art::Extraction found = art::Extract(SSA_GAME_ID, art::ReadFrom(g_disc), {}, art::Portraits);
-        fprintf(stderr, "[toybox] %d portraits in %s\n", found.portraits,
-            art::PortraitFolder(SSA_GAME_ID).string().c_str());
+        // This game's portraits (and Imaginators' part names) from the player's disc, cached in its data folder
+        // (docs/runtime/host/game_art.md).
+        art::Extraction found = art::Extract(SSA_GAME_ID, art::ReadFrom(g_disc), {}, art::Portraits | art::PartNames);
+        fprintf(stderr, "[toybox] %d portraits in %s%s\n", found.portraits,
+            art::PortraitFolder(SSA_GAME_ID).string().c_str(), found.partNames ? ", the parts' names read" : "");
     }
 
     void OpenToybox(Screen screen = Screen::Home, int seat = 0)

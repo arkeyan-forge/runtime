@@ -73,6 +73,19 @@ namespace art
             return item;
         }
 
+        // Writes `file` to `out` (a temporary file renamed over).
+        bool WriteFile(const collection::Json& file, const std::filesystem::path& out)
+        {
+            std::string text = file.Dump(), target = datadir::Text(out), temporary = target + ".part";
+            {
+                std::ofstream stream(std::filesystem::path(temporary), std::ios::binary | std::ios::trunc);
+                stream.write(text.data(), std::streamsize(text.size()));
+                if (!stream.good())
+                    return false;
+            }
+            return SDL_RenamePath(temporary.c_str(), target.c_str());
+        }
+
         // --- Giants [Alchemy] -----------------------------------------------------------------------------------------
 
         // An archive read whole, and its level.bld parsed.
@@ -343,6 +356,109 @@ namespace art
             }
             return count;
         }
+
+        // --- Imaginators [Alchemy] ------------------------------------------------------------------------------------
+
+        // A list object's members (file offsets): igObjectList, igNameList... keep their count at word 2 and their data at
+        // word 5; an igNameList's members are { name pointer, hash } pairs (`stride` 8).
+        std::vector<uint64_t> ListItems(const alchemy::IgzFile& z, uint64_t list, uint32_t stride = 4)
+        {
+            std::vector<uint64_t> out;
+            std::optional<uint64_t> data = z.Pointer(z.Word(list, 5));
+            for (uint32_t i = 0; data && i < z.Word(list, 2) && i < 0x10000; i++)
+                out.push_back(*data + uint64_t(stride) * i);
+            return out;
+        }
+
+        // The creation parts' names by part id (docs/runtime/host/figures.md, "The parts' names"). The trackers' file
+        // (LooseData/CollectibleTrackers.igz) has a root list of objects and a name list (ONAM) naming each of them, in the
+        // same order; a CCYOSLootCollectibleTracker keeps its part id (the id a crystal's recipe stores) at word 36. Each
+        // language's file (CollectibleTrackers_<code>.lng) is one igLocalizedStringDataList of { text (word 2), object
+        // (word 3), field (word 4) }: the object and the field are external names, 0x80000000 | an index in the EXNM
+        // pairs { file, name } (TSTR indices) whose file word has the top bit (objects) or not (fields). The tracker's
+        // "CCYOSLootCollectibleTracker::_name" text is the part's name.
+        int ImaginatorsParts(const collection::Json& manifest, const Disc& disc, collection::Json& parts)
+        {
+            Archive archive;
+            if (!archive.Open(disc, manifest["archive"].AsString()))
+                return 0;
+            std::optional<alchemy::IgzFile> trackers = archive.Entry(manifest["trackers"].AsString());
+            if (!trackers)
+                return 0;
+            const alchemy::IgzFile& z = *trackers;
+            std::vector<uint32_t> root = z.RecordWords("ROOT"), names = z.RecordWords("ONAM");
+            std::optional<uint64_t> rootList = root.empty() ? std::nullopt : z.Pointer(root[0]);
+            std::optional<uint64_t> nameList = names.empty() ? std::nullopt : z.Pointer(names[0]);
+            if (!rootList || !nameList)
+                return 0;
+            std::vector<uint64_t> objects = ListItems(z, *rootList), named = ListItems(z, *nameList, 8);
+            std::map<std::string, uint32_t> idByName;
+            for (size_t i = 0; i < objects.size() && i < named.size(); i++)
+            {
+                std::optional<uint64_t> object = z.Pointer(z.Be32(objects[i])), name = z.Pointer(z.Be32(named[i]));
+                if (object && name && z.TypeName(*object) == "CCYOSLootCollectibleTracker")
+                    idByName[z.String(*name)] = z.Word(*object, 36);
+            }
+
+            const std::string prefix = manifest["texts"].AsString(), field = "CCYOSLootCollectibleTracker::_name";
+            std::map<uint32_t, std::map<std::string, std::string>> texts;
+            for (size_t entry = 0; archive.iga && entry < archive.iga->Count(); entry++)
+            {
+                // "<prefix><code>.lng", any separator and case.
+                std::string path = archive.iga->Name(entry);
+                std::replace(path.begin(), path.end(), '\\', '/');
+                size_t at = path.find(prefix);
+                if (at == std::string::npos || path.size() < at + prefix.size() + 4 ||
+                    path.compare(path.size() - 4, 4, ".lng") != 0)
+                    continue;
+                const std::string language = path.substr(at + prefix.size(), path.size() - 4 - at - prefix.size());
+                std::optional<alchemy::IgzFile> lng = alchemy::IgzFile::Parse(archive.iga->Read(entry));
+                if (!lng)
+                    continue;
+                std::vector<uint32_t> pairs = lng->RecordWords("EXNM"), lngRoot = lng->RecordWords("ROOT");
+                const std::vector<std::string>& strings = lng->StringTable();
+                std::vector<std::string> objectNames, fieldNames;
+                for (size_t i = 0; i + 1 < pairs.size(); i += 2)
+                    (pairs[i] & 0x80000000 ? objectNames : fieldNames)
+                        .push_back(pairs[i + 1] < strings.size() ? strings[pairs[i + 1]] : std::string());
+                std::optional<uint64_t> top = lngRoot.empty() ? std::nullopt : lng->Pointer(lngRoot[0]);
+                std::vector<uint64_t> lists = top ? ListItems(*lng, *top) : std::vector<uint64_t>();
+                std::optional<uint64_t> list = lists.empty() ? std::nullopt : lng->Pointer(lng->Be32(lists[0]));
+                for (uint64_t item : list ? ListItems(*lng, *list) : std::vector<uint64_t>())
+                {
+                    std::optional<uint64_t> data = lng->Pointer(lng->Be32(item));
+                    if (!data || lng->TypeName(*data) != "igLocalizedStringData")
+                        continue;
+                    uint32_t objectIndex = lng->Word(*data, 3) & 0xFFFFFF, fieldIndex = lng->Word(*data, 4) & 0xFFFFFF;
+                    std::optional<uint64_t> text = lng->Pointer(lng->Word(*data, 2));
+                    if (!text || objectIndex >= objectNames.size() || fieldIndex >= fieldNames.size() ||
+                        fieldNames[fieldIndex] != field)
+                        continue;
+                    if (auto id = idByName.find(objectNames[objectIndex]); id != idByName.end())
+                        texts[id->second][language] = lng->String(*text);
+                }
+            }
+            for (const auto& [id, byLanguage] : texts)
+                parts.Set(std::to_string(id), Texts(byLanguage));
+            return int(texts.size());
+        }
+    }
+
+    int ExtractPartNames(
+        std::string_view game, const collection::Json& manifest, const Disc& disc, const std::filesystem::path& out)
+    {
+        collection::Json parts = collection::Json::Object();
+        int count = ImaginatorsParts(manifest, disc, parts);
+        if (count == 0)
+            return 0;
+        collection::Json file = collection::Json::Object();
+        file.Set("format", 1);
+        file.Set("game", std::string(game));
+        file.Set("about", "Read from the player's own disc (docs/runtime/host/figures.md, \"The parts' names\"). Game "
+                          "text: never share "
+                          "it.");
+        file.Set("parts", std::move(parts));
+        return WriteFile(file, out) ? count : 0;
     }
 
     int ExtractUpgrades(
@@ -360,13 +476,6 @@ namespace art
         file.Set("about",
             "Read from the player's own disc (docs/runtime/host/figures.md, \"Upgrades\"). Game text: never share it.");
         file.Set("toys", std::move(toys));
-        std::string text = file.Dump(), target = datadir::Text(out), temporary = target + ".part";
-        {
-            std::ofstream stream(std::filesystem::path(temporary), std::ios::binary | std::ios::trunc);
-            stream.write(text.data(), std::streamsize(text.size()));
-            if (!stream.good())
-                return 0;
-        }
-        return SDL_RenamePath(temporary.c_str(), target.c_str()) ? count : 0;
+        return WriteFile(file, out) ? count : 0;
     }
 }

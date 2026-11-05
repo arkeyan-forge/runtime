@@ -451,6 +451,14 @@ namespace collection
             std::string mark = figure.missingSignature ? (french ? "Virtuel · " : "Virtual · ") : "";
             return mark + (text.empty() ? std::string("Imaginator") : text) + " · " + level;
         }
+        if (figures::IsVehicleType(figure.type) && figure.state == figures::AreaState::Valid)
+        {
+            // The garage's upgrades (figure_tag.h): what the game's pause menu shows as the two gauges.
+            char text[48];
+            snprintf(text, sizeof(text), french ? "Bouclier %d · Arme %d" : "Shield %d · Weapon %d",
+                figures::VehicleShieldLevel(figure.stats), figures::VehicleWeaponLevel(figure.stats));
+            return text;
+        }
         if (!HasProgress(figure))
             return {};
         if (figure.state == figures::AreaState::Blank)

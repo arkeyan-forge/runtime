@@ -121,6 +121,11 @@ namespace game
         // The game's 3D button prompts, meshes that show the button as letters of geometry (host/glyphs.h, Prompt); their
         // pictures are rows of glyphTextures. Empty: the game has none known.
         std::span<const glyphs::Prompt> glyphPrompts = {};
+
+        // The pad button (XINPUT bits) that ends a story movie, for a game whose own skip never comes (SuperChargers'
+        // fmv01 ignores every button: Y, 0x8000): the movie is cut at the frame it shows and the game goes on as at its
+        // end (d3d/bink_display.cpp). 0: the game's own skip only.
+        uint16_t storyMovieSkipButton = 0;
     };
 
     // The adapter of the game being built, defined by games/<id>/adapter.cpp.
@@ -146,4 +151,7 @@ namespace game
 
     // True when `path` is one of the game's start-up logos (Adapter::introMovies).
     bool IsIntroMovie(std::string_view path);
+    // The buttons the title just read from the first pad (kernel/input.cpp): a new press of
+    // Adapter::storyMovieSkipButton ends the story movie that plays (d3d/bink_display.cpp).
+    void StoryMovieButtons(uint16_t buttons);
 }

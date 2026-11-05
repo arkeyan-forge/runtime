@@ -65,21 +65,21 @@ namespace collection
             return wanted.IsString() && !wanted.AsString().empty() ? wanted.AsString() : texts["en"].AsString();
         }
 
-        // The parsed file of a game, read again when it changes.
-        std::shared_ptr<const Json> Load(const std::string& game)
+        // A parsed file (upgrades.json, parts.json), read again when it changes.
+        std::shared_ptr<const Json> Load(const std::filesystem::path& path)
         {
             static std::mutex mutex;
             static std::map<std::string, std::pair<std::filesystem::file_time_type, std::shared_ptr<const Json>>> cache;
             std::lock_guard lock(mutex);
-            std::filesystem::path path = UpgradeFile(game);
+            const std::string key = path.string();
             std::error_code error;
             if (path.empty() || !std::filesystem::is_regular_file(path, error))
             {
-                cache.erase(game);
+                cache.erase(key);
                 return nullptr;
             }
             auto time = std::filesystem::last_write_time(path, error);
-            auto it = cache.find(game);
+            auto it = cache.find(key);
             if (it == cache.end() || it->second.first != time)
             {
                 std::ifstream in(path, std::ios::binary);
@@ -89,8 +89,8 @@ namespace collection
                 std::string parseError;
                 if (!Json::Parse(text.str(), json, parseError) || json["format"].AsInt() != 1)
                     return nullptr;
-                it = cache.insert_or_assign(game, std::pair{ time, std::make_shared<const Json>(std::move(json)) })
-                         .first;
+                it =
+                    cache.insert_or_assign(key, std::pair{ time, std::make_shared<const Json>(std::move(json)) }).first;
             }
             return it->second.second;
         }
@@ -102,9 +102,29 @@ namespace collection
         return data.empty() ? data : data / "upgrades.json";
     }
 
+    std::filesystem::path PartFile(std::string_view game)
+    {
+        std::filesystem::path data = datadir::Game(game);
+        return data.empty() ? data : data / "parts.json";
+    }
+
+    std::string PartName(const std::string& game, int id, std::string_view language)
+    {
+        std::shared_ptr<const Json> file = Load(PartFile(game));
+        if (file == nullptr)
+            return {};
+        const Json& texts = (*file)["parts"][std::to_string(id)];
+        if (const Json& wanted = texts[std::string(language)]; wanted.IsString() && !wanted.AsString().empty())
+            return wanted.AsString();
+        for (const auto& [code, text] : texts.Members()) // the disc's first language
+            if (text.IsString() && !text.AsString().empty())
+                return text.AsString();
+        return {};
+    }
+
     UpgradeTable Upgrades(const Toy& toy, const std::string& game, const std::string& language)
     {
-        std::shared_ptr<const Json> file = Load(game);
+        std::shared_ptr<const Json> file = Load(UpgradeFile(game));
         const Json* entry = nullptr;
         if (file != nullptr)
             for (uint16_t type : { toy.type, BaseToy(toy.type) })

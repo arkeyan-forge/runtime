@@ -12,6 +12,7 @@
 // - traps (toy types 210-220) instead use one pair of 21 data blocks; see TrapStats below.
 #include "figure_data.h"
 #include <array>
+#include <bit>
 #include <cstdint>
 #include <string>
 
@@ -151,8 +152,16 @@ namespace figures
     // figures.md "SuperChargers' vehicles"]. On first use the game writes the first pair (owner, dates, platform, 0x14 = 1,
     // 0x16 bit 0) and the extra pair with +0x03 = 9 and +0x06 = 9 [?], then adds the gearbits the vehicle collects to the
     // extra area's +0x08 (where FigureStats::swapForceExperience sits for a character). 0x4E of the first area is the
-    // vehicle's own byte [?]; its mods (bought in the garage) are not mapped [?]. WriteStats keeps all of them.
+    // vehicle's own byte [?]; its mods are not mapped [?]. WriteStats keeps all of them. The upgrade field (0x10) holds the
+    // garage's upgrades [V: 0x0023 written by our tools shows shield 2 and weapon 1 in the pause menu, run scL2]: bits 0-4 the
+    // shield's five, bits 5-9 the weapon's five.
     inline bool IsVehicleType(uint16_t toyType) { return toyType >= 3200 && toyType <= 3299; }
+    constexpr int VehicleUpgradeSteps = 5;
+    inline int VehicleShieldLevel(const FigureStats& stats) { return std::popcount(unsigned(stats.upgrades & 0x1F)); }
+    inline int VehicleWeaponLevel(const FigureStats& stats)
+    {
+        return std::popcount(unsigned(stats.upgrades >> 5 & 0x1F));
+    }
     constexpr uint32_t MaxGearbits = 65535; // the field's room as the game was seen to use it [?]
     inline uint32_t Gearbits(const FigureStats& stats) { return stats.swapForceExperience; }
     inline void SetGearbits(FigureStats& stats, uint32_t gearbits)

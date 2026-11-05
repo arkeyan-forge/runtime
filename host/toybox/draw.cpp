@@ -11,6 +11,7 @@
 #include "host/toybox.h"
 #include "host/toybox/look.h"
 #include "host/toybox/trap_villain.h"
+#include "language.h"
 #include <SDL3/SDL.h>
 #include <imgui.h>
 #include <algorithm>
@@ -1518,8 +1519,15 @@ namespace toybox
         // An Imaginators toy made here, without the factory signature: the port plays it, a real game would not.
         std::string VirtualCrystalText() { return collection::VirtualToyText(French() ? "fr" : "en"); }
 
-        // A crystal's parts as the game stores them (part ids; "-" for none): body, gear and powers.
-        std::string CrystalSummary(const std::string& path)
+        // A part id's name as the game shows it (parts.json, from the disc), else "#<id>".
+        std::string PartLabel(const std::string& game, int id)
+        {
+            std::string name = collection::PartName(game, id, TextLanguage());
+            return name.empty() ? "#" + std::to_string(id) : name;
+        }
+
+        // A crystal's parts (their names, "-" for none): body, gear and powers.
+        std::string CrystalSummary(const std::string& game, const std::string& path)
         {
             figures::CrystalStats c;
             if (collection::ReadCrystal(path, c) != figures::AreaState::Valid || !c.hasRecipe)
@@ -1532,7 +1540,7 @@ namespace toybox
                 const figures::CrystalParam& p = figures::CrystalParams()[size_t(i)];
                 uint16_t v = c.creation[size_t(i)];
                 text += (text.empty() ? "" : ", ") + std::string(name) + " " +
-                        (v == (1u << p.bits) - 1 ? std::string("-") : std::to_string(p.min + v));
+                        (v == (1u << p.bits) - 1 ? std::string("-") : PartLabel(game, p.min + v));
             }
             return text;
         }
@@ -1679,8 +1687,11 @@ namespace toybox
             if (figures::IsVehicleType(f.type))
                 facts.push_back(f.state == figures::AreaState::Valid
                                     ? std::string(L("Gearbits: ", "Gearbits : ")) +
-                                          std::to_string(figures::Gearbits(f.stats)) + L(" · driven ", " · conduit ") +
-                                          Duration(f.stats.playSeconds)
+                                          std::to_string(figures::Gearbits(f.stats)) + L(" · shield ", " · bouclier ") +
+                                          std::to_string(figures::VehicleShieldLevel(f.stats)) + "/5" +
+                                          L(" · weapon ", " · arme ") +
+                                          std::to_string(figures::VehicleWeaponLevel(f.stats)) + "/5" +
+                                          L(" · driven ", " · conduit ") + Duration(f.stats.playSeconds)
                                     : std::string(L("New: never driven", "Neuf : jamais conduit")));
             if (crystal && f.state == figures::AreaState::Blank)
                 facts.push_back(L("Empty: place it in the game to create an Imaginator.",
@@ -1693,7 +1704,7 @@ namespace toybox
             if (crystal && !nickname.empty())
                 facts.push_back(std::string(L("Name: ", "Nom : ")) + nickname);
             if (crystal && f.state == figures::AreaState::Valid && model.figureDetails)
-                facts.push_back(std::string(L("Creation: ", "Création : ")) + CrystalSummary(f.path));
+                facts.push_back(std::string(L("Creation: ", "Création : ")) + CrystalSummary(model.game, f.path));
             else if (progress && !nickname.empty())
                 facts.push_back(std::string(L("Nickname in the game: ", "Surnom dans le jeu : ")) + nickname);
             if (progress && f.state == figures::AreaState::Valid)
@@ -2073,7 +2084,7 @@ namespace toybox
             {
             case figures::CrystalParamKind::Colour: return L("colour ", "couleur ") + std::to_string(v);
             case figures::CrystalParamKind::Shape: return std::to_string(v) + " / 8";
-            default: return "#" + std::to_string(p.min + v);
+            default: return PartLabel(model.game, p.min + v);
             }
         }
 
@@ -2156,8 +2167,8 @@ namespace toybox
             TextMiddle(g_bold, 14, 32, 658, Look::TextSoft,
                 cs.dirty      ? L("Changed: B or Save to keep it", "Modifiée : B ou Enregistrer pour garder")
                 : cs.row == 0 ? L("A: type the name", "A : saisir le nom")
-                              : L("Left / right: change · LB / RB or Shift: by 10 · the game's own numbers",
-                                    "Gauche / droite : changer · LB / RB ou Maj : par 10 · les numéros du jeu"));
+                              : L("Left / right: change · LB / RB or Shift: by 10 · in the game's order",
+                                    "Gauche / droite : changer · LB / RB ou Maj : par 10 · dans l'ordre du jeu"));
         }
 
         void DrawStats(Model& model)

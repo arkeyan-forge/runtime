@@ -1362,6 +1362,25 @@ namespace
         return g_failures == 0 ? 0 : 1;
     }
 
+    // --diff <before> <after>: every byte that differs between the two tags, decrypted ("block 0x08 +0x0A: 00 -> 05"),
+    // trailers left out: what a game wrote (the research behind docs/runtime/host/figures.md).
+    int Diff(const char* before, const char* after)
+    {
+        FigureData a, b;
+        if (!LoadFigure(before, a) || !LoadFigure(after, b))
+            return fprintf(stderr, "cannot read both tags\n"), 1;
+        FigureData x = figures::Decrypt(a), y = figures::Decrypt(b);
+        int changed = 0;
+        for (size_t i = 0; i < x.size(); i++)
+            if (i % (4 * FigureBlockSize) != 3 * FigureBlockSize + i % FigureBlockSize && x[i] != y[i])
+            {
+                printf("block 0x%02zX +0x%02zX: %02X -> %02X\n", i / FigureBlockSize, i % FigureBlockSize, x[i], y[i]);
+                changed++;
+            }
+        printf("%d bytes changed\n", changed);
+        return 0;
+    }
+
     // --same-extra <before> <after>: the extra areas are byte-identical (decrypted) and valid in both.
     int SameExtra(const char* before, const char* after)
     {
@@ -1486,6 +1505,8 @@ int main(int argc, char** argv)
         return MakeTrapPair(argv[2]);
     if (argc > 1 && (strcmp(argv[1], "--make") == 0 || strcmp(argv[1], "--edit") == 0))
         return Make(argc, argv);
+    if (argc == 4 && strcmp(argv[1], "--diff") == 0)
+        return Diff(argv[2], argv[3]);
     if (argc == 4 && strcmp(argv[1], "--same-extra") == 0)
         return SameExtra(argv[2], argv[3]);
     if (argc == 4 && strcmp(argv[1], "--roundtrip") == 0)
