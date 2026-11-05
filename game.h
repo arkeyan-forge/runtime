@@ -117,6 +117,10 @@ namespace game
         // The widest full-resolution scene (fullScene) a wide window gets: past it the scene keeps the window's shape at a
         // smaller height (d3d/ultrawide.h). 0: no limit. SuperChargers stops in its hub with a 2560x720 scene (32:9).
         uint32_t maxSceneWidth = 0;
+
+        // The game's 3D button prompts, meshes that show the button as letters of geometry (host/glyphs.h, Prompt); their
+        // pictures are rows of glyphTextures. Empty: the game has none known.
+        std::span<const glyphs::Prompt> glyphPrompts = {};
     };
 
     // The adapter of the game being built, defined by games/<id>/adapter.cpp.

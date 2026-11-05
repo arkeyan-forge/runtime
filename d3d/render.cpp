@@ -780,6 +780,9 @@ namespace
     // glyph model's texture matrix to set to the identity (glyphs::UvMatrix; -1: none).
     uint64_t g_drawGlyphs[gpu::MaxSamplers];
     int g_drawUvMatrix = -1;
+    // A glyph prompt's face or letters being built (host/glyphs.h, Prompt): the XXH3 of its indices (0: none), which makes its
+    // streams and constants CPU copies the draw can rewrite and keep.
+    uint64_t g_promptFaceHash = 0;
 
     void ReadConstants(uint32_t device, float* out)
     {
@@ -1244,7 +1247,7 @@ namespace
             }
         }
         // The cached streams start at vertexStart (IssueDraw moves the draw's base to match), so do their CPU copies.
-        const bool fromVertexStart = upData == 0 && !expand && !g_dump.active;
+        const bool fromVertexStart = upData == 0 && !expand && !g_dump.active && g_promptFaceHash == 0;
         uint32_t cachedStreams = 0;
         for (uint32_t i = 0; i < elementCount; i++)
         {
@@ -1486,7 +1489,7 @@ namespace
             if (guest == 0)
                 return false;
             uint32_t bytes = count * 2;
-            if (!g_dump.active)
+            if (!g_dump.active && g_promptFaceHash == 0)
             {
                 uint32_t minIndex, maxIndex;
                 draw.indicesConverted = gpu::CacheIndices(
@@ -1521,7 +1524,7 @@ namespace
         if (!PrepareVertices(device, draw, vs != nullptr ? vs->inputs : 0, vs != nullptr ? vs->pulled : 0, vertexCount,
                 upData, upStride, expand, vertexStart, vertexEnd))
             return false;
-        if (upData == 0 && !expand && !g_dump.active)
+        if (upData == 0 && !expand && !g_dump.active && g_promptFaceHash == 0)
         {
             // The cached streams start at vertexStart.
             if (indexed)
@@ -1541,8 +1544,9 @@ namespace
         const bool hostKernel = fxaaPass && Scale() > 1;
         // The "Edge smoothing" setting: Game leaves the pass's contrast thresholds, Light and Off raise them (gpu/edge_smoothing.h).
         const edgesmoothing::Mode smoothing = fxaaPass ? EdgeSmoothing() : edgesmoothing::Game;
-        if (upData != 0 || g_dump.active || (g_frameComposite && game::UltrawideCompositeVpos) || hostKernel ||
-            smoothing != edgesmoothing::Game || g_drawUvMatrix >= 0)
+        if (upData != 0 || g_dump.active || g_promptFaceHash != 0 ||
+            (g_frameComposite && game::UltrawideCompositeVpos) || hostKernel || smoothing != edgesmoothing::Game ||
+            g_drawUvMatrix >= 0)
         {
             // A BeginVertices draw captures the constants when the buffer is requested, before the game fills the
             // vertices (and may change state); the debug dump wants the same host-order copy.
@@ -1664,27 +1668,198 @@ namespace
         return true;
     }
 
-    // A glyph model's letters of geometry (host/glyphs.h, Model): not drawn while its card shows the style's glyph.
-    bool GlyphLetters(uint32_t device, uint32_t first, uint32_t count)
+    // The guest's 16-bit indices of an indexed draw (as stored), or nullptr.
+    const void* DrawIndices(uint32_t device, uint32_t first)
     {
         uint32_t indices = Read32(device + Device::Indices);
         uint32_t guest = indices != 0 ? PhysicalToGuest(Read32(indices + Resource::IndexBufferAddress)) : 0;
-        return guest != 0 && glyphs::HidesDraw(count, g_memory.Translate(guest + first * 2));
+        return guest != 0 ? g_memory.Translate(guest + first * 2) : nullptr;
+    }
+
+    // The picture of a glyph prompt (host/glyphs.h, Prompt) for the style in use, kept per prompt.
+    gpu::Texture* PromptPicture(const glyphs::Prompt& prompt)
+    {
+        struct Picture
+        {
+            gpu::Texture* texture = nullptr;
+            uint64_t hostHash = 0;
+        };
+        static std::unordered_map<uint64_t, Picture> pictures;
+        Picture& picture = pictures[prompt.picture];
+        glyphs::Replace(prompt.picture, prompt.width, prompt.height, 5, {}, picture.texture, picture.hostHash);
+        return picture.texture;
+    }
+
+    // A draw of a glyph prompt (its face or its letters, host/glyphs.h PromptPartOf), built as the game drew it and held for one
+    // draw: the other part of the prompt comes next, before or after it. It owns copies of its data (the next BuildDraw reuses
+    // the renderer's buffers); every vector is reused.
+    struct HeldDraw
+    {
+        bool valid = false;
+        gpu::DrawDesc draw;
+        std::vector<uint8_t> streams[gpu::MaxVertexStreams];
+        std::vector<uint8_t> indices;
+        std::vector<float> constants;
+        std::vector<uint16_t> hostIndices; // the draw's indices in host order, for PlanarUv
+        glyphs::PromptPart part = glyphs::PromptPart::None;
+        uint32_t count = 0;
+        int32_t baseVertex = 0;
+        uint64_t hash = 0;
+    };
+    HeldDraw g_held, g_current; // the draw held, and a face that arrived after its letters
+
+    void CopyDraw(HeldDraw& held, const gpu::DrawDesc& draw, const void* guestIndices, uint32_t count,
+        int32_t baseVertex, glyphs::PromptPart part, uint64_t hash)
+    {
+        held.draw = draw;
+        for (uint32_t i = 0; i < draw.streamCount; i++)
+            if (draw.streams[i].data != nullptr)
+            {
+                auto data = static_cast<const uint8_t*>(draw.streams[i].data);
+                held.streams[i].assign(data, data + draw.streams[i].size);
+                held.draw.streams[i].data = held.streams[i].data();
+            }
+        auto indices = static_cast<const uint8_t*>(draw.indices);
+        held.indices.assign(indices, indices + draw.indexBytes);
+        held.draw.indices = held.indices.data();
+        held.constants.assign(g_constants.begin(), g_constants.end());
+        held.draw.vertexConstants = held.constants.data();
+        held.draw.pixelConstants = held.constants.data() + 256 * 4;
+        held.hostIndices.resize(count);
+        memcpy(held.hostIndices.data(), guestIndices, size_t(count) * 2);
+        for (uint16_t& index : held.hostIndices)
+            index = ByteSwap(index);
+        held.count = count;
+        held.baseVertex = baseVertex;
+        held.part = part;
+        held.hash = hash;
+        held.valid = true;
+    }
+
+    void SubmitDraw(const gpu::DrawDesc& draw)
+    {
+        gpu::Draw(draw);
+        g_stats.draws++;
+        if (draw.colorTargetCount != 0)
+            DumpResolve(draw.colorTargets[0], 'd');
+    }
+
+    // Issues the held draw as the game drew it: whatever else the renderer is about to do (a draw that is not the other part,
+    // a clear, a resolve, the present) comes after it.
+    void FlushHeldDraw()
+    {
+        if (!g_held.valid)
+            return;
+        g_held.valid = false;
+        SubmitDraw(g_held.draw);
+    }
+
+    // The face `held` with the glyph of `prompt`: the prompt's picture instead of its colour map, and the face's texture
+    // coordinates spread over its whole area. False (nothing changed) when its layout is not handled.
+    bool GlyphFace(HeldDraw& held, const glyphs::Prompt& prompt)
+    {
+        gpu::DrawDesc& draw = held.draw;
+        const gpu::VertexInput *position = nullptr, *texcoord = nullptr;
+        for (uint32_t i = 0; i < draw.inputCount; i++)
+        {
+            if (draw.inputs[i].location == 0)
+                position = &draw.inputs[i];
+            else if (draw.inputs[i].location == 4)
+                texcoord = &draw.inputs[i];
+        }
+        static bool logged = false;
+        if (position == nullptr || texcoord == nullptr || position->stream != texcoord->stream ||
+            position->format != gpu::Format::R16G16B16A16_SNORM || texcoord->format != gpu::Format::R16G16_FLOAT ||
+            draw.streams[position->stream].data == nullptr)
+        {
+            if (!std::exchange(logged, true))
+                fprintf(
+                    stderr, "[glyphs] a world prompt's face has a vertex layout not handled: it stays the game's\n");
+            return false;
+        }
+        gpu::Texture* picture = PromptPicture(prompt);
+        if (picture == nullptr)
+            return false;
+        std::vector<uint8_t>& vertices = held.streams[position->stream];
+        if (!glyphs::PlanarUv(prompt, vertices, draw.streams[position->stream].stride, position->offset,
+                texcoord->offset, held.hostIndices, held.baseVertex))
+            return false;
+        draw.textures[0] = picture;
+        draw.samplers[0].addressU = draw.samplers[0].addressV = plume::RenderTextureAddressMode::CLAMP;
+        draw.samplers[0].minLod = 0.0f;
+        draw.samplers[0].maxLod = 1000.0f;
+        draw.samplers[0].minFilter = draw.samplers[0].magFilter = plume::RenderFilter::LINEAR;
+        draw.samplers[0].mipFilter = plume::RenderMipmapMode::LINEAR;
+        static uint64_t seen[16];
+        static uint32_t seenCount = 0;
+        bool known = false;
+        for (uint32_t i = 0; i < seenCount; i++)
+            known = known || seen[i] == prompt.picture;
+        if (!known && seenCount < 16)
+        {
+            seen[seenCount++] = prompt.picture;
+            fprintf(stderr, "[glyphs] world prompt %016llX (face of %u, letters of %u indices) drawn as its glyph\n",
+                static_cast<unsigned long long>(prompt.picture), prompt.faceCount, prompt.lettersCount);
+        }
+        return true;
     }
 
     void IssueDraw(
         uint32_t device, uint32_t primitive, uint32_t first, uint32_t count, bool indexed, int32_t baseVertex)
     {
-        if (indexed && GlyphLetters(device, first, count))
-            return;
-        gpu::DrawDesc draw;
-        if (BuildDraw(device, primitive, first, count, 0, 0, indexed, baseVertex, draw))
+        const void* indices = indexed ? DrawIndices(device, first) : nullptr;
+        // A glyph model's letters of geometry (host/glyphs.h, Model): not drawn while the style's glyph replaces them.
+        uint64_t hash = 0;
+        glyphs::PromptPart part =
+            indices != nullptr ? glyphs::PromptPartOf(count, indices, hash) : glyphs::PromptPart::None;
+        if (g_held.valid)
         {
-            gpu::Draw(draw);
-            g_stats.draws++;
-            if (draw.colorTargetCount != 0)
-                DumpResolve(draw.colorTargets[0], 'd');
+            const glyphs::Prompt* pair = nullptr;
+            if (part != glyphs::PromptPart::None && part != g_held.part)
+                pair = part == glyphs::PromptPart::Letters ? glyphs::PromptOf(g_held.count, g_held.hash, count, hash)
+                                                           : glyphs::PromptOf(count, hash, g_held.count, g_held.hash);
+            if (pair != nullptr && part == glyphs::PromptPart::Letters && GlyphFace(g_held, *pair))
+            {
+                // The face came first: with the button's glyph, and these letters are not drawn.
+                g_held.valid = false;
+                SubmitDraw(g_held.draw);
+                return;
+            }
+            if (pair != nullptr && part == glyphs::PromptPart::Face)
+            {
+                // The letters came first, held: build this face, give it the glyph, and drop the letters.
+                g_promptFaceHash = hash;
+                gpu::DrawDesc draw;
+                const bool built = BuildDraw(device, primitive, first, count, 0, 0, indexed, baseVertex, draw);
+                g_promptFaceHash = 0;
+                if (!built)
+                {
+                    FlushHeldDraw();
+                    return;
+                }
+                CopyDraw(g_current, draw, indices, count, baseVertex, part, hash);
+                g_current.valid = false;
+                if (GlyphFace(g_current, *pair))
+                    g_held.valid = false;
+                else
+                    FlushHeldDraw();
+                SubmitDraw(g_current.draw);
+                return;
+            }
+            FlushHeldDraw();
+            if (pair != nullptr)
+                part = glyphs::PromptPart::None; // the face's glyph was not possible: these letters are the game's
         }
+        g_promptFaceHash = part != glyphs::PromptPart::None ? hash : 0;
+        gpu::DrawDesc draw;
+        const bool built = BuildDraw(device, primitive, first, count, 0, 0, indexed, baseVertex, draw);
+        g_promptFaceHash = 0;
+        if (!built)
+            return;
+        if (part != glyphs::PromptPart::None && draw.pulledCount == 0 && draw.indices != nullptr)
+            CopyDraw(g_held, draw, indices, count, baseVertex, part, hash);
+        else
+            SubmitDraw(draw);
     }
 
     // BeginVertices hands the game a buffer it fills after the call: the draw is issued at the next D3D call.
@@ -1694,6 +1869,7 @@ namespace
         if (!p.pending)
             return;
         p.pending = false;
+        FlushHeldDraw();
 
         // The vertex stream of a BeginVertices draw is always the first one (PrepareVertices creates it first).
         std::vector<uint8_t>& data = g_streamData[0];
@@ -1836,6 +2012,7 @@ namespace
 
     void Resolve(uint32_t device, const ResolveArgs& args)
     {
+        FlushHeldDraw();
         if (std::exchange(g_skipStepResolve, false))
             return;
         g_stats.resolves++;
@@ -1967,6 +2144,7 @@ namespace
     // guest, the rectangle is clipped to the viewport and, with the scissor test on, to the scissor rectangle.
     void Clear(uint32_t device, uint32_t flags, uint32_t rect, uint32_t color, uint32_t stencil, float z)
     {
+        FlushHeldDraw();
         uint32_t depthSurface = Read32(device + Device::DepthStencil);
         if (depthSurface == 0)
             flags &= ~0xF0u;
@@ -2207,6 +2385,7 @@ PPC_FUNC(GAME_HOOK(D3DDevice_Swap))
     {
         std::lock_guard lock(g_mutex);
         FlushPendingVertices();
+        FlushHeldDraw();
         xenos::TextureFetch fetch;
         uint32_t texture = ctx.r4.u32;
         for (uint32_t i = 0; i < 6; i++)
