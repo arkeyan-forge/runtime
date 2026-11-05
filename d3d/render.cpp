@@ -7,6 +7,7 @@
 #include "d3d/render_stats.h"
 #include "d3d/command_buffers.h"
 #include "d3d/depth_readback.h"
+#include "d3d/mrt_alias.h"
 #include "d3d/tiled_depth.h"
 #include "d3d/device.h"
 #include "d3d/render_scale.h"
@@ -93,6 +94,14 @@ namespace
     // --- Render targets: one host texture per EDRAM surface (base tile, format, size). ---------------------------------
 
     std::unordered_map<uint64_t, gpu::Texture*> g_targets;
+    // Surfaces that once shared a draw's colour set with another surface of the same key (d3d/mrt_alias.h) have a host
+    // target of their own, kept with the key it was made for.
+    struct OwnTarget
+    {
+        uint64_t key = 0;
+        gpu::Texture* texture = nullptr;
+    };
+    std::unordered_map<uint32_t, OwnTarget> g_ownTargets;
 
     // --- Ultrawide: the frame (the game's 1280x720 back buffer and its depth) is wider than the game thinks. -------------
     // The game composes the scene and draws the HUD for 1280x720 guest pixels. With a wide window the host target is
@@ -115,10 +124,14 @@ namespace
     int32_t FrameShift() { return int32_t(ultrawide::FrameWidth() - ultrawide::FrameWidth16x9) / 2 * Scale(); }
 
     // D3DSurface: +0x1C RB_COLOR_INFO / RB_DEPTH_INFO (EDRAM base tile, format), +0x24 size (width-1 << 18 | height-1 << 3).
-    gpu::Texture* TargetFor(uint32_t device, uint32_t surface, bool depth)
+    struct TargetShape
     {
-        if (surface == 0)
-            return nullptr;
+        uint64_t key;
+        uint32_t width, height, format;
+    };
+
+    TargetShape ShapeOf(uint32_t device, uint32_t surface, bool depth)
+    {
         uint32_t info = Read32(surface + 0x1C);
         uint32_t size = Read32(surface + 0x24);
         uint32_t width = ((size >> 18) & 0x3FFF) + 1;
@@ -146,9 +159,22 @@ namespace
             }
         }
         uint32_t format = depth ? 0x10 : (info >> 16) & 0xF;
-        uint64_t key = (info & 0xFFF) | uint64_t(format) << 12 | uint64_t(width) << 20 | uint64_t(height) << 36;
+        return { (info & 0xFFF) | uint64_t(format) << 12 | uint64_t(width) << 20 | uint64_t(height) << 36, width,
+            height, format };
+    }
 
-        gpu::Texture*& texture = g_targets[key];
+    gpu::Texture* TargetFor(uint32_t device, uint32_t surface, bool depth)
+    {
+        if (surface == 0)
+            return nullptr;
+        const auto [key, width, height, format] = ShapeOf(device, surface, depth);
+        auto own = depth ? g_ownTargets.end() : g_ownTargets.find(surface);
+        if (own != g_ownTargets.end() && own->second.key != key)
+        {
+            gpu::DestroyTexture(own->second.texture);
+            own->second = { key, nullptr };
+        }
+        gpu::Texture*& texture = own != g_ownTargets.end() ? own->second.texture : g_targets[key];
         if (texture == nullptr)
         {
             const int32_t scale = d3d::TargetScale(width, height, Scale());
@@ -917,6 +943,25 @@ namespace
         }
 
         // Render targets.
+        uint32_t surfaces[gpu::MaxRenderTargets];
+        uint64_t keys[gpu::MaxRenderTargets];
+        uint32_t surfaceCount = 0;
+        for (; surfaceCount < gpu::MaxRenderTargets; surfaceCount++)
+        {
+            surfaces[surfaceCount] = Read32(device + Device::RenderTargets + surfaceCount * 4);
+            if (surfaces[surfaceCount] == 0)
+                break;
+            keys[surfaceCount] = ShapeOf(device, surfaces[surfaceCount], false).key;
+        }
+        for (uint32_t own = d3d::SlotsNeedingOwnTarget(keys, surfaces, surfaceCount); own != 0; own &= own - 1)
+        {
+            const uint32_t slot = uint32_t(std::countr_zero(own));
+            if (g_ownTargets.try_emplace(surfaces[slot]).second)
+                fprintf(stderr,
+                    "[render] render target %u (surface %08X) shares its EDRAM key %llX with another of the "
+                    "draw's targets: a host target of its own\n",
+                    slot, surfaces[slot], (unsigned long long)keys[slot]);
+        }
         uint32_t colorMask = GpuRegister(device, Reg::RB_COLOR_MASK);
         const uint32_t blendRegisters[4] = { Reg::RB_BLENDCONTROL0, 0x2209, 0x220A, 0x220B };
         for (uint32_t i = 0; i < gpu::MaxRenderTargets; i++)

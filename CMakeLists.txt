@@ -313,6 +313,10 @@ target_include_directories(SSARangeHashTest PRIVATE . ${CMAKE_SOURCE_DIR}/thirdp
 add_executable(SSAVertexPairsTest d3d/vertex_pairs_test.cpp)
 target_include_directories(SSAVertexPairsTest PRIVATE .)
 
+# Render target slots of one draw that share an EDRAM key but not a surface: ./SSAMrtAliasTest
+add_executable(SSAMrtAliasTest d3d/mrt_alias_test.cpp)
+target_include_directories(SSAMrtAliasTest PRIVATE .)
+
 # Where host thunks go in the code's padding: ./SSAThunkSlotTest
 add_executable(SSAThunkSlotTest thunk_slot_test.cpp)
 target_include_directories(SSAThunkSlotTest PRIVATE .)
