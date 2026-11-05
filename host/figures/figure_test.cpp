@@ -620,6 +620,21 @@ namespace
               sensei[3 * 16 + 15] == 0x51 && figures::CreateFigure(14)[3 * 16 + 15] == 0);
         CHECK(figures::NeedsFactorySignature(682) && figures::NeedsFactorySignature(601) &&
               !figures::NeedsFactorySignature(3227) && !figures::HasFactorySignature(figures::CreateFigure(682)));
+        // A crystal made with variant 0 (the catalogue has no plain crystal: the launcher's and the Toy Box's "Create")
+        // gets the 2016 trailer too; one an older build wrote without it is mended, a signed or older toy never.
+        FigureData plainCrystal = figures::CreateFigure(683);
+        CHECK(
+            plainCrystal[3 * 16 + 6] == 0xFF && plainCrystal[3 * 16 + 8] == 0x80 && plainCrystal[3 * 16 + 15] == 0x51);
+        FigureData older = plainCrystal;
+        const uint8_t readOnly[4] = { 0x0F, 0x0F, 0x0F, 0x69 };
+        memcpy(&older[3 * 16 + 6], readOnly, 4);
+        older[3 * 16 + 15] = 0;
+        CHECK(figures::MendVirtualToy(older) && older == plainCrystal && !figures::MendVirtualToy(older));
+        FigureData signedCrystal = older;
+        memcpy(&signedCrystal[3 * 16 + 6], readOnly, 4);
+        signedCrystal[2 * 16] = signedCrystal[4 * 16] = 0x5A;
+        FigureData eruptor = figures::CreateFigure(9);
+        CHECK(!figures::MendVirtualToy(signedCrystal) && !figures::MendVirtualToy(eruptor));
         figures::CrystalStats made;
         made.name = "TEST BREW";
         made.experience = 6000;

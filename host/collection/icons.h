@@ -68,6 +68,10 @@ namespace collection
     // small in a corner). The same picture in the
     // launcher, the figure sheet, Add a figure, the seats and the Toy Box.
     Image SwapperPicture(const Toy& top, uint16_t topVariant, const Toy& bottom, uint16_t bottomVariant);
+    // A creation crystal's picture in its element's colour: the disc has one magenta crystal for the ten elements (the game
+    // tints it as it draws), so its magenta glass takes the element's colour here, shade kept. `path`: the picture the
+    // caller found (BestPicturePath, PortraitPath). Empty for another toy or without a picture.
+    Image CrystalPicture(const Toy& toy, const std::string& path);
     // PortraitPath with no game being viewed: the newest cached game, as for every other view.
     std::string DiscImagePath(const Toy& toy);
 

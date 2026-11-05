@@ -441,8 +441,9 @@ target_link_libraries(SSAFigureTest PRIVATE plume SSAXenonUtils fmt::fmt SDL3::S
 
 # Disc pictures: the texture, archive and image readers on synthetic data (no game data needed); with SSA_ISO and/or
 # GIANTS_ISO set, each game's pictures read from its disc into a scratch SKYLANDERS_DATA: ./SSAArtTest
-add_executable(SSAArtTest host/art/art_test.cpp ${SSA_ART_SOURCES} ${SSA_COLLECTION_SOURCES} vfs.cpp ${SSA_PLATFORM_SOURCES})
+add_executable(SSAArtTest host/art/art_test.cpp host/stb_impl.cpp ${SSA_ART_SOURCES} ${SSA_COLLECTION_SOURCES} vfs.cpp ${SSA_PLATFORM_SOURCES})
 target_include_directories(SSAArtTest PRIVATE .)
+target_include_directories(SSAArtTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/stb)
 target_link_libraries(SSAArtTest PRIVATE SDL3::SDL3-static)
 if(NOT SSA_UWP)
     target_sources(SSAArtTest PRIVATE host/accents_test.cpp host/launcher.cpp host/launcher_games.cpp host/xex_title.cpp

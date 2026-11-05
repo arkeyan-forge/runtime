@@ -372,10 +372,12 @@ namespace figures
             memcpy(trailer, key.data(), key.size());
             memcpy(trailer + 6, sector == 0 ? AccessReadOnly : AccessReadWrite, 4);
         }
-        // A toy of 2016 (Imaginators: variant 0x5000 and up) has its own sector-0 trailer, and its last byte names the
-        // public key the game checks the factory signature with: without 0x51 the game does not even check it [V: every
-        // retail dump of the owner's; the run of 2026-11-05].
-        if (Variant(tag) >= 0x5000)
+        // A toy of 2016 (Imaginators: variant 0x5000 and up, or a toy type of 600-699 whatever its variant) has its own
+        // sector-0 trailer, and its last byte names the public key the game checks the factory signature with: without
+        // 0x51 the game does not even check it and calls the toy corrupted [V: every retail dump of the owner's; the runs
+        // of 2026-11-05: a crystal the launcher made with variant 0 was refused, the same with this trailer opens the
+        // creator].
+        if (Variant(tag) >= 0x5000 || NeedsFactorySignature(ToyType(tag)))
         {
             uint8_t* trailer = tag.data() + 3 * FigureBlockSize;
             memcpy(trailer + 6, Access2016, 4);
@@ -837,6 +839,18 @@ namespace figures
     {
         return NeedsFactorySignature(ToyType(tag)) && !IsZero(tag.data() + 2 * FigureBlockSize, FigureBlockSize) &&
                !IsZero(tag.data() + 4 * FigureBlockSize, FigureBlockSize);
+    }
+
+    bool MendVirtualToy(FigureData& tag)
+    {
+        if (!NeedsFactorySignature(ToyType(tag)) || HasFactorySignature(tag))
+            return false;
+        FigureData mended = tag;
+        WriteSectorKeys(mended);
+        if (mended == tag)
+            return false;
+        tag = mended;
+        return true;
     }
 
     uint32_t CrystalLevelExperience(int level)

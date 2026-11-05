@@ -23,7 +23,8 @@ namespace art
 
     // `files`: the paths of the disc's files (any case, '/' or '\', a leading separator or none).
     //  - "ssa": text is a folder text/<eng|fre|ger|spa|ita|dut|swe|nor|dan|fin>/ with files, voices are audio/<folder>/voice.bnk.
-    //  - "swapforce": archives/<name>_<code>.pak (en, fr on the USA disc; es, it on the European one), for text and voices alike.
+    //  - "swapforce", "superchargers", "imaginators": archives/<name>_<code>.pak (Swap Force: en, fr on the USA disc, es, it on the
+    //    European one; SuperChargers' European disc: en, de; Imaginators' French and Dutch disc: fr, nl), for text and voices alike.
     //  - "giants": the languages are packs inside each .bld file, not in file names, and its only known release holds all twelve.
     //  - "trapteam": every file name is the same on every release; the text is the "<LANGUAGE>.pak" entries of character/Init_Setup.bld
     //    (permanent/global.bld when that gives none), the voices are the language folders ("<character>/german/vo_x.wav") of the

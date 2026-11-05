@@ -312,6 +312,9 @@ namespace
             fprintf(stderr, "[portal] %s is not a figure dump (1 KB tag image)\n", path.c_str());
             return -1;
         }
+        // A toy made by an older build: the game sees it mended, and the file is when the game first writes it.
+        if (figures::MendVirtualToy(data))
+            fprintf(stderr, "[portal] %s: the 2016 sector keys of a virtual toy set\n", path.c_str());
 
         bool locked = InCollection(path);
         if (locked && !collection::Lock(path, GameId))

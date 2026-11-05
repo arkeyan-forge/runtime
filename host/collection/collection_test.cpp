@@ -568,6 +568,14 @@ namespace
         CHECK(ReplaceDump(made, other3) && Read(made, figure) && figure.type == 683 && figure.level == 42);
         std::string other = Create(3227);
         CHECK(!WriteCrystal(other, back, &why) && why == "not a creation crystal" && Delete(other));
+        // The launcher's and the Toy Box's plain crystal: no base variant in the catalogue, so variant 0; it still gets
+        // the 2016 sector-0 trailer (access FF 07 80 69, key byte 0x51), or the game calls it corrupted.
+        const Toy* undead = catalogue.Find(683);
+        std::string plainCrystal = Create(683, StandardVariant(*undead));
+        std::string plainTag = ReadText(plainCrystal);
+        CHECK(StandardVariant(*undead) == 0 && plainTag.size() == 1024 && plainTag[0x1C] == 0 && plainTag[0x1D] == 0 &&
+              uint8_t(plainTag[0x36]) == 0xFF && uint8_t(plainTag[0x37]) == 0x07 && uint8_t(plainTag[0x38]) == 0x80 &&
+              uint8_t(plainTag[0x3F]) == 0x51 && Delete(plainCrystal));
         CHECK(Delete(made));
 
         // A vehicle's gearbits: only once the game used it (its first use writes the fields beside them).

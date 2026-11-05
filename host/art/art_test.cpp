@@ -756,15 +756,16 @@ namespace
         int w, h;
         size(art::CachedPath(game, art::Role::Logo), w, h);
         printf("  logo %dx%d", w, h);
-        CHECK(w >= 512 && h >= 200 && w > h);
+        // [Imaginators] no clean logo on the disc: the dashboard's 420x320 tile (games/imaginators/docs/art.md).
+        const bool tile = strcmp(game, "imaginators") == 0;
+        CHECK(tile ? (w == 420 && h == 320) : (w >= 512 && h >= 200 && w > h));
         // [SwapForce] No picture of the logo on the disc is larger than 872x400: the title screen's lossless 32-bit one
         // (juicestandard_title_00) is the sharpest, the DXT5 copy of it (title_10) the same size.
         CHECK(strcmp(game, "swapforce") != 0 || (w == 872 && h == 400));
         size(art::CachedPath(game, art::Role::Background), w, h);
         printf(", background %dx%d\n", w, h);
-        // [Imaginators] its menus' background is a 344x344 gradient (games/imaginators/docs/art.md).
-        int smallest = strcmp(game, "imaginators") == 0 ? 256 : 512;
-        CHECK(w >= smallest && h >= smallest);
+        // [Imaginators, SuperChargers] the dashboard's 1920x1080 backdrop (nxeart) or a menu picture.
+        CHECK(w >= 512 && h >= 512 && (strcmp(game, "imaginators") != 0 || (w == 1920 && h == 1080)));
         if (strcmp(game, "giants") == 0)
             TestGiantsLogo(art::CachedPath(game, art::Role::Logo));
         // Every toy the game accepts that the catalogue gives a picture has one now.

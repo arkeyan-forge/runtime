@@ -229,6 +229,10 @@ namespace figures
     // is such a toy and blocks 2 and 4 are not zero; such a toy made by our tools (CreateFigure) has none.
     bool NeedsFactorySignature(uint16_t toyType);
     bool HasFactorySignature(const FigureData& tag);
+    // Such a toy made here (no factory signature) with the trailers of an older build (before 2026-11-05, or a crystal
+    // made with variant 0) gets this build's sector keys: without the 2016 sector-0 trailer the game refuses it. False
+    // when nothing changed (a signed toy, an older game's toy, a tag already right).
+    bool MendVirtualToy(FigureData& tag);
 
     // A creation's level: the game's own table (every class's character data on the disc, an igIntIntHashTable):
     // levels 1-20 are the older games' 20, then 20000 more each, up to 80 at 1400000 [V]. Without the Senseis' training
