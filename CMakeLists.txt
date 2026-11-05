@@ -20,8 +20,6 @@ elseif(SSA_GAME STREQUAL "trapteam")
     set(SSA_BUNDLE_ID TTRecomp)
 elseif(SSA_GAME STREQUAL "superchargers")
     set(SSA_BUNDLE_ID SSCRecomp)
-elseif(SSA_GAME STREQUAL "imaginators")
-    set(SSA_BUNDLE_ID SIMRecomp)
 else()
     set(SSA_BUNDLE_ID SSARecomp)
 endif()
@@ -43,7 +41,6 @@ add_executable(ArkeyanRuntime
     game.cpp
     main.cpp
     memory.cpp
-    write_watch.cpp
     loader.cpp
     platform/timebase.cpp
     ${SSA_PLATFORM_SOURCES}
@@ -298,13 +295,6 @@ add_executable(SSATiledDepthTest d3d/tiled_depth_test.cpp d3d/xenos.cpp)
 target_include_directories(SSATiledDepthTest PRIVATE .)
 target_link_libraries(SSATiledDepthTest PRIVATE plume SSAXenonUtils SDL3::SDL3-static)
 
-# The write watch (faults on watched guest pages, the stamps, the cool-down): ./SSAWriteWatchTest
-add_executable(SSAWriteWatchTest write_watch_test.cpp write_watch.cpp ${SSA_PLATFORM_SOURCES})
-target_include_directories(SSAWriteWatchTest PRIVATE .)
-if(WIN32)
-    target_link_libraries(SSAWriteWatchTest PRIVATE winmm) # platform_win32.cpp's timer resolution
-endif()
-
 # The buffer cache's range hash (chunks shared by overlapping ranges): ./SSARangeHashTest
 add_executable(SSARangeHashTest gpu/range_hash_test.cpp)
 target_include_directories(SSARangeHashTest PRIVATE . ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/xxHash)
@@ -312,10 +302,6 @@ target_include_directories(SSARangeHashTest PRIVATE . ${CMAKE_SOURCE_DIR}/thirdp
 # 16-bit vertex component pairs back in order after the 32-bit swap: ./SSAVertexPairsTest
 add_executable(SSAVertexPairsTest d3d/vertex_pairs_test.cpp)
 target_include_directories(SSAVertexPairsTest PRIVATE .)
-
-# Render target slots of one draw that share an EDRAM key but not a surface: ./SSAMrtAliasTest
-add_executable(SSAMrtAliasTest d3d/mrt_alias_test.cpp)
-target_include_directories(SSAMrtAliasTest PRIVATE .)
 
 # Where host thunks go in the code's padding: ./SSAThunkSlotTest
 add_executable(SSAThunkSlotTest thunk_slot_test.cpp)
@@ -411,17 +397,13 @@ endif()
 
 add_executable(SSARenderScaleTest d3d/render_scale_test.cpp)
 
-# The wide scene and frame sizes for a window's shape: ./SSAUltrawideTest
-add_executable(SSAUltrawideTest d3d/ultrawide_test.cpp d3d/ultrawide.cpp)
-target_include_directories(SSAUltrawideTest PRIVATE . ${SSA_GAME_DIR})
-
 # The pacer of per-frame simulation steps, with a fake clock: ./SSAStepPacerTest
 add_executable(SSAStepPacerTest d3d/step_pacer_test.cpp)
 target_include_directories(SSAStepPacerTest PRIVATE .)
 
 # Protocol test of the emulated Skylanders portal (no game data needed): ./SSAPortalTest
-add_executable(SSAPortalTest host/portal_emulated.cpp host/portal_identity.cpp host/portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/ssa/ssa_portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/giants/giants_portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/swapforce/swapforce_portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/superchargers/superchargers_portal_prompt.cpp host/portal_test.cpp host/figures/figure_data.cpp)
-target_include_directories(SSAPortalTest PRIVATE . ${CMAKE_SOURCE_DIR}/games/ssa ${CMAKE_SOURCE_DIR}/games/giants ${CMAKE_SOURCE_DIR}/games/swapforce ${CMAKE_SOURCE_DIR}/games/superchargers)
+add_executable(SSAPortalTest host/portal_emulated.cpp host/portal_identity.cpp host/portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/ssa/ssa_portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/giants/giants_portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/swapforce/swapforce_portal_prompt.cpp host/portal_test.cpp host/figures/figure_data.cpp)
+target_include_directories(SSAPortalTest PRIVATE . ${CMAKE_SOURCE_DIR}/games/ssa ${CMAKE_SOURCE_DIR}/games/giants ${CMAKE_SOURCE_DIR}/games/swapforce)
 target_link_libraries(SSAPortalTest PRIVATE SDL3::SDL3-static)
 
 # The portal speaker's ADPCM decoder against a test-only encoder (no game data needed): ./SSAPortalAdpcmTest
@@ -445,9 +427,8 @@ target_link_libraries(SSAFigureTest PRIVATE plume SSAXenonUtils fmt::fmt SDL3::S
 
 # Disc pictures: the texture, archive and image readers on synthetic data (no game data needed); with SSA_ISO and/or
 # GIANTS_ISO set, each game's pictures read from its disc into a scratch SKYLANDERS_DATA: ./SSAArtTest
-add_executable(SSAArtTest host/art/art_test.cpp host/stb_impl.cpp ${SSA_ART_SOURCES} ${SSA_COLLECTION_SOURCES} vfs.cpp ${SSA_PLATFORM_SOURCES})
+add_executable(SSAArtTest host/art/art_test.cpp ${SSA_ART_SOURCES} ${SSA_COLLECTION_SOURCES} vfs.cpp ${SSA_PLATFORM_SOURCES})
 target_include_directories(SSAArtTest PRIVATE .)
-target_include_directories(SSAArtTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/stb)
 target_link_libraries(SSAArtTest PRIVATE SDL3::SDL3-static)
 if(NOT SSA_UWP)
     target_sources(SSAArtTest PRIVATE host/accents_test.cpp host/launcher.cpp host/launcher_games.cpp host/xex_title.cpp

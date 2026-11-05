@@ -150,7 +150,7 @@ namespace toybox
     {
         static const char* const France[] = { "Standard", "Légendaire", "Sombre", "Cristal", "Phosphorescent",
             "Métallisé", "Or", "Argent", "Chrome", "Floqué", "Séries", "LightCore", "Élite d'Eon", "Autre déco",
-            "Événement", "Forme", "Autre" };
+            "Événement", "Forme de piège", "Autre" };
         static_assert(std::size(France) == size_t(VariantKind::Count));
         return kind < VariantKind::Count ? (French() ? France[size_t(kind)] : VariantKindName(kind)) : "";
     }
@@ -260,8 +260,6 @@ namespace toybox
     {
         if ((screen == Screen::Stats || screen == Screen::Upgrades) && stats.dirty)
             SaveStats();
-        if (screen == Screen::Creation && creation.dirty)
-            SaveCreation();
         open = false;
         screen = Screen::Home;
         dialogs.clear();
@@ -1294,7 +1292,6 @@ namespace toybox
         case Screen::Half: RunHalf(command); break;
         case Screen::Backups: RunBackups(command); break;
         case Screen::Stats: RunStats(command); break;
-        case Screen::Creation: RunCreation(command); break;
         case Screen::Upgrades: RunUpgrades(command); break;
         case Screen::Add: RunAdd(command); break;
         case Screen::Name: RunName(command); break;
@@ -2117,11 +2114,7 @@ namespace toybox
                 break;
             case Action::EditStats:
                 lines.push_back(std::string(L("Edit", "Modifier")) + "\t" +
-                                (!busy.empty() ? busy
-                                    : f.toy != nullptr && f.toy->category == Category::CreationCrystal
-                                        ? L("the creation: name, class, level, parts, colours",
-                                              "la création : nom, classe, niveau, pièces, couleurs")
-                                        : L("level, gold, nickname", "niveau, or, surnom")));
+                                (busy.empty() ? L("level, gold, nickname", "niveau, or, surnom") : busy));
                 break;
             case Action::ChangeHalf:
                 lines.push_back(std::string(f.IsSwapTop() ? L("Change the bottom", "Changer le bas")
@@ -2351,12 +2344,7 @@ namespace toybox
                     Toast(L("Free again", "Libérée"));
                 } });
             break;
-        case Action::EditStats:
-            if (f.toy != nullptr && f.toy->category == Category::CreationCrystal)
-                OpenCreation(figure);
-            else
-                OpenStats(figure);
-            break;
+        case Action::EditStats: OpenStats(figure); break;
         case Action::Villain:
         {
             // A puts the chosen villain in; with nothing new chosen, it shows the next one (A again puts it in).
@@ -2677,206 +2665,6 @@ namespace toybox
         }
         figures::ReadStats(stats.tag, stats.stats);
         screen = Screen::Stats;
-    }
-
-    // --- The creation editor (Imaginators' crystals) -------------------------------------------------------------------
-
-    namespace
-    {
-        // A creation's class and the powers the game numbers by class (the made crystals of the dumps: the primary
-        // power is the class's base + 0 or 1, the tertiary its base + 0 to 3) [V].
-        void SetCrystalClass(figures::CrystalStats& c, int battleClass)
-        {
-            static const int PrimaryBase[11] = { 0, 350, 0, 300, 400, 150, 50, 450, 250, 200, 100 };
-            static const int TertiaryBase[11] = { 0, 0, 24, 20, 44, 8, 40, 32, 4, 12, 28 };
-            int old = c.battleClass >= 1 && c.battleClass <= 10 ? c.battleClass : 1;
-            size_t primary = size_t(figures::CrystalParamIndex("PrimaryPower")),
-                   tertiary = size_t(figures::CrystalParamIndex("TertiaryPower"));
-            int primaryChoice = std::clamp(int(c.creation[primary]) - PrimaryBase[old], 0, 1);
-            int tertiaryChoice = std::clamp(int(c.creation[tertiary]) - TertiaryBase[old], 0, 3);
-            c.battleClass = uint8_t(battleClass);
-            c.creation[size_t(figures::CrystalParamIndex("Class"))] = uint16_t(battleClass);
-            c.creation[primary] = uint16_t(PrimaryBase[battleClass] + primaryChoice);
-            c.creation[tertiary] = uint16_t(TertiaryBase[battleClass] + tertiaryChoice);
-        }
-    }
-
-    void Model::OpenCreation(int index)
-    {
-        creation = {};
-        creation.figure = index;
-        const Figure& f = figures[index];
-        FigureData tag;
-        if (!LoadFigure(f.path, tag))
-        {
-            Toast(L("Cannot read the figure's file", "Fichier de la figurine illisible"));
-            return;
-        }
-        figures::ReadCrystalStats(tag, creation.crystal);
-        creation.type = f.type;
-        creation.virtualCrystal = !figures::HasFactorySignature(tag);
-        if (!creation.crystal.hasRecipe)
-        {
-            // A blank crystal: a first creation, no gear, mid sliders, one colour, a body seen on made crystals (stored
-            // values: head 18, no torso, arms 3, legs 30, tail 42), a Knight's powers.
-            figures::CrystalStats& c = creation.crystal;
-            c.hasRecipe = true;
-            for (size_t i = 0; i < figures::CrystalParamCount; i++)
-            {
-                const figures::CrystalParam& p = figures::CrystalParams()[i];
-                uint16_t none = uint16_t((1u << p.bits) - 1);
-                c.creation[i] = p.kind == figures::CrystalParamKind::Gear     ? none
-                                : p.kind == figures::CrystalParamKind::Shape  ? 4
-                                : p.kind == figures::CrystalParamKind::Colour ? 8
-                                                                              : 0;
-            }
-            for (auto [name, value] :
-                { std::pair{ "head", 18 }, { "torso", 1023 }, { "arms", 3 }, { "legs", 30 }, { "tail", 42 } })
-                c.creation[size_t(figures::CrystalParamIndex(name))] = uint16_t(value);
-            SetCrystalClass(c, 1);
-            creation.dirty = true;
-        }
-        screen = Screen::Creation;
-        m_dirty = true;
-    }
-
-    void Model::FocusCreationRow(int row)
-    {
-        if (creation.row == row && row >= 0)
-            RunCreation(Command::Accept);
-        else
-            creation.row = row;
-        m_dirty = true;
-    }
-
-    void Model::RunCreation(Command command)
-    {
-        const int rows = CreationState::Rows(), cancel = rows - 2, save = rows - 1;
-        figures::CrystalStats& c = creation.crystal;
-        int step = command == Command::Left || command == Command::PreviousSection ? -1
-                   : command == Command::Right || command == Command::NextSection  ? 1
-                                                                                   : 0;
-        int by = command == Command::PreviousSection || command == Command::NextSection ? 10 : 1;
-        switch (command)
-        {
-        case Command::Up: creation.row = (creation.row + rows - 1) % rows; return;
-        case Command::Down: creation.row = (creation.row + 1) % rows; return;
-        case Command::Back:
-            SaveCreation();
-            screen = Screen::Figure;
-            return;
-        case Command::Accept:
-            if (creation.row == 0)
-            {
-                NameEntry entry;
-                entry.purpose = NameEntry::Purpose::Nickname;
-                entry.title = L("THE CREATION'S NAME", "NOM DE LA CRÉATION");
-                entry.text = c.name;
-                entry.limit = 31;
-                entry.done = [this](bool keep, const std::string& text) {
-                    screen = Screen::Creation;
-                    if (!keep)
-                        return;
-                    // The game writes names in capitals, 8-bit.
-                    std::string upper;
-                    for (char ch : text)
-                        upper += char(std::toupper(static_cast<unsigned char>(ch)));
-                    creation.crystal.name = upper;
-                    creation.dirty = true;
-                };
-                OpenName(entry);
-            }
-            else if (creation.row == cancel)
-            {
-                creation.dirty = false;
-                screen = Screen::Figure;
-                Toast(L("Changes dropped", "Changements annulés"));
-            }
-            else if (creation.row == save)
-            {
-                if (!creation.dirty)
-                    Toast(L("Nothing to save", "Aucun changement à enregistrer"));
-                SaveCreation();
-            }
-            return;
-        default: break;
-        }
-        if (step == 0)
-            return;
-        switch (creation.row)
-        {
-        case 1: SetCrystalClass(c, (c.battleClass - 1 + 10 + step) % 10 + 1); break;
-        case 2:
-            if (!creation.virtualCrystal)
-            {
-                Toast(L("A real crystal keeps its element", "Un vrai cristal garde son élément"));
-                return;
-            }
-            creation.type =
-                uint16_t(figures::FirstCrystalType + (creation.type - figures::FirstCrystalType + 10 + step) % 10);
-            break;
-        case 3:
-        {
-            int level = std::clamp(figures::CrystalLevel(c.experience) + step * by, 1, figures::MaxCrystalLevel);
-            c.experience = figures::CrystalLevelExperience(level);
-            break;
-        }
-        default:
-        {
-            int i = creation.row - CreationState::First;
-            if (i < 0 || i >= int(figures::CrystalParamCount))
-                return;
-            const figures::CrystalParam& p = figures::CrystalParams()[size_t(i)];
-            // The game's ids from min to max, then "none" (all ones) for the parts that may have none.
-            int none = int((1u << p.bits) - 1), count = std::min(p.max - p.min + 1, none);
-            bool canBeNone = p.kind == figures::CrystalParamKind::Gear || p.kind == figures::CrystalParamKind::Body;
-            int span = count + (canBeNone ? 1 : 0);
-            int at = c.creation[size_t(i)] == none ? count : std::min<int>(c.creation[size_t(i)], count - 1);
-            at = ((at + step * by) % span + span) % span;
-            c.creation[size_t(i)] = uint16_t(at == count ? none : at);
-            if (i == figures::CrystalParamIndex("Class"))
-            {
-                int chosen = std::clamp(int(c.creation[size_t(i)]), 1, 10);
-                c.creation[size_t(i)] = uint16_t(c.battleClass); // SetCrystalClass reads the old class first
-                SetCrystalClass(c, chosen);
-            }
-            break;
-        }
-        }
-        creation.dirty = true;
-        m_dirty = true;
-    }
-
-    void Model::SaveCreation()
-    {
-        if (!creation.dirty || creation.figure < 0)
-            return;
-        std::string path = figures[creation.figure].path;
-        int s = SeatOf(path);
-        int slot = s >= 0 ? seats[s].slot : -1;
-        if (slot >= 0)
-            PortalRemoveFigure(slot);
-        std::string error;
-        bool saved = true;
-        if (creation.virtualCrystal && creation.type != figures[creation.figure].type)
-        {
-            // A crystal made here changes element: the same file, a new tag of the other type with this creation.
-            // The new element's first shape (the catalogue's), the old one's belonging to the old element.
-            const Toy* toy = Catalogue::Get().Find(creation.type);
-            uint16_t shape = toy != nullptr && !toy->variants.empty() ? toy->variants.front().id : 0;
-            FigureData made = figures::CreateCrystal(creation.type, shape, creation.crystal);
-            saved = collection::ReplaceDump(path, made, &error);
-        }
-        else
-            saved = collection::WriteCrystal(path, creation.crystal, &error);
-        if (slot >= 0)
-            PortalPlaceFigureAt(path, slot);
-        creation.dirty = false;
-        Toast(saved ? L("Saved", "Enregistrée") : L("Could not save: ", "Échec de l'enregistrement : ") + error);
-        Reload();
-        creation.figure = FindFigure(path);
-        figure = creation.figure;
-        BuildList();
     }
 
     void Model::FocusStatsRow(int row)

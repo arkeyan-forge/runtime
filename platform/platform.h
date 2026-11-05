@@ -25,14 +25,6 @@ bool PlatformProtectNoAccess(void* address, size_t size);
 // Makes the page-aligned range read-only (a write faults), or readable and writable again.
 bool PlatformProtectReadOnly(void* address, size_t size, bool readOnly);
 
-// The granularity of PlatformProtectReadOnly (16 KB on Apple silicon, 4 KB elsewhere).
-size_t PlatformPageSize();
-
-// Memory faults are first offered to `handled` (write_watch.cpp), on the faulting thread inside the signal handler: it
-// returns true when it made the access possible, which is then retried (POSIX: SIGSEGV/SIGBUS; Windows: a vectored
-// exception handler, writes only). False if the hook cannot be installed: nothing may then rely on it.
-bool PlatformInstallWriteFaultFilter(bool (*handled)(void* address));
-
 // Runs `body` on a new detached host thread with a stack of `stackSize` bytes.
 void PlatformStartThread(size_t stackSize, std::function<void()> body);
 

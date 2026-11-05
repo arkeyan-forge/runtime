@@ -5,7 +5,6 @@
 #include "host/portal_prompt.h"
 #include "giants_portal_prompt.h"
 #include "ssa_portal_prompt.h"
-#include "superchargers_portal_prompt.h"
 #include "swapforce_portal_prompt.h"
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_iostream.h>
@@ -287,20 +286,6 @@ int main()
         CHECK(ClassifySwapForce(5, ~0u) == Prompt{}); // nobody asked
         CHECK(ClassifySwapForce(7, 0) == Prompt{}); // IdleOutro: a figure came
         CHECK(ClassifySwapForce(16, ~0u).kind == Kind::TooMany); // Error: a "too many" screen
-
-        // SuperChargers: the state, the reason (13: a vehicle is required) and the player index, as run mmC saw them.
-        CHECK(ClassifySuperChargers(0, 0, ~0u) == Prompt{}); // Inactive: in play
-        CHECK(ClassifySuperChargers(3, 13, ~0u) == Prompt{}); // TransitionIn: the zoom out to the portal
-        CHECK(ClassifySuperChargers(5, 13, ~0u) == (Prompt{ Kind::Player, 1, false, true })); // "place a LAND VEHICLE"
-        CHECK(ClassifySuperChargers(5, 12, ~0u) == (Prompt{ Kind::Player, 1, false, true })); // still up (run scP3)
-        CHECK(ClassifySuperChargers(5, 0, 0) == (Prompt{ Kind::Player, 1 })); // then a Skylander for player 1
-        CHECK(!(ClassifySuperChargers(5, 0, 0) == ClassifySuperChargers(5, 13, ~0u))); // two episodes, two seats
-        CHECK(ClassifySuperChargers(14, 0, 1) == (Prompt{ Kind::Player, 2, true })); // Dead
-        CHECK(ClassifySuperChargers(5, 0, ~0u) == Prompt{}); // nobody asked
-        CHECK(ClassifySuperChargers(7, 12, ~0u) == Prompt{}); // FirstVehicleSequence: a vehicle came
-        CHECK(ClassifySuperChargers(5, 6, ~0u) == Prompt{}); // another reason with nobody named
-        CHECK(ClassifySuperChargers(8, 12, ~0u) == Prompt{}); // IdleOutro
-        CHECK(ClassifySuperChargers(17, 11, ~0u).kind == Kind::TooMany); // Error: too many vehicles
 
         // One event per episode, after the prompt held steady for Stable polls.
         Tracker tracker;

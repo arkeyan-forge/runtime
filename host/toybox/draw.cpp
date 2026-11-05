@@ -11,7 +11,6 @@
 #include "host/toybox.h"
 #include "host/toybox/look.h"
 #include "host/toybox/trap_villain.h"
-#include "language.h"
 #include <SDL3/SDL.h>
 #include <imgui.h>
 #include <algorithm>
@@ -1516,35 +1515,6 @@ namespace toybox
 
         // --- Figure page ----------------------------------------------------------------------------------------------
 
-        // An Imaginators toy made here, without the factory signature: the port plays it, a real game would not.
-        std::string VirtualCrystalText() { return collection::VirtualToyText(French() ? "fr" : "en"); }
-
-        // A part id's name as the game shows it (parts.json, from the disc), else "#<id>".
-        std::string PartLabel(const std::string& game, int id)
-        {
-            std::string name = collection::PartName(game, id, TextLanguage());
-            return name.empty() ? "#" + std::to_string(id) : name;
-        }
-
-        // A crystal's parts (their names, "-" for none): body, gear and powers.
-        std::string CrystalSummary(const std::string& game, const std::string& path)
-        {
-            figures::CrystalStats c;
-            if (collection::ReadCrystal(path, c) != figures::AreaState::Valid || !c.hasRecipe)
-                return {};
-            std::string text;
-            for (const char* name : { "head", "torso", "arms", "legs", "tail", "weaponR", "weaponL", "Hat",
-                     "PrimaryPower", "SecondaryPower", "TertiaryPower" })
-            {
-                int i = figures::CrystalParamIndex(name);
-                const figures::CrystalParam& p = figures::CrystalParams()[size_t(i)];
-                uint16_t v = c.creation[size_t(i)];
-                text += (text.empty() ? "" : ", ") + std::string(name) + " " +
-                        (v == (1u << p.bits) - 1 ? std::string("-") : PartLabel(game, p.min + v));
-            }
-            return text;
-        }
-
         std::string Duration(uint32_t seconds)
         {
             char text[32];
@@ -1645,33 +1615,15 @@ namespace toybox
                 std::string gold = std::to_string(f.stats.gold) + L(" gold", " or");
                 Text(g_black, 20, ImVec2(x + w - Measure(g_black, 20, gold).x, y), Look::GoldText, gold);
                 y += 32;
-                if (f.toy != nullptr && f.toy->category == Category::CreationCrystal)
-                {
-                    // A creation: its class and level above, the bar on the game's own 80-level table.
-                    int lv = std::min(f.level, figures::MaxCrystalLevel);
-                    uint32_t from = figures::CrystalLevelExperience(lv), to = figures::CrystalLevelExperience(lv + 1);
-                    float t =
-                        lv >= figures::MaxCrystalLevel
-                            ? 1.0f
-                            : std::clamp(float(f.stats.experience - from) / float(std::max(to - from, 1u)), 0.0f, 1.0f);
-                    RoundRect(ImVec2(x, y), ImVec2(x + w, y + 10), Look::Field, 5);
-                    if (t > 0)
-                        RoundRect(ImVec2(x, y), ImVec2(x + std::max(w * t, 10.0f), y + 10), Look::Bar, 5);
-                    y += 24;
-                }
-                else
-                {
-                    uint32_t low = level > 1 ? figures::LevelExperience[level - 1] : 0;
-                    uint32_t high = level < cap ? figures::LevelExperience[level] : low + 1;
-                    float t = level >= cap
-                                  ? 1.0f
-                                  : std::clamp(
-                                        float(figures::TotalExperience(f.stats) - low) / float(high - low), 0.0f, 1.0f);
-                    RoundRect(ImVec2(x, y), ImVec2(x + w, y + 10), Look::Field, 5);
-                    if (t > 0)
-                        RoundRect(ImVec2(x, y), ImVec2(x + std::max(w * t, 10.0f), y + 10), Look::Bar, 5);
-                    y += 24;
-                }
+                uint32_t low = level > 1 ? figures::LevelExperience[level - 1] : 0;
+                uint32_t high = level < cap ? figures::LevelExperience[level] : low + 1;
+                float t = level >= cap ? 1.0f
+                                       : std::clamp(float(figures::TotalExperience(f.stats) - low) / float(high - low),
+                                             0.0f, 1.0f);
+                RoundRect(ImVec2(x, y), ImVec2(x + w, y + 10), Look::Field, 5);
+                if (t > 0)
+                    RoundRect(ImVec2(x, y), ImVec2(x + std::max(w * t, 10.0f), y + 10), Look::Bar, 5);
+                y += 24;
             }
             std::vector<std::string> facts;
             if (collection::Card card = model.CardFor(f); card.Swapper())
@@ -1681,37 +1633,16 @@ namespace toybox
                 facts.push_back(f.IsSwapTop() ? L("A top with no bottom yet.", "Un haut sans bas pour l'instant.")
                                               : L("A bottom with no top yet.", "Un bas sans haut pour l'instant."));
             std::string nickname = figures::NicknameUtf8(f.stats);
-            bool crystal = f.toy != nullptr && f.toy->category == Category::CreationCrystal;
-            if (f.missingSignature)
-                facts.push_back(VirtualCrystalText());
-            if (figures::IsVehicleType(f.type))
-                facts.push_back(f.state == figures::AreaState::Valid
-                                    ? std::string(L("Gearbits: ", "Gearbits : ")) +
-                                          std::to_string(figures::Gearbits(f.stats)) + L(" · shield ", " · bouclier ") +
-                                          std::to_string(figures::VehicleShieldLevel(f.stats)) + "/5" +
-                                          L(" · weapon ", " · arme ") +
-                                          std::to_string(figures::VehicleWeaponLevel(f.stats)) + "/5" +
-                                          L(" · driven ", " · conduit ") + Duration(f.stats.playSeconds)
-                                    : std::string(L("New: never driven", "Neuf : jamais conduit")));
-            if (crystal && f.state == figures::AreaState::Blank)
-                facts.push_back(L("Empty: place it in the game to create an Imaginator.",
-                    "Vide : posez-le dans le jeu pour créer un Imaginator."));
-            else if (progress && f.state == figures::AreaState::Blank)
+            if (progress && f.state == figures::AreaState::Blank)
                 facts.push_back(L("New: never played", "Neuve : jamais jouée"));
             else if (progress && f.state != figures::AreaState::Valid)
                 facts.push_back(L("Unreadable. Restore a backup or reset it.",
                     "Illisible. Restaurez une sauvegarde ou remettez-la à neuf."));
-            if (crystal && !nickname.empty())
-                facts.push_back(std::string(L("Name: ", "Nom : ")) + nickname);
-            if (crystal && f.state == figures::AreaState::Valid && model.figureDetails)
-                facts.push_back(std::string(L("Creation: ", "Création : ")) + CrystalSummary(model.game, f.path));
-            else if (progress && !nickname.empty())
+            if (progress && !nickname.empty())
                 facts.push_back(std::string(L("Nickname in the game: ", "Surnom dans le jeu : ")) + nickname);
             if (progress && f.state == figures::AreaState::Valid)
-                facts.push_back(
-                    std::string(L("Played ", "Joué ")) + Duration(f.stats.playSeconds) +
-                    (crystal ? std::string()
-                             : L(" · hero points ", " · points de héros ") + std::to_string(f.stats.heroPoints)));
+                facts.push_back(std::string(L("Played ", "Joué ")) + Duration(f.stats.playSeconds) +
+                                L(" · hero points ", " · points de héros ") + std::to_string(f.stats.heroPoints));
             if (!f.lastUsed.empty() &&
                 f.state != figures::AreaState::Blank) // a figure the game never wrote was not played
             {
@@ -2037,138 +1968,6 @@ namespace toybox
                 model.stats.row = row;
                 model.Touch();
             };
-        }
-
-        // The creation editor's rows: label and value as the game stores them (its ids; "none" for a missing part).
-        std::string CreationLabel(int row)
-        {
-            switch (row)
-            {
-            case 0: return L("Name", "Nom");
-            case 1: return L("Class", "Classe");
-            case 2: return L("Element", "Élément");
-            case 3: return L("Level", "Niveau");
-            default: break;
-            }
-            int i = row - CreationState::First;
-            return i >= 0 && i < int(figures::CrystalParamCount) ? figures::CrystalParams()[size_t(i)].name : "";
-        }
-
-        std::string CreationValue(const Model& model, int row)
-        {
-            const figures::CrystalStats& c = model.creation.crystal;
-            switch (row)
-            {
-            case 0: return c.name.empty() ? L("(none: the game asks)", "(aucun : le jeu le demande)") : c.name;
-            case 1: return collection::BattleClassText(c.battleClass, French());
-            case 2:
-            {
-                const Toy* toy = Catalogue::Get().Find(model.creation.type);
-                std::string element = toy != nullptr ? ElementLabel(toy->element) : std::to_string(model.creation.type);
-                return model.creation.virtualCrystal ? element : element + L(" (the toy's own)", " (celui du jouet)");
-            }
-            case 3:
-                return std::to_string(figures::CrystalLevel(c.experience)) + " · " + std::to_string(c.experience) +
-                       L(" XP", " XP");
-            default: break;
-            }
-            int i = row - CreationState::First;
-            if (i < 0 || i >= int(figures::CrystalParamCount))
-                return {};
-            const figures::CrystalParam& p = figures::CrystalParams()[size_t(i)];
-            uint16_t v = c.creation[size_t(i)];
-            if (v == (1u << p.bits) - 1 && p.kind != figures::CrystalParamKind::Colour &&
-                p.kind != figures::CrystalParamKind::Shape)
-                return L("none", "aucune");
-            switch (p.kind)
-            {
-            case figures::CrystalParamKind::Colour: return L("colour ", "couleur ") + std::to_string(v);
-            case figures::CrystalParamKind::Shape: return std::to_string(v) + " / 8";
-            default: return PartLabel(model.game, p.min + v);
-            }
-        }
-
-        void DrawCreation(Model& model)
-        {
-            CreationState& cs = model.creation;
-            const Figure& f = model.figures[cs.figure];
-            Header(L("CREATION", "CRÉATION"), model.FigureName(f));
-            constexpr float Top = 88, Height = 530;
-            {
-                constexpr float Left = 32, Width = 300, Center = Left + Width / 2;
-                Panel(ImVec2(Left, Top), ImVec2(Left + Width, Top + Height));
-                float y = Top + 24;
-                HeroPortrait(model, f, ImVec2(Center, y + 74), 148);
-                y += 176;
-                std::string name = cs.crystal.name.empty() ? model.FigureName(f) : cs.crystal.name;
-                TextCentered(g_display, 24, ImVec2(Center, y + 12), 0xFFFFFF, Fit(g_display, 24, name, Width - 32));
-                y += 40;
-                std::string line = collection::BattleClassText(cs.crystal.battleClass, French()) +
-                                   L(" · Level ", " · Niveau ") +
-                                   std::to_string(figures::CrystalLevel(cs.crystal.experience));
-                TextCentered(g_bold, 16, ImVec2(Center, y + 8), Look::TextSoft, line);
-                y += 34;
-                if (cs.virtualCrystal)
-                    for (const std::string& l : Wrap(g_bold, 13, VirtualCrystalText(), Width - 48, 4))
-                    {
-                        TextCentered(g_bold, 13, ImVec2(Center, y + 6), Look::GoldText, l);
-                        y += 18;
-                    }
-            }
-            {
-                constexpr float Left = 352, Width = 896, RowHeight = 38;
-                Panel(ImVec2(Left, Top), ImVec2(Left + Width, Top + Height));
-                const int shown = int((Height - 32) / RowHeight), last = CreationState::Rows() - 2;
-                int focus = std::min(cs.row, last - 1);
-                if (focus < cs.top)
-                    cs.top = focus;
-                if (focus >= cs.top + shown)
-                    cs.top = focus - shown + 1;
-                float y = Top + 16;
-                for (int row = cs.top; row < std::min(last, cs.top + shown); row++, y += RowHeight)
-                {
-                    ImVec2 a(Left + 20, y), b(Left + Width - 20, y + RowHeight - 6);
-                    bool focused = cs.row == row && model.screen == Screen::Creation;
-                    FocusBox(a, b, focused, 10, Look::Raised);
-                    TextMiddle(g_bold, 15, a.x + 16, (a.y + b.y) / 2, Look::TextSoft, CreationLabel(row));
-                    std::string value = CreationValue(model, row);
-                    float right = b.x - (focused && row != 0 ? 52 : 16);
-                    TextMiddle(g_black, 16, right - Measure(g_black, 16, value).x, (a.y + b.y) / 2, Look::Text, value);
-                    float cy = (a.y + b.y) / 2;
-                    if (focused && row != 0)
-                    {
-                        float x = b.x - 40;
-                        g_draw->AddTriangleFilled(
-                            ImVec2(x, cy), ImVec2(x + 7, cy - 6), ImVec2(x + 7, cy + 6), Rgb(Look::Gold));
-                        g_draw->AddTriangleFilled(
-                            ImVec2(x + 20, cy), ImVec2(x + 13, cy - 6), ImVec2(x + 13, cy + 6), Rgb(Look::Gold));
-                        AddHit(ImVec2(x - 6, a.y), ImVec2(x + 10, b.y), [&model] { model.Run(Command::Left); });
-                        AddHit(ImVec2(x + 10, a.y), ImVec2(x + 26, b.y), [&model] { model.Run(Command::Right); });
-                    }
-                    AddHit(a, b, [&model, row] { model.FocusCreationRow(row); });
-                    g_hits.back().focus = [&model, row] {
-                        model.creation.row = row;
-                        model.Touch();
-                    };
-                }
-            }
-            const int cancel = CreationState::Rows() - 2, save = CreationState::Rows() - 1;
-            ImVec2 cancelMin(820, 636), cancelMax(1010, 680), saveMin(1030, 636), saveMax(1248, 680);
-            PlainButton(cancelMin, cancelMax, L("Cancel", "Annuler"), 16, cs.row == cancel);
-            GoldButton(saveMin, saveMax, L("Save", "Enregistrer"), 16, cs.row == save);
-            AddHit(cancelMin, cancelMax, [&model, cancel] {
-                model.FocusCreationRow(cancel);
-                model.FocusCreationRow(cancel);
-            });
-            AddHit(saveMin, saveMax, [&model, save] {
-                model.FocusCreationRow(save);
-                model.FocusCreationRow(save);
-            });
-            TextMiddle(g_bold, 14, 32, 658, Look::TextSoft,
-                cs.dirty      ? L("Changed: B or Save to keep it", "Modifiée : B ou Enregistrer pour garder")
-                : cs.row == 0 ? L("A: type the name", "A : saisir le nom")
-                              : L("Left / right: change · LB / RB or Shift: by 10 · in the game's order",
-                                    "Gauche / droite : changer · LB / RB ou Maj : par 10 · dans l'ordre du jeu"));
         }
 
         void DrawStats(Model& model)
@@ -3200,7 +2999,6 @@ namespace toybox
             case Screen::Half: DrawHalf(model); break;
             case Screen::Backups: DrawBackups(model); break;
             case Screen::Stats: DrawStats(model); break;
-            case Screen::Creation: DrawCreation(model); break;
             case Screen::Upgrades: DrawUpgrades(model); break;
             case Screen::Add: DrawAdd(model); break;
             case Screen::Name: DrawName(model); break;

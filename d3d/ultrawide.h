@@ -19,10 +19,8 @@ namespace ultrawide
 
     // The 16:9 scene the runtime asks the game for, when it is not the game's own (SceneWidth16x9 x SceneHeight16x9):
     // Swap Force at full resolution renders 1280x720 (game::Adapter::fullScene). `keepsArea` replaces
-    // game::UltrawideSceneKeepsArea (a full-size scene has no EDRAM budget to keep). `maxWidth` (0: none) bounds a wide
-    // scene: past it the scene is that wide (a multiple of 32) and as high as the window's aspect gives (a multiple of 8).
-    // Called once, before Configure.
-    void SetScene16x9(uint32_t width, uint32_t height, bool keepsArea, uint32_t maxWidth = 0);
+    // game::UltrawideSceneKeepsArea (a full-size scene has no EDRAM budget to keep). Called once, before Configure.
+    void SetScene16x9(uint32_t width, uint32_t height, bool keepsArea);
     uint32_t Scene16x9Width();
     uint32_t Scene16x9Height();
 

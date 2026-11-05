@@ -4,9 +4,8 @@
 #include "game_hooks.h"
 #include "memory.h"
 #include "gpu/gpu.h"
-#include "platform/clock.h"
 #include <array>
-#include <bit>
+#include <chrono>
 #include <mutex>
 #include <utility>
 #if defined(__APPLE__)
@@ -54,9 +53,7 @@ namespace
     std::array<uint32_t, 2 * 256 * 4> g_constants; // GpuFloatConstants, big-endian
     // Per group of 16 float constant registers: g_constants holds the stream's values of a clean group whose registers
     // were all written (it then depends on nothing else), and no write came since.
-    // As the device's dirty masks: group g is bit 63 - g % 64 of word g / 64. GpuFloatConstants visits only the groups
-    // dirty or not cached (~10 a draw of 128).
-    uint64_t g_constantsCached[2];
+    std::array<bool, 2 * 256 * 4 / 16> g_constantsCached;
     uint32_t g_constantsDevice;
     uint64_t g_constantsVersion = 1; // changes with g_constants' content
     std::array<uint32_t, 2 * 256 * 4 / 16> g_groupVersions; // the same per group of 16 registers
@@ -77,10 +74,7 @@ namespace
         g_epochOf[reg - FirstRegister] = g_epoch;
         g_shaderOwned[reg - FirstRegister] = depth != 0;
         if (reg >= AluConstants && reg < FetchConstants)
-        {
-            const uint32_t group = (reg - AluConstants) / 16;
-            g_constantsCached[group / 64] &= ~(1ull << (63 - group % 64));
-        }
+            g_constantsCached[(reg - AluConstants) / 16] = false;
     }
 
     // Constant packets address their first register by type and offset (as Xenia's command processor reads them).
@@ -259,8 +253,13 @@ void d3d::ScanRing(uint32_t device)
     // The perf log's ring translation time (gpu::AddFrameTime).
     struct Timer
     {
-        uint64_t start = PlatformNowNs();
-        ~Timer() { gpu::AddFrameTime(gpu::FrameTime::Ring, PlatformNowNs() - start); }
+        std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+        ~Timer()
+        {
+            gpu::AddFrameTime(gpu::FrameTime::Ring,
+                uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start)
+                        .count()));
+        }
     } timer;
     std::lock_guard lock(g_mutex);
     uint32_t cursor = Read32(device + WriteCursor);
@@ -319,40 +318,32 @@ const void* d3d::GpuFloatConstants(uint32_t device, uint64_t* version, const uin
     uint64_t masks[2] = { g_memory.Read<uint64_t>(device), g_memory.Read<uint64_t>(device + 8) };
     if (device != g_constantsDevice)
     {
-        g_constantsCached[0] = g_constantsCached[1] = 0;
+        g_constantsCached.fill(false);
         g_constantsDevice = device;
         g_constantsVersion++;
         for (uint32_t& groupVersion : g_groupVersions)
             groupVersion++;
     }
-    for (uint32_t word = 0; word < 2; word++)
+    for (uint32_t group = 0; group < 2 * 256 * 4 / 16; group++)
     {
-        uint64_t visit = (replaying ? 0 : masks[word]) | ~g_constantsCached[word];
-        while (visit != 0)
+        uint32_t first = group * 16;
+        bool dirty = !replaying && ((masks[group / 64] >> (63 - group % 64)) & 1);
+        if (!dirty && g_constantsCached[group])
+            continue;
+        bool all = true;
+        uint32_t changed = 0;
+        for (uint32_t i = first; i < first + 16; i++)
         {
-            const uint32_t bit = 63 - uint32_t(std::countl_zero(visit));
-            visit &= ~(1ull << bit);
-            const uint32_t group = word * 64 + (63 - bit);
-            const uint32_t first = group * 16;
-            const bool dirty = !replaying && ((masks[word] >> bit) & 1);
-            bool all = true;
-            uint32_t changed = 0;
-            for (uint32_t i = first; i < first + 16; i++)
-            {
-                uint32_t index = AluConstants + i - FirstRegister;
-                bool stream = g_written[index] && (!dirty || g_epochOf[index] == g_epoch || g_shaderOwned[index]);
-                uint32_t value = stream ? ByteSwap(g_values[index]) : shadow[i];
-                changed |= value ^ g_constants[i];
-                g_constants[i] = value;
-                all &= stream;
-            }
-            if (!dirty && all)
-                g_constantsCached[word] |= 1ull << bit;
-            else
-                g_constantsCached[word] &= ~(1ull << bit);
-            g_constantsVersion += changed != 0;
-            g_groupVersions[group] += changed != 0;
+            uint32_t index = AluConstants + i - FirstRegister;
+            bool stream = g_written[index] && (!dirty || g_epochOf[index] == g_epoch || g_shaderOwned[index]);
+            uint32_t value = stream ? ByteSwap(g_values[index]) : shadow[i];
+            changed |= value ^ g_constants[i];
+            g_constants[i] = value;
+            all &= stream;
         }
+        g_constantsCached[group] = !dirty && all;
+        g_constantsVersion += changed != 0;
+        g_groupVersions[group] += changed != 0;
     }
     if (version != nullptr)
         *version = g_constantsVersion;

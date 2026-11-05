@@ -264,7 +264,6 @@ namespace gpu::detail
         std::swap(c.submissions, previous.submissions);
         std::swap(c.submitted, previous.submitted);
         std::swap(c.staging, previous.staging);
-        std::swap(c.stagingMemory, previous.stagingMemory);
         std::swap(c.stagingCapacity, previous.stagingCapacity);
         std::swap(c.retiredStaging, previous.retiredStaging);
         std::swap(c.presentSet, previous.presentSet);
@@ -290,24 +289,17 @@ namespace gpu::detail
         if (c.staging == nullptr || offset + size > c.stagingCapacity)
         {
             if (c.staging != nullptr)
-            {
-                if (c.stagingMemory != nullptr)
-                    c.staging->unmap();
                 c.retiredStaging.push_back(std::move(c.staging));
-            }
             c.stagingCapacity = std::max({ size, c.stagingCapacity * 2, MinStagingSize });
             c.staging = c.device->createBuffer(RenderBufferDesc::UploadBuffer(
                 c.stagingCapacity, RenderBufferFlag::VERTEX | RenderBufferFlag::INDEX | RenderBufferFlag::CONSTANT |
                                        RenderBufferFlag::DEVICE_ADDRESSABLE));
-            c.stagingMemory = c.staging != nullptr ? static_cast<uint8_t*>(c.staging->map()) : nullptr;
             offset = 0;
         }
         c.stagingUsed = offset + size;
         buffer = c.staging.get();
         return offset;
     }
-
-    uint8_t* StagingMemory() { return g_context->stagingMemory; }
 }
 
 using namespace gpu::detail;
@@ -740,10 +732,6 @@ void gpu::Shutdown()
     DrawShutdown();
     BufferCacheShutdown();
     ShutdownUploads();
-    for (auto [buffer, memory] : { std::pair(g_context->staging.get(), g_context->stagingMemory),
-             std::pair(g_context->previous.staging.get(), g_context->previous.stagingMemory) })
-        if (buffer != nullptr && memory != nullptr)
-            buffer->unmap();
     SDL_MetalView metalView = g_context->metalView;
     g_context.reset();
     if (metalView != nullptr)
@@ -862,7 +850,6 @@ namespace
             std::lock_guard lock(g_mutex);
             if (DeviceLost())
                 return;
-            SettleCopies(texture);
             RenderCommandList& list = Record();
             Transition(list, *texture, RenderTextureLayout::COPY_DEST, RenderBarrierStage::COPY);
             list.copyTextureRegion(RenderTextureCopyLocation::Subresource(texture->texture.get(), mipLevel, arraySlice),
@@ -1094,8 +1081,6 @@ void gpu::detail::PresentNow(const Texture* image)
         SDL_Delay(16);
         return;
     }
-    if (image != nullptr)
-        SettleCopies(image);
     Context& c = *g_context;
     uint32_t imageIndex = 0;
     RenderTexture* target;
@@ -1241,7 +1226,6 @@ bool gpu::detail::ReadbackNow(
     Context& c = *g_context;
     if (texture == nullptr || DeviceLost())
         return false;
-    SettleCopies(texture);
 
     width = texture->desc.width;
     height = texture->desc.height;
@@ -1295,7 +1279,6 @@ void gpu::RequestReadback(const Texture* texture, uint32_t step, ReadbackConvert
         Context::RawReadback& slot = c.rawReadbacks[c.frames & 1];
         if (texture == nullptr || slot.pending || DeviceLost())
             return;
-        SettleCopies(texture);
 
         slot.width = texture->desc.width / step;
         slot.height = texture->desc.height / step;

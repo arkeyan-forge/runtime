@@ -18,50 +18,6 @@
 #include <ppc_context.h>
 #include "../host/env.h"
 
-namespace
-{
-    // The story movie that plays (game::Adapter::storyMovieSkipButton): its HBINK (+8 its frame count, +12 the frame
-    // shown) and name, 0 when none.
-    std::mutex g_storyMovieMutex;
-    uint32_t g_storyMovie = 0;
-    char g_storyMovieName[64] = {};
-
-    // Opens (bink != 0) or forgets the story movie; a close forgets it only when `closed` is that movie.
-    [[maybe_unused]] void SetStoryMovie(uint32_t bink, const std::string& name, uint32_t closed = 0)
-    {
-        std::lock_guard lock(g_storyMovieMutex);
-        if (bink != 0)
-        {
-            g_storyMovie = bink;
-            snprintf(g_storyMovieName, sizeof(g_storyMovieName), "%s", name.c_str());
-        }
-        else if (closed == g_storyMovie)
-            g_storyMovie = 0;
-    }
-}
-
-void game::StoryMovieButtons(uint16_t buttons)
-{
-    static uint16_t last = 0;
-    const uint16_t button = Current().storyMovieSkipButton;
-    const bool pressed = button != 0 && (buttons & button) != 0 && (last & button) == 0;
-    last = buttons;
-    if (!pressed)
-        return;
-    std::lock_guard lock(g_storyMovieMutex);
-    if (g_storyMovie == 0)
-        return;
-    // Bink ends a movie when the frame shown reaches its frame count: the game then goes on as at the movie's end
-    // (SuperChargers' fmv01 cut at its first frame: the vehicle prompt 23 s after the menus, run skC).
-    const uint32_t frame = g_memory.Read<uint32_t>(g_storyMovie + 12),
-                   frames = g_memory.Read<uint32_t>(g_storyMovie + 8);
-    if (frame + 1 < frames)
-    {
-        g_memory.Write<uint32_t>(g_storyMovie + 8, frame + 1);
-        fprintf(stderr, "[movie] skipped %s at frame %u of %u (the skip button)\n", g_storyMovieName, frame, frames);
-    }
-}
-
 #ifdef GAME_HOOK_BinkDoFrame
 namespace
 {
@@ -184,8 +140,6 @@ PPC_FUNC(GAME_HOOK(BinkOpen))
         fprintf(stderr, "[movie] skipped %s\n", game::MovieName(path).c_str());
     if (skipAll || intro)
         g_memory.Write<uint32_t>(bink + 8, 1);
-    else if (game::Current().storyMovieSkipButton != 0)
-        SetStoryMovie(bink, game::MovieName(path));
     ultrawide::MovieOpened();
 
     // SKY_BINK_LOG=1 (test aid): once a second, the last opened movie's frame number (HBINK+12) against the wall clock,
@@ -217,7 +171,6 @@ PPC_FUNC(GAME_HOOK(BinkClose))
 {
     if (ctx.r3.u32 != 0)
         ultrawide::MovieClosed();
-    SetStoryMovie(0, {}, ctx.r3.u32);
     GAME_IMP(BinkClose)(ctx, base);
 }
 #endif

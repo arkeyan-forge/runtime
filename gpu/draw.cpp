@@ -2,7 +2,6 @@
 #include "gpu/buffer_cache.h"
 #include "gpu/context.h"
 #include "host/collection/datadir.h"
-#include "platform/clock.h"
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_stdinc.h>
 #include <SDL3/SDL_timer.h>
@@ -157,9 +156,6 @@ namespace
         std::vector<std::unique_ptr<RenderSampler>> samplers;
         std::vector<gpu::SamplerState> samplerStates; // by slot
         std::unordered_map<uint64_t, uint32_t> samplerSlots; // by hash of the SamplerState bytes
-        // The slot each sampler register of the last draw used (pixel, then vertex): most draws keep their samplers,
-        // and comparing the state costs less than hashing it.
-        uint32_t lastSamplerSlots[gpu::MaxSamplers + gpu::MaxVertexSamplers] = {};
 
         std::vector<uint8_t> shaderCode; // decompressed shader cache of the running backend
         // Shaders and pipelines are also built by the precompile threads (PrecompilePipelines), which never take g_mutex.
@@ -266,15 +262,6 @@ namespace
         g_draw->heaps[SamplerHeap]->setSampler(slot, g_draw->samplers.back().get());
         g_draw->samplerSlots[key] = slot;
         return slot;
-    }
-
-    // SamplerSlot for sampler register `index`, through the slot it had at the last draw.
-    uint32_t SamplerSlotOf(uint32_t index, const gpu::SamplerState& state)
-    {
-        uint32_t& last = g_draw->lastSamplerSlots[index];
-        if (last < g_draw->samplerStates.size() && memcmp(&g_draw->samplerStates[last], &state, sizeof(state)) == 0)
-            return last;
-        return last = SamplerSlot(state);
     }
 
 #if defined(SSA_SHADER_CACHE) // the pipeline list and its precompiling start from the shader cache
@@ -402,15 +389,13 @@ namespace
 
     RenderFramebuffer* Framebuffer(gpu::Texture* const* colors, uint32_t colorCount, gpu::Texture* depth)
     {
-        // Keyed by the storage, not the gpu::Texture: a deferred resolve copy can move storage between textures.
-        const RenderTexture* attachments[gpu::MaxRenderTargets];
-        for (uint32_t i = 0; i < colorCount; i++)
-            attachments[i] = colors[i]->texture.get();
-        uint64_t key = HashBytes(attachments, sizeof(*attachments) * colorCount,
-            HashValue(depth != nullptr ? depth->texture.get() : nullptr, colorCount));
+        uint64_t key = HashBytes(colors, sizeof(*colors) * colorCount, HashValue(depth, colorCount));
         auto& framebuffer = g_draw->framebuffers[key];
         if (framebuffer == nullptr)
         {
+            const RenderTexture* attachments[gpu::MaxRenderTargets];
+            for (uint32_t i = 0; i < colorCount; i++)
+                attachments[i] = colors[i]->texture.get();
             RenderFramebufferDesc desc(attachments, colorCount, depth != nullptr ? depth->texture.get() : nullptr);
             framebuffer = g_context->device->createFramebuffer(desc);
         }
@@ -926,21 +911,14 @@ namespace
     {
         RenderBuffer* buffer;
         uint64_t offset = AllocateStaging(std::max<uint64_t>(size, 4), buffer, alignment);
-        if (uint8_t* mapped = StagingMemory())
+        if (auto mapped = static_cast<uint8_t*>(buffer->map()))
             memcpy(mapped + offset, data, size);
         else
             CheckDeviceLost();
+        buffer->unmap();
         if (address != nullptr)
             *address = buffer->getDeviceAddress() + offset;
         return buffer->at(offset);
-    }
-
-    // A group's hash as it enters gpu::Draw's mirror hash: its index mixed in, so equal groups at two places do not
-    // cancel each other.
-    uint64_t MixGroupHash(uint64_t hash, uint32_t group)
-    {
-        uint64_t value = (hash + group * 0x9E3779B97F4A7C15ull) * 0xC2B2AE3D27D4EB4Full;
-        return value ^ (value >> 29);
     }
 
     uint32_t SwapConstant(uint32_t value)
@@ -958,7 +936,7 @@ namespace
     uint64_t g_lastConstantsId;
     RenderBufferReference g_lastConstants;
 
-    RenderBufferReference UploadConstants(const void* guest, uint64_t id, uint64_t given, uint64_t* address)
+    RenderBufferReference UploadConstants(const void* guest, uint64_t id, uint64_t* address)
     {
         constexpr uint64_t Size = 2 * gpu::FloatConstantCount * 16;
         if (id != 0 && id == g_lastConstantsId)
@@ -967,7 +945,7 @@ namespace
             return g_lastConstants;
         }
         g_lastConstantsId = id;
-        uint64_t hash = given != 0 ? given : XXH3_64bits(guest, Size);
+        uint64_t hash = XXH3_64bits(guest, Size);
         auto it = g_frameConstants.find(hash);
         if (it != g_frameConstants.end())
         {
@@ -978,7 +956,7 @@ namespace
 
         RenderBuffer* buffer;
         uint64_t offset = AllocateStaging(Size, buffer, ConstantAlignment);
-        uint8_t* mapped = StagingMemory();
+        auto mapped = static_cast<uint8_t*>(buffer->map());
         if (mapped == nullptr)
         {
             CheckDeviceLost();
@@ -990,6 +968,7 @@ namespace
         auto* source = static_cast<const uint32_t*>(guest);
         for (uint32_t i = 0; i < 2 * gpu::FloatConstantCount * 4; i++)
             destination[i] = SwapConstant(source[i]);
+        buffer->unmap();
 
         RenderBufferReference reference = buffer->at(offset);
         *address = buffer->getDeviceAddress() + offset;
@@ -1019,104 +998,6 @@ namespace
     std::vector<gpu::Texture*> g_pendingDestroy;
 }
 
-namespace
-{
-    void RecordCopy(gpu::Texture* destination, uint32_t x, uint32_t y, gpu::Texture* source,
-        const plume::RenderRect& region, uint32_t slice)
-    {
-        RenderCommandList& list = Record();
-        Transition(list, *source, RenderTextureLayout::COPY_SOURCE, RenderBarrierStage::COPY);
-        // A second copy into an image already in COPY_DEST (the game resolves several times into one texture) is a
-        // write-after-write hazard Vulkan wants a barrier for; the layout is unchanged, so Transition adds none.
-        if (destination->layout == RenderTextureLayout::COPY_DEST &&
-            g_context->renderInterface->getCapabilities().shaderFormat == RenderShaderFormat::SPIRV)
-            list.barriers(RenderBarrierStage::COPY,
-                RenderTextureBarrier(destination->texture.get(), RenderTextureLayout::COPY_DEST));
-        Transition(list, *destination, RenderTextureLayout::COPY_DEST, RenderBarrierStage::COPY);
-        RenderBox box(region.left, region.top, region.right, region.bottom);
-        list.copyTextureRegion(RenderTextureCopyLocation::Subresource(destination->texture.get(), 0, slice),
-            RenderTextureCopyLocation::Subresource(source->texture.get(), 0, 0), x, y, 0, &box);
-    }
-
-    // Resolves of a whole target into the corner of a texture wait until something reads the texture or writes the
-    // target (docs/runtime/gpu/renderer_threads.md, "The deferred resolve copy"): a whole clear of the target then
-    // gives the texture the target's storage instead of a copy, and a second resolve into the texture drops the first.
-    // SKY_RESOLVE_DEFER=0: every copy at once.
-    struct PendingCopy
-    {
-        gpu::Texture* destination;
-        gpu::Texture* source;
-    };
-    std::vector<PendingCopy> g_pendingCopies;
-    const bool g_deferCopies = [] {
-        const char* value = skyenv::Get("SKY_RESOLVE_DEFER");
-        return value == nullptr || value[0] != '0';
-    }();
-    struct CopyStats
-    {
-        uint64_t deferred, recorded, swapped, dropped;
-    } g_copyStats;
-
-    void RecordPending(size_t index)
-    {
-        const PendingCopy copy = g_pendingCopies[index];
-        g_pendingCopies.erase(g_pendingCopies.begin() + std::ptrdiff_t(index));
-        RecordCopy(copy.destination, 0, 0, copy.source,
-            plume::RenderRect(0, 0, int32_t(copy.source->desc.width), int32_t(copy.source->desc.height)), 0);
-        g_copyStats.recorded++;
-    }
-
-    bool SameStorageShape(const gpu::TextureDesc& a, const gpu::TextureDesc& b)
-    {
-        return a.width == b.width && a.height == b.height && a.depth == b.depth && a.mipLevels == b.mipLevels &&
-               a.arraySize == b.arraySize && a.format == b.format && a.usage == b.usage && a.cube == b.cube;
-    }
-
-    // The heap slots and views follow their storage, so draws already recorded keep reading what they bound.
-    void SwapStorage(gpu::Texture* a, gpu::Texture* b)
-    {
-        std::swap(a->texture, b->texture);
-        std::swap(a->layout, b->layout);
-        std::swap(a->heapIndex, b->heapIndex);
-        std::swap(a->swizzledViews, b->swizzledViews);
-    }
-
-    // Before a draw: the copies whose texture it reads or whose target it writes.
-    void SettleForDraw(const gpu::DrawDesc& draw)
-    {
-        auto uses = [&](const gpu::Texture* texture, bool asSource) {
-            for (uint32_t i = 0; i < draw.colorTargetCount; i++)
-                if (draw.colorTargets[i] == texture)
-                    return true;
-            if (draw.depthTarget == texture)
-                return true;
-            if (asSource)
-                return false;
-            for (const gpu::Texture* bound : draw.textures)
-                if (bound == texture)
-                    return true;
-            for (const gpu::Texture* bound : draw.vertexTextures)
-                if (bound == texture)
-                    return true;
-            return false;
-        };
-        for (size_t i = 0; i < g_pendingCopies.size();)
-            if (uses(g_pendingCopies[i].source, true) || uses(g_pendingCopies[i].destination, false))
-                RecordPending(i);
-            else
-                i++;
-    }
-}
-
-void gpu::detail::SettleCopies(const gpu::Texture* texture)
-{
-    for (size_t i = 0; i < g_pendingCopies.size();)
-        if (texture == nullptr || g_pendingCopies[i].destination == texture || g_pendingCopies[i].source == texture)
-            RecordPending(i);
-        else
-            i++;
-}
-
 void gpu::detail::DrawInit() { Draws(); }
 
 void gpu::detail::DrawShutdown()
@@ -1125,7 +1006,6 @@ void gpu::detail::DrawShutdown()
     // Textures destroyed since the last frame are still queued: free them while the device exists. Left queued, the
     // next Init's first frame deleted them against a destroyed device (a texture destructor locks the device's mutex:
     // std::terminate, about 1 test run in 6).
-    g_pendingCopies.clear(); // their textures go with the device
     for (Texture* texture : g_pendingDestroy)
     {
         if (g_draw != nullptr)
@@ -1141,18 +1021,6 @@ void gpu::detail::DrawFrameDone()
 {
     g_frameConstants.clear();
     g_lastConstantsId = 0;
-    // SKY_RENDER_STATS=1: the deferred resolve copies, every 600 frames.
-    static const bool statsOn = skyenv::Get("SKY_RENDER_STATS") != nullptr;
-    static uint32_t frames;
-    if (statsOn && ++frames % 600 == 0)
-    {
-        fprintf(stderr,
-            "[gpu] resolve copies, per frame over 600: %.1f deferred, %.1f copied, %.1f by a storage swap, %.1f "
-            "dropped (replaced unread)\n",
-            g_copyStats.deferred / 600.0, g_copyStats.recorded / 600.0, g_copyStats.swapped / 600.0,
-            g_copyStats.dropped / 600.0);
-        g_copyStats = {};
-    }
 #if defined(_WIN32)
     // D3D12: keep pipelines built at draw time for the next run, at most every 30 s, off the render thread.
     static uint64_t lastSave = 0;
@@ -1177,11 +1045,7 @@ void gpu::detail::DrawFrameDone()
 namespace gpu::detail
 {
     // DestroyTexture defers here: the frame being recorded may still use the texture.
-    void DeferDestroy(gpu::Texture* texture)
-    {
-        SettleCopies(texture);
-        g_pendingDestroy.push_back(texture);
-    }
+    void DeferDestroy(gpu::Texture* texture) { g_pendingDestroy.push_back(texture); }
 }
 
 const gpu::XenosShader* gpu::FindXenosShader(uint64_t hash)
@@ -1240,14 +1104,6 @@ void gpu::Draw(const DrawDesc& draw)
     // A copy for the GPU thread, with the data the draw points at (valid only until the caller's next draw). Guest
     // constants go to the GPU thread's own copy, as the groups of 16 registers that changed since the last draw.
     static std::array<uint32_t, 2 * FloatConstantCount * 4> mirror; // the GPU thread's copy
-    // The GPU thread's hash of `mirror`: the XOR of each group's hash mixed with its index, updated as groups change.
-    static std::array<uint64_t, 2 * FloatConstantCount / 4> groupHashes;
-    static uint64_t mirrorHash = [] {
-        uint64_t hash = 0;
-        for (uint32_t group = 0; group < 2 * FloatConstantCount / 4; group++)
-            hash ^= MixGroupHash(0, group);
-        return hash;
-    }();
     static std::array<uint32_t, 2 * FloatConstantCount / 4> sentVersions;
     static bool versionsSent;
     static uint64_t constantsId;
@@ -1281,13 +1137,7 @@ void gpu::Draw(const DrawDesc& draw)
             memcpy(groups, changed, count);
             Enqueue([words, groups, count] {
                 for (uint32_t i = 0; i < count; i++)
-                {
-                    const uint32_t group = groups[i];
-                    memcpy(mirror.data() + group * GroupWords, words + i * GroupWords, GroupWords * 4);
-                    const uint64_t hash = XXH3_64bits(words + i * GroupWords, GroupWords * 4);
-                    mirrorHash ^= MixGroupHash(groupHashes[group], group) ^ MixGroupHash(hash, group);
-                    groupHashes[group] = hash;
-                }
+                    memcpy(mirror.data() + groups[i] * GroupWords, words + i * GroupWords, GroupWords * 4);
             });
             versionsSent = draw.guestConstantGroups != nullptr;
             if (versionsSent)
@@ -1296,11 +1146,6 @@ void gpu::Draw(const DrawDesc& draw)
         }
         copy->guestConstants = mirror.data();
         copy->guestConstantsId = constantsId;
-        Enqueue([copy] {
-            copy->guestConstantsHash = mirrorHash | 1; // 0 means "not given"
-            DrawNow(*copy);
-        });
-        return;
     }
     Enqueue([copy] { DrawNow(*copy); });
 }
@@ -1313,10 +1158,10 @@ void gpu::detail::DrawNow(const DrawDesc& draw)
     // The perf log's draw time (gpu.cpp LogPerf).
     struct Timer
     {
-        uint64_t start = PlatformNowNs();
+        uint64_t start = SDL_GetTicksNS();
         ~Timer()
         {
-            g_context->perf.drawNs += PlatformNowNs() - start;
+            g_context->perf.drawNs += SDL_GetTicksNS() - start;
             g_context->perf.draws++;
         }
     } timer;
@@ -1327,8 +1172,6 @@ void gpu::detail::DrawNow(const DrawDesc& draw)
     RenderPipeline* pipeline = Pipeline(draw);
     if (pipeline == nullptr)
         return;
-    if (!g_pendingCopies.empty())
-        SettleForDraw(draw);
 
     // Send the frame so far to the GPU where a render pass ends anyway (or, in a long pass, every MaxFlushDraws
     // draws), so the GPU works while the rest of the frame is recorded.
@@ -1347,7 +1190,7 @@ void gpu::detail::DrawNow(const DrawDesc& draw)
         Texture* texture = draw.textures[i];
         if (texture == nullptr)
             continue;
-        shared.sampler[i] = SamplerSlotOf(i, draw.samplers[i]);
+        shared.sampler[i] = SamplerSlot(draw.samplers[i]);
         Transition(list, *texture, RenderTextureLayout::SHADER_READ, RenderBarrierStage::GRAPHICS);
         uint32_t slot = TextureSlot(texture, draw.swizzles[i]);
         switch (HeapOf(*texture))
@@ -1362,7 +1205,7 @@ void gpu::detail::DrawNow(const DrawDesc& draw)
         Texture* texture = draw.vertexTextures[i];
         if (texture == nullptr)
             continue;
-        shared.vertexSampler[i] = SamplerSlotOf(MaxSamplers + i, draw.vertexSamplers[i]);
+        shared.vertexSampler[i] = SamplerSlot(draw.vertexSamplers[i]);
         Transition(list, *texture, RenderTextureLayout::SHADER_READ, RenderBarrierStage::GRAPHICS);
         shared.vertexTexture2D[i] = TextureSlot(texture, draw.vertexSwizzles[i]);
     }
@@ -1388,8 +1231,8 @@ void gpu::detail::DrawNow(const DrawDesc& draw)
     RenderBufferReference vertexConstants, pixelConstants, pulledVertices;
     if (draw.guestConstants != nullptr)
     {
-        vertexConstants = pixelConstants = UploadConstants(
-            draw.guestConstants, draw.guestConstantsId, draw.guestConstantsHash, &push.vertexShaderConstants);
+        vertexConstants = pixelConstants =
+            UploadConstants(draw.guestConstants, draw.guestConstantsId, &push.vertexShaderConstants);
         pixelConstants.offset += FloatConstantCount * 16;
         push.pixelShaderConstants = push.vertexShaderConstants + FloatConstantCount * 16;
     }
@@ -1504,27 +1347,6 @@ void gpu::detail::ClearColorNow(Texture* target, const float rgba[4], const plum
     if (DeviceLost())
         return;
     Draws();
-    for (size_t i = 0; i < g_pendingCopies.size();)
-    {
-        PendingCopy& pending = g_pendingCopies[i];
-        if (rect == nullptr && pending.source == target &&
-            SameStorageShape(pending.destination->desc, pending.source->desc))
-        {
-            // The target's content survives only in the texture: hand it over instead of copying.
-            SwapStorage(pending.destination, pending.source);
-            g_pendingCopies.erase(g_pendingCopies.begin() + std::ptrdiff_t(i));
-            g_copyStats.swapped++;
-        }
-        else if (rect == nullptr && pending.destination == target)
-        {
-            g_pendingCopies.erase(g_pendingCopies.begin() + std::ptrdiff_t(i));
-            g_copyStats.dropped++;
-        }
-        else if (pending.source == target || pending.destination == target)
-            RecordPending(i);
-        else
-            i++;
-    }
     RenderCommandList& list = Record();
     Transition(list, *target, RenderTextureLayout::COLOR_WRITE, RenderBarrierStage::GRAPHICS);
     SetFramebuffer(list, Framebuffer(&target, 1, nullptr));
@@ -1547,7 +1369,6 @@ void gpu::detail::ClearDepthStencilNow(
     if (DeviceLost())
         return;
     Draws();
-    SettleCopies(target);
     RenderCommandList& list = Record();
     Transition(list, *target, RenderTextureLayout::DEPTH_WRITE, RenderBarrierStage::GRAPHICS);
     SetFramebuffer(list, Framebuffer(nullptr, 0, target));
@@ -1567,29 +1388,18 @@ void gpu::detail::CopyTextureNow(
     std::lock_guard lock(g_mutex);
     if (DeviceLost())
         return;
-    const bool whole = x == 0 && y == 0 && slice == 0 && region.left == 0 && region.top == 0 &&
-                       region.right == int32_t(source->desc.width) && region.bottom == int32_t(source->desc.height);
-    for (size_t i = 0; i < g_pendingCopies.size();)
-    {
-        const PendingCopy& pending = g_pendingCopies[i];
-        if (pending.destination == destination && whole && g_deferCopies)
-        {
-            // Nothing read the texture since: this resolve replaces the other's content entirely.
-            g_pendingCopies.erase(g_pendingCopies.begin() + std::ptrdiff_t(i));
-            g_copyStats.dropped++;
-        }
-        else if (pending.destination == destination || pending.destination == source || pending.source == destination)
-            RecordPending(i);
-        else
-            i++;
-    }
-    if (whole && g_deferCopies && destination != source)
-    {
-        g_pendingCopies.push_back({ destination, source });
-        g_copyStats.deferred++;
-        return;
-    }
-    RecordCopy(destination, x, y, source, region, slice);
+    RenderCommandList& list = Record();
+    Transition(list, *source, RenderTextureLayout::COPY_SOURCE, RenderBarrierStage::COPY);
+    // A second copy into an image already in COPY_DEST (the game resolves several times into one texture) is a
+    // write-after-write hazard Vulkan wants a barrier for; the layout is unchanged, so Transition adds none.
+    if (destination->layout == RenderTextureLayout::COPY_DEST &&
+        g_context->renderInterface->getCapabilities().shaderFormat == RenderShaderFormat::SPIRV)
+        list.barriers(
+            RenderBarrierStage::COPY, RenderTextureBarrier(destination->texture.get(), RenderTextureLayout::COPY_DEST));
+    Transition(list, *destination, RenderTextureLayout::COPY_DEST, RenderBarrierStage::COPY);
+    RenderBox box(region.left, region.top, region.right, region.bottom);
+    list.copyTextureRegion(RenderTextureCopyLocation::Subresource(destination->texture.get(), 0, slice),
+        RenderTextureCopyLocation::Subresource(source->texture.get(), 0, 0), x, y, 0, &box);
 }
 
 void gpu::ResolveDepth(Texture* destination, uint32_t x, uint32_t y, Texture* source, const plume::RenderRect& region)
@@ -1606,8 +1416,6 @@ void gpu::detail::ResolveDepthNow(
         return;
     DrawContext& d = Draws();
     Context& c = *g_context;
-    SettleCopies(destination);
-    SettleCopies(source);
     std::unique_ptr<RenderDescriptorSet>& set = d.depthSets[source];
     if (set == nullptr)
     {

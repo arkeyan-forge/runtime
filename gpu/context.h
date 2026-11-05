@@ -74,8 +74,6 @@ namespace gpu::detail
         // Upload memory of the frame being recorded (texture data, vertices, indices, constants); reused once the GPU
         // has finished the frame.
         std::unique_ptr<plume::RenderBuffer> staging;
-        // `staging` mapped once for its lifetime: a map and an unmap per upload were ~8 % of the GPU thread's draw time.
-        uint8_t* stagingMemory = nullptr;
         uint64_t stagingCapacity = 0;
         uint64_t stagingUsed = 0;
         std::vector<std::unique_ptr<plume::RenderBuffer>> retiredStaging;
@@ -87,7 +85,6 @@ namespace gpu::detail
             std::vector<Submission> submissions;
             uint32_t submitted = 0;
             std::unique_ptr<plume::RenderBuffer> staging;
-            uint8_t* stagingMemory = nullptr;
             uint64_t stagingCapacity = 0;
             std::vector<std::unique_ptr<plume::RenderBuffer>> retiredStaging;
             std::unique_ptr<plume::RenderDescriptorSet> presentSet;
@@ -213,8 +210,6 @@ namespace gpu::detail
         plume::RenderBarrierStages stages);
     // Upload memory for this frame, `alignment`-aligned; usable as vertex, index and constant data and by address.
     uint64_t AllocateStaging(uint64_t size, plume::RenderBuffer*& buffer, uint64_t alignment = 512);
-    // The mapped memory of the buffer the last AllocateStaging returned (nullptr if it could not be mapped).
-    uint8_t* StagingMemory();
 
     // Called at the end of every frame: destroys the textures released during the frame (the GPU has finished it when
     // there are some, EndFrame) and forgets the frame's constant uploads.
@@ -318,7 +313,4 @@ namespace gpu::detail
         const plume::RenderRect& region, uint32_t slice);
     void ResolveDepthNow(
         gpu::Texture* destination, uint32_t x, uint32_t y, gpu::Texture* source, const plume::RenderRect& region);
-    // Records the deferred resolve copies (draw.cpp, CopyTextureNow) that read or write `texture`, every one for nullptr:
-    // before anything else on the GPU thread reads or writes it. Under g_mutex.
-    void SettleCopies(const gpu::Texture* texture);
 }

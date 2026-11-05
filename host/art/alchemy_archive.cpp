@@ -462,10 +462,9 @@ namespace art::alchemy
 
     std::optional<size_t> IgaArchive::Find(const std::string& part) const
     {
-        // Lower case, and either separator: SuperChargers' entries use '/' where the others use '\\'.
         auto lower = [](std::string text) {
-            std::transform(text.begin(), text.end(), text.begin(),
-                [](unsigned char c) { return c == '\\' ? '/' : char(std::tolower(c)); });
+            std::transform(
+                text.begin(), text.end(), text.begin(), [](unsigned char c) { return char(std::tolower(c)); });
             return text;
         };
         std::string wanted = lower(part);
@@ -486,11 +485,8 @@ namespace art::alchemy
         // reads "TEMT") with a 16-byte header { tag, count, length, data start }, memory handles in TMHN as { kind << 24
         // | size, pool << 27 | offset }, a pointer's pool in its top 5 bits, igImage2's name an index in the strings
         // (TSTR), its other fields where v6 has them. v8 is Trap Team's [V: its disc, 2026-10-30]: as v7, but every name in
-        // the types and strings records is padded to 2 bytes. v9 is SuperChargers' [V: its shaders and pictures,
-        // 2026-11-04]: v8's layout (sections at 0x14, tags stored byte-swapped, TMHN, names padded to 2 bytes) with two
-        // changes: a packed object distance is the distance itself (v6-v8: minus 4), igImage2's size, format and handle
-        // are 4 bytes later (+0x34, +0x40, +0x4C), and the dependencies' strings are not padded. The public descriptions' v9 (tags not swapped, sections at 0x10,
-        // RHND) was not what its disc holds.
+        // the types and strings records is padded to 2 bytes. v9 (the later games) is from public format descriptions,
+        // never seen here [?]: tags not swapped, sections { id, offset, size, alignment } at 0x10, handles in RHND.
         struct IgzLayout
         {
             uint32_t version;
@@ -505,8 +501,6 @@ namespace art::alchemy
             bool nameIsString; // igImage2's name is an index in the strings (else a pointer)
             uint32_t imageName, imageWidth, imageFormat, imageHandle, imageSize; // igImage2's fields
             uint32_t stringAlign; // each name in the types and strings records is padded to a multiple of this
-            uint32_t objectGap; // bytes added to each packed object distance (v6-v8 store the distance minus 4)
-            uint32_t dependencyAlign; // the dependencies' strings are padded to a multiple of this
             bool verified;
         };
         enum Table
@@ -518,6 +512,11 @@ namespace art::alchemy
             Strings,
             Dependencies
         };
+        constexpr uint32_t Tag(const char (&t)[5])
+        {
+            return uint32_t(uint8_t(t[0])) << 24 | uint32_t(uint8_t(t[1])) << 16 | uint32_t(uint8_t(t[2])) << 8 |
+                   uint8_t(t[3]);
+        }
         constexpr uint32_t Swapped(const char (&t)[5])
         {
             return uint32_t(uint8_t(t[3])) << 24 | uint32_t(uint8_t(t[2])) << 16 | uint32_t(uint8_t(t[1])) << 8 |
@@ -526,19 +525,18 @@ namespace art::alchemy
         constexpr uint32_t None = 0xFFFFFFFF; // a table this version does not have
         constexpr IgzLayout IgzLayouts[] = {
             { 6, 0x10, 0, 1, false, true, 12, 16, 20, { 0, 2, 5, 0xA, None, None }, 24, 28, false, 0x08, 0x30, 0x3C,
-                0x48, 0x60, 1, 4, 1, true },
+                0x48, 0x60, 1, true },
             { 7, 0x14, 1, 2, true, false, 4, 8, 12,
                 { Swapped("TMET"), Swapped("EXID"), Swapped("RVTB"), Swapped("TMHN"), Swapped("TSTR"),
                     Swapped("TDEP") },
-                27, 24, true, 0x08, 0x30, 0x3C, 0x48, 0x60, 1, 4, 1, true },
+                27, 24, true, 0x08, 0x30, 0x3C, 0x48, 0x60, 1, true },
             { 8, 0x14, 1, 2, true, false, 4, 8, 12,
                 { Swapped("TMET"), Swapped("EXID"), Swapped("RVTB"), Swapped("TMHN"), Swapped("TSTR"),
                     Swapped("TDEP") },
-                27, 24, true, 0x08, 0x30, 0x3C, 0x48, 0x60, 2, 4, 2, true },
-            { 9, 0x14, 1, 2, true, false, 4, 8, 12,
-                { Swapped("TMET"), Swapped("EXID"), Swapped("RVTB"), Swapped("TMHN"), Swapped("TSTR"),
-                    Swapped("TDEP") },
-                27, 24, true, 0x08, 0x34, 0x40, 0x4C, 0x60, 2, 0, 1, true },
+                27, 24, true, 0x08, 0x30, 0x3C, 0x48, 0x60, 2, true },
+            { 9, 0x10, 1, 2, true, false, 4, 8, 12,
+                { Tag("TMET"), Tag("EXID"), Tag("RVTB"), Tag("RHND"), Tag("TSTR"), Tag("TDEP") }, 27, 28, false, 0x08,
+                0x30, 0x3C, 0x48, 0x60, 1, false },
         };
 
         // The NUL-terminated strings of a record, `count` of them.
@@ -610,8 +608,6 @@ namespace art::alchemy
             for (uint32_t table = 0; table < std::size(layout.tables); table++)
                 if (id == layout.tables[table])
                     file.m_fixups.push_back({ table, Fixup{ count, p + start, p + length } });
-            if (layout.tagged)
-                file.m_records.push_back({ id, Fixup{ count, p + start, p + length } });
             p += length;
         }
         // The class names, one NUL-terminated string each: an object's first word is its index here.
@@ -653,25 +649,10 @@ namespace art::alchemy
         return nullptr;
     }
 
-    std::vector<uint32_t> IgzFile::RecordWords(std::string_view tag) const
-    {
-        std::vector<uint32_t> out;
-        if (tag.size() != 4)
-            return out;
-        // Stored byte-swapped, as the layouts' tables (Swapped).
-        const uint32_t id = uint32_t(uint8_t(tag[3])) << 24 | uint32_t(uint8_t(tag[2])) << 16 |
-                            uint32_t(uint8_t(tag[1])) << 8 | uint8_t(tag[0]);
-        for (const auto& [stored, record] : m_records)
-            if (stored == id)
-                for (size_t at = record.start; at + 4 <= record.end; at += 4)
-                    out.push_back(Be32(at));
-        return out;
-    }
-
     std::vector<uint64_t> IgzFile::ObjectOffsets() const
     {
         // The object offsets: 4-bit nibbles, low one first (3 data bits and a continue bit, least significant group
-        // first), each value the distance to the previous object in 4-byte units (minus one before v9: objectGap).
+        // first), each value the distance to the previous object in 4-byte units minus one.
         std::vector<uint64_t> out;
         const Fixup* objects = FindFixup(Objects);
         if (objects == nullptr)
@@ -694,7 +675,7 @@ namespace art::alchemy
                 current = nibble();
                 value |= (current & 7) << shift;
             }
-            previous += value * 4 + IgzLayouts[m_layout].objectGap;
+            previous += value * 4 + 4;
             if (auto at = Pointer(previous))
                 out.push_back(*at);
         }
@@ -762,7 +743,7 @@ namespace art::alchemy
         if (const Fixup* dependencies = FindFixup(Table::Dependencies))
         {
             std::vector<std::string> strings = StringList(*this, dependencies->start, dependencies->end,
-                2 * dependencies->count, IgzLayouts[m_layout].dependencyAlign);
+                2 * dependencies->count, IgzLayouts[m_layout].stringAlign);
             for (size_t i = 1; i < strings.size(); i += 2)
                 out.push_back(strings[i]);
         }

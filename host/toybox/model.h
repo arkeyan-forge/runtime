@@ -46,7 +46,6 @@ namespace toybox
         Half,      // Figure → Change the bottom / the top: the halves to choose from (docs/runtime/host/toybox_ux.md)
         Stats,     // Edit stats (the old sheet)
         Upgrades,  // Edit stats → Upgrades: the toy's upgrades by name
-        Creation,  // Imaginators: a creation crystal's editor (name, class, element, level, parts, colours)
         Add,       // screen 8
         Name,      // screen 9
         Manage,    // screen 10
@@ -191,20 +190,6 @@ namespace toybox
         int row = 0;
     };
 
-    // The creation editor: rows 0 name, 1 class, 2 element, 3 level, then the creation's parameters
-    // (figures::CrystalParams), then Cancel and Save.
-    struct CreationState
-    {
-        int figure = -1;
-        figures::CrystalStats crystal;
-        uint16_t type = 0; // the crystal's toy type (its element): changes only on a crystal made here
-        bool virtualCrystal = false; // no factory signature: made here
-        bool dirty = false;
-        int row = 0, top = 0; // the focused row, the first row shown
-        static constexpr int First = 4; // the first parameter's row
-        static int Rows() { return First + int(figures::CrystalParamCount) + 2; }
-    };
-
     // One place of the Upgrades screen's grid: an upgrade of the table, or All / None / Done.
     struct UpgradeItem
     {
@@ -311,7 +296,6 @@ namespace toybox
         int backup = 0;
         std::vector<std::string> backups;
         StatsState stats;
-        CreationState creation;
         UpgradesState upgrades;
         Grid add; // Add a figure: characters
         std::vector<const collection::Toy*> addToys; // per cell (Cell::figure indexes it)
@@ -408,8 +392,6 @@ namespace toybox
         void FocusSuggestion(int index);
         void FocusManage(int section, int item, bool panel);
         void FocusStatsRow(int row);
-        void OpenCreation(int index);
-        void FocusCreationRow(int row); // mouse: a click focuses a row, a second one acts on it
         void FocusUpgrade(int item); // a click: focus it and do it
         void FocusDialogButton(int index);
 
@@ -496,8 +478,6 @@ namespace toybox
         void ChangeHalfTo(const std::string& keep, const std::string& replacement);
         void RunBackups(Command command);
         void RunStats(Command command);
-        void RunCreation(Command command);
-        void SaveCreation();
         void OpenUpgrades();
         void RunUpgrades(Command command);
         void RunAdd(Command command);

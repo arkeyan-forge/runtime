@@ -30,11 +30,7 @@ extern "C" void SsaBadIndirectCall(PPCContext& ctx, uint8_t* base, uint32_t targ
         auto firstWord = [](uint32_t address) {
             return address >= 0x10000 && address < 0xFFFF0000 ? g_memory.Read<uint32_t>(address) : 0;
         };
-#ifdef PPC_CONFIG_NON_VOLATILE_AS_LOCAL
-        uint32_t caller = 0; // r31 is the caller's local, not in the context (docs/tools/toolchain/xenonrecomp.md)
-#else
         uint32_t caller = ctx.r31.u32;
-#endif
         uint32_t threadId = g_memory.Read<uint32_t>(CurrentKThread(ctx.r13.u32) + 0x14C);
         char name[64] = "";
 #ifndef _WIN32

@@ -57,7 +57,7 @@ struct RuntimeSettings
     std::string glyphs = "auto"; // button glyphs: auto (the last device used), xbox (auto among the next two), xbox360,
     // xboxone, playstation, nintendo, keyboard
     bool nightmareFromStart =
-        false; // [<game>] nightmare_from_start: the hardest difficulty offered from the start (Swap Force, Imaginators)
+        false; // [<game>] nightmare_from_start: the hardest difficulty offered from the start (Swap Force)
     bool toyboxAutoOpen =
         true; // the Toy Box opens by itself when the game asks for a figure ([portal] toybox_auto_open)
     std::string language; // text language code, empty: the game's choice

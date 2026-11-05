@@ -14,17 +14,15 @@ namespace
     bool g_keepsArea = game::UltrawideSceneKeepsArea;
     uint32_t g_sceneWidth = ultrawide::SceneWidth16x9, g_sceneHeight = ultrawide::SceneHeight16x9;
     uint32_t g_frameWidth = ultrawide::FrameWidth16x9;
-    uint32_t g_maxWidth = 0;
     bool g_active;
     std::atomic<int> g_movies;
 }
 
-void ultrawide::SetScene16x9(uint32_t width, uint32_t height, bool keepsArea, uint32_t maxWidth)
+void ultrawide::SetScene16x9(uint32_t width, uint32_t height, bool keepsArea)
 {
     g_baseWidth = g_sceneWidth = width;
     g_baseHeight = g_sceneHeight = height;
     g_keepsArea = keepsArea;
-    g_maxWidth = maxWidth;
 }
 
 uint32_t ultrawide::Scene16x9Width() { return g_baseWidth; }
@@ -45,14 +43,7 @@ void ultrawide::Configure(bool automatic, uint32_t windowWidth, uint32_t windowH
         g_sceneHeight = uint32_t(float(g_sceneWidth) / g_aspect / 8.0f) * 8;
     }
     else
-    {
         g_sceneWidth = std::max(g_baseWidth, uint32_t(std::lround(g_baseHeight * g_aspect / 32.0f)) * 32);
-        if (g_maxWidth != 0 && g_sceneWidth > g_maxWidth)
-        {
-            g_sceneWidth = g_maxWidth / 32 * 32;
-            g_sceneHeight = uint32_t(std::lround(g_sceneWidth / g_aspect / 8.0f)) * 8;
-        }
-    }
     g_frameWidth = std::max(FrameWidth16x9, uint32_t(std::lround(FrameHeight * g_aspect)));
     fprintf(stderr, "[ultrawide] window %ux%u: aspect %.3f, scene %ux%u, frame %ux%u\n", windowWidth, windowHeight,
         g_aspect, g_sceneWidth, g_sceneHeight, g_frameWidth, FrameHeight);

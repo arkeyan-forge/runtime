@@ -28,7 +28,6 @@
 #include "platform/platform.h"
 #include "thread.h"
 #include "vfs.h"
-#include "write_watch.h"
 #include <SDL3/SDL.h>
 #include <stb_image.h>
 #include <cstdio>
@@ -330,7 +329,6 @@ int main(int argc, char** argv)
     }
 
     g_memory.Reserve();
-    writewatch::Init(g_memory.base, 0x100000000ull);
     g_module = LoadXex(g_disc.ReadAll("default.xex"));
 
     if (const char* script = skyenv::Get("SKY_PRESS"))
@@ -342,8 +340,7 @@ int main(int argc, char** argv)
     bool headless = skyenv::Get("SKY_HEADLESS") != nullptr;
     // The 3D at the frame's size where the game renders it smaller (Swap Force), unless original_resolution.
     if (::game::Current().fullScene.width != 0 && !settings.originalResolution)
-        ultrawide::SetScene16x9(::game::Current().fullScene.width, ::game::Current().fullScene.height, false,
-            ::game::Current().maxSceneWidth);
+        ultrawide::SetScene16x9(::game::Current().fullScene.width, ::game::Current().fullScene.height, false);
     SDL_Window* window = nullptr;
     if (!headless)
     {

@@ -117,11 +117,10 @@ namespace
         if (g_portraitsLoaded)
             return;
         g_portraitsLoaded = true;
-        // This game's portraits (and Imaginators' part names) from the player's disc, cached in its data folder
-        // (docs/runtime/host/game_art.md).
-        art::Extraction found = art::Extract(SSA_GAME_ID, art::ReadFrom(g_disc), {}, art::Portraits | art::PartNames);
-        fprintf(stderr, "[toybox] %d portraits in %s%s\n", found.portraits,
-            art::PortraitFolder(SSA_GAME_ID).string().c_str(), found.partNames ? ", the parts' names read" : "");
+        // This game's portraits from the player's disc, cached in its data folder (docs/runtime/host/game_art.md).
+        art::Extraction found = art::Extract(SSA_GAME_ID, art::ReadFrom(g_disc), {}, art::Portraits);
+        fprintf(stderr, "[toybox] %d portraits in %s\n", found.portraits,
+            art::PortraitFolder(SSA_GAME_ID).string().c_str());
     }
 
     void OpenToybox(Screen screen = Screen::Home, int seat = 0)
@@ -251,14 +250,10 @@ namespace
         case SDLK_UP: command = Command::Up; break;
         case SDLK_DOWN: command = Command::Down; break;
         case SDLK_LEFT:
-            command = shift && (model.screen == Screen::Stats || model.screen == Screen::Creation)
-                          ? Command::PreviousSection
-                          : Command::Left;
+            command = shift && model.screen == Screen::Stats ? Command::PreviousSection : Command::Left;
             break;
         case SDLK_RIGHT:
-            command = shift && (model.screen == Screen::Stats || model.screen == Screen::Creation)
-                          ? Command::NextSection
-                          : Command::Right;
+            command = shift && model.screen == Screen::Stats ? Command::NextSection : Command::Right;
             break;
         case SDLK_RETURN:
         case SDLK_KP_ENTER:
@@ -313,7 +308,7 @@ namespace
         toybox::Model& model = M();
         if (model.waiting == toybox::Model::Waiting::MouseButton)
             model.TakeMouse(up > 0 ? mouse::WheelUp : mouse::WheelDown);
-        else if (model.screen == Screen::Stats || model.screen == Screen::Creation)
+        else if (model.screen == Screen::Stats)
             model.Run(up > 0 ? Command::Right : Command::Left);
         else if (model.screen == Screen::Home || model.screen == Screen::Add || model.screen == Screen::WheelList)
             model.ScrollList(up > 0 ? -1 : 1);
@@ -374,9 +369,8 @@ namespace
         return 0;
     }
 
-    // SKY_TOYBOX_SCRIPT's "prompt=1" / "prompt=2d" / "prompt=1v": the game asks that player for a Skylander for 3 s (d: and
-    // says its Skylander died; v: for a vehicle instead), as if ReadPortalPrompt said it, and "level": a level starts
-    // (game::LevelStarted): the out of health test.
+    // SKY_TOYBOX_SCRIPT's "prompt=1" / "prompt=2d": the game asks that player for a Skylander for 3 s (d: and says its Skylander
+    // died), as if ReadPortalPrompt said it, and "level": a level starts (game::LevelStarted): the out of health test.
     portalprompt::Prompt g_testPrompt;
     uint64_t g_testPromptUntil = 0;
     int g_testLevels = 0;
@@ -511,8 +505,7 @@ namespace
             }
             if (action.rfind("prompt=", 0) == 0)
             {
-                g_testPrompt = { portalprompt::Kind::Player, atoi(action.c_str() + 7), action.back() == 'd',
-                    action.back() == 'v' };
+                g_testPrompt = { portalprompt::Kind::Player, atoi(action.c_str() + 7), action.back() == 'd' };
                 g_testPromptUntil = now + 3000000000ull;
                 continue;
             }
@@ -934,8 +927,7 @@ static void FollowPrompt(toybox::Model& model)
     {
     case portalprompt::Tracker::Event::Appeared:
     {
-        // The seat asked for: "p1", or "vehicle1" for a vehicle (the catalogue's seat ids).
-        std::string id = (appeared.vehicle ? "vehicle" : "p") + std::to_string(appeared.player);
+        std::string id = "p" + std::to_string(appeared.player);
         for (size_t i = 0; i < model.seats.size(); i++)
         {
             if (model.seats[i].seat.id != id)
@@ -946,7 +938,7 @@ static void FollowPrompt(toybox::Model& model)
                                       : "the game asks for the seat again while it is on it");
             if (!g_autoOpen)
                 break;
-            fprintf(stderr, "[toybox] prompt for player %d%s\n", appeared.player, appeared.vehicle ? "'s vehicle" : "");
+            fprintf(stderr, "[toybox] prompt for player %d\n", appeared.player);
             // Left alone when the player has it open already.
             if (!model.open)
             {

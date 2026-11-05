@@ -83,9 +83,8 @@ namespace game
 
         // [<game>] nightmare_from_start: the game's hardest difficulty offered from a new game, whatever the save says, and
         // locked again when the setting is off; the save is never written for it. nullptr: the game has no locked
-        // difficulty (Spyro's Adventure has none to choose, Giants' hardest is open from the start, SuperChargers offers
-        // Nightmare from the start; Swap Force's and Imaginators' Nightmare is locked until the story is beaten; Trap
-        // Team's is too, its check not hooked yet).
+        // difficulty (Spyro's Adventure has none to choose, Giants' hardest is open from the start; Swap Force's Nightmare
+        // is locked until the story is beaten).
         void (*SetNightmareFromStart)(bool on) = nullptr;
 
         // The level a file open starts ("level_027", the first component of the disc path it opens, lower case; empty for
@@ -114,19 +113,6 @@ namespace game
         // The levels that are the game's own menus (game::LevelStarted's names: its front end), where the mouse does
         // nothing and the pointer is not held. The menus inside a level (pause) cannot be told from play.
         std::span<const std::string_view> menuLevels = {};
-
-        // The widest full-resolution scene (fullScene) a wide window gets: past it the scene keeps the window's shape at a
-        // smaller height (d3d/ultrawide.h). 0: no limit. SuperChargers stops in its hub with a 2560x720 scene (32:9).
-        uint32_t maxSceneWidth = 0;
-
-        // The game's 3D button prompts, meshes that show the button as letters of geometry (host/glyphs.h, Prompt); their
-        // pictures are rows of glyphTextures. Empty: the game has none known.
-        std::span<const glyphs::Prompt> glyphPrompts = {};
-
-        // The pad button (XINPUT bits) that ends a story movie, for a game whose own skip never comes (SuperChargers'
-        // fmv01 ignores every button: Y, 0x8000): the movie is cut at the frame it shows and the game goes on as at its
-        // end (d3d/bink_display.cpp). 0: the game's own skip only.
-        uint16_t storyMovieSkipButton = 0;
     };
 
     // The adapter of the game being built, defined by games/<id>/adapter.cpp.
@@ -152,7 +138,4 @@ namespace game
 
     // True when `path` is one of the game's start-up logos (Adapter::introMovies).
     bool IsIntroMovie(std::string_view path);
-    // The buttons the title just read from the first pad (kernel/input.cpp): a new press of
-    // Adapter::storyMovieSkipButton ends the story movie that plays (d3d/bink_display.cpp).
-    void StoryMovieButtons(uint16_t buttons);
 }
