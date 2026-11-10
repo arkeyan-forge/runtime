@@ -5,6 +5,7 @@
 #include <cstring>
 #include <functional>
 #include <map>
+#include <atomic>
 #include <mutex>
 #include <type_traits>
 #include "byteswap.h" // XenonUtils' (the C library of Linux has one too: runtime/CMakeLists.txt)
@@ -77,9 +78,13 @@ public:
 
     bool Contains(uint32_t address) const { return address >= m_begin && address < m_end; }
     uint32_t PageSize() const { return m_pageSize; }
+    // Bytes allocated now, and the heap's size (the debug screen).
+    uint64_t UsedBytes() const { return m_usedBytes.load(std::memory_order_relaxed); }
+    uint64_t SizeBytes() const { return uint64_t(m_end) - m_begin; }
 
 private:
     mutable std::mutex m_mutex;
+    std::atomic<uint64_t> m_usedBytes{ 0 };
     uint32_t m_begin;
     uint32_t m_end;
     uint32_t m_pageSize;

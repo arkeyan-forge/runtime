@@ -3,6 +3,8 @@
 #define XXH_INLINE_ALL
 #include <xxhash.h>
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstdio>
 #include <deque>
@@ -100,12 +102,23 @@ namespace texpack
             return true;
         }
 
+        // Reads the folder's file headers, several at once (a generated pack holds tens of thousands of files: one at a
+        // time, opening them was most of the start-up's cost), then adds them in the order the folder listed them.
         void IndexFolder(const std::filesystem::path& folder)
         {
             std::error_code error;
             if (!std::filesystem::is_directory(folder, error))
                 return;
-            size_t invalid = 0, ignored = 0;
+            size_t invalid = 0, ignored = 0, indexed = 0;
+            auto started = std::chrono::steady_clock::now();
+            struct Candidate
+            {
+                std::filesystem::path path;
+                uint64_t hash = 0;
+                Replacement replacement;
+                std::string why; // empty: usable
+            };
+            std::vector<Candidate> candidates;
             for (std::filesystem::recursive_directory_iterator
                      it(folder, std::filesystem::directory_options::skip_permission_denied, error),
                 end;
@@ -119,31 +132,59 @@ namespace texpack
                     [](unsigned char c) { return char(tolower(c)); });
                 if (extension != ".dds")
                     continue;
-                std::string name = datadir::Text(path.filename());
                 uint64_t hash;
                 if (!ParseHashName(datadir::Text(path.stem()), hash))
                 {
-                    fprintf(stderr, "[texpack] ignored %s: the name is not 16 hex digits\n", name.c_str());
+                    fprintf(stderr, "[texpack] ignored %s: the name is not 16 hex digits\n",
+                        datadir::Text(path.filename()).c_str());
                     ignored++;
                     continue;
                 }
-                std::ifstream in(path, std::ios::binary);
-                uint8_t header[dds::MaxHeaderBytes];
-                in.read(reinterpret_cast<char*>(header), sizeof(header));
-                std::string why;
-                Replacement replacement;
-                if (!dds::Parse(std::span<const uint8_t>(header, size_t(in.gcount())),
-                        std::filesystem::file_size(path, error), replacement.info, why))
+                candidates.push_back({ path, hash, {}, {} });
+            }
+            std::atomic<size_t> next{ 0 };
+            auto read = [&] {
+                for (size_t i; (i = next++) < candidates.size();)
                 {
-                    fprintf(stderr, "[texpack] ignored %s: %s (the game's texture stays)\n", name.c_str(), why.c_str());
+                    Candidate& candidate = candidates[i];
+                    std::ifstream in(candidate.path, std::ios::binary);
+                    uint8_t header[dds::MaxHeaderBytes];
+                    in.read(reinterpret_cast<char*>(header), sizeof(header));
+                    std::error_code sizeError;
+                    uint64_t size = std::filesystem::file_size(candidate.path, sizeError);
+                    if (!dds::Parse(std::span<const uint8_t>(header, size_t(in.gcount())), size,
+                            candidate.replacement.info, candidate.why) &&
+                        candidate.why.empty())
+                        candidate.why = "unreadable";
+                }
+            };
+            unsigned workers = unsigned(
+                std::min<size_t>(candidates.size() / 256 + 1, std::max(1u, std::thread::hardware_concurrency())));
+            workers = std::min(workers, 8u);
+            std::vector<std::thread> threads;
+            for (unsigned w = 1; w < workers; w++)
+                threads.emplace_back(read);
+            read();
+            for (std::thread& thread : threads)
+                thread.join();
+            for (Candidate& candidate : candidates)
+            {
+                if (!candidate.why.empty())
+                {
+                    fprintf(stderr, "[texpack] ignored %s: %s (the game's texture stays)\n",
+                        datadir::Text(candidate.path.filename()).c_str(), candidate.why.c_str());
                     invalid++;
                     continue;
                 }
-                replacement.path = path;
-                g_state.index[hash] = std::move(replacement);
+                candidate.replacement.path = std::move(candidate.path);
+                g_state.index[candidate.hash] = std::move(candidate.replacement);
+                indexed++;
             }
-            fprintf(stderr, "[texpack] %zu replacement textures in %s (%zu invalid, %zu ignored)\n",
-                g_state.index.size(), datadir::Text(folder).c_str(), invalid, ignored);
+            long long ms =
+                std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started)
+                    .count();
+            fprintf(stderr, "[texpack] %zu replacement textures in %s (%zu invalid, %zu ignored; %lld ms)\n", indexed,
+                datadir::Text(folder).c_str(), invalid, ignored, ms);
         }
     }
 
@@ -159,7 +200,8 @@ namespace texpack
         return name;
     }
 
-    void Configure(const std::filesystem::path& dump, bool dumping, const std::filesystem::path& packs, bool replacing)
+    void Configure(const std::filesystem::path& dump, bool dumping, const std::filesystem::path& packs, bool replacing,
+        const std::filesystem::path& generated)
     {
         g_state.dumpFolder = dump;
         g_state.dumping = dumping;
@@ -169,21 +211,26 @@ namespace texpack
             g_state.writer = std::thread(Writer);
             atexit(Flush);
         }
+        if (!generated.empty())
+            IndexFolder(generated); // first: the player's own files below replace its entries
         if (replacing)
             IndexFolder(packs);
     }
 
-    void ConfigureForGame(std::string_view gameId, bool dumping, bool replacing)
+    void ConfigureForGame(std::string_view gameId, bool dumping, bool replacing, bool hd)
     {
         std::filesystem::path game = datadir::Game(gameId);
         if (game.empty())
             return;
-        Configure(game / "textures-dump", dumping, game / "textures", replacing);
+        Configure(game / "textures-dump", dumping, game / "textures", replacing,
+            hd ? game / "textures-hd" : std::filesystem::path());
     }
 
     bool Dumping() { return g_state.dumping; }
 
     bool Active() { return g_state.dumping || !g_state.index.empty(); }
+
+    size_t Files() { return g_state.index.size(); }
 
     const Replacement* Find(uint64_t hash)
     {

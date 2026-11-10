@@ -1,6 +1,6 @@
 #pragma once
 
-// Test aid (SKY_PORTAL=stall, SSAPortalAsyncTest): a real portal as the first Windows PC's logs show one (0.1.0): it is
+// Test aid (SKY_PORTAL=stall, ArkeyanPortalAsyncTest): a real portal as the first Windows PC's logs show one (0.1.0): it is
 // always found, sends a status report when opened, and every write blocks for `writeDelay` (hidapi's 1 s write timeout
 // on Windows) and then fails, which closes it. Like the HID backend, it is found again at most every 2 s.
 #include "host/portal_backend.h"

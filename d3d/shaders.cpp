@@ -1,6 +1,7 @@
 // Remembers which shader container every Direct3D shader object was created from, so draws can find the translated
 // (XenosRecomp) version of the shaders bound on the device.
 #include "d3d/shaders.h"
+#include "d3d/target_writes.h"
 #include "game_hooks.h"
 #include "memory.h"
 #include <cstdio>
@@ -34,7 +35,7 @@ namespace d3d
             std::vector<uint8_t> bytes(size);
             memcpy(bytes.data(), g_memory.Translate(container), virtualSize);
             memcpy(bytes.data() + virtualSize, g_memory.Translate(physical), size - virtualSize);
-            GuestShader shader{ container, size, HashBytes(bytes.data(), size), vertex, 0, 0, 0, 0 };
+            GuestShader shader{ container, size, HashBytes(bytes.data(), size), vertex, 0, 0, 0, 0, 0 };
 
             // SKY_DUMP_SHADERS=<dir>: keep every container the game creates (some are built at run time, so the disc
             // archives lack them); tools/shaders/build_cache.sh translates them too.
@@ -100,6 +101,7 @@ namespace d3d
                 uint32_t header = container + g_memory.Read<uint32_t>(container + 0x18);
                 bool enabled = (g_memory.Read<uint32_t>(header + 0x8) >> 18) & 1;
                 shader.paramGen = enabled ? 0x80000000u | ((g_memory.Read<uint32_t>(header + 0xC) >> 8) & 0xFF) : 0;
+                shader.colorOutputs = PixelShaderColorOutputs(g_memory.Read<uint32_t>(header + 0x1C));
             }
             return shader;
         }

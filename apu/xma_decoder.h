@@ -21,5 +21,5 @@ public:
         uint32_t channels, int16_t* samples) = 0;
 };
 
-// Null when the build has no XMA decoder (SSA_FFMPEG=OFF); contexts then stay silent.
+// Null when the build has no XMA decoder (ARKEYAN_FFMPEG=OFF); contexts then stay silent.
 std::unique_ptr<XmaFrameDecoder> CreateXmaFrameDecoder();

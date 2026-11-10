@@ -153,6 +153,20 @@ void PlatformInit()
     // Sleeps and timed waits (the 1 ms KeTimeStampBundle tick, VBlank pacing, KeDelayExecutionThread) otherwise
     // round up to the 15.6 ms system tick. Desktop-only: UWP has no equivalent.
     timeBeginPeriod(1);
+    // Since Windows 11, a process whose window is behind another or minimised loses that 1 ms timer and is slowed down
+    // (power throttling): the game and its sound then ran in slow motion out of focus. Opt out of both.
+#ifndef PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION
+#define PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION 0x4
+#endif
+    PROCESS_POWER_THROTTLING_STATE throttling{};
+    throttling.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
+    throttling.ControlMask =
+        PROCESS_POWER_THROTTLING_EXECUTION_SPEED | PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;
+    throttling.StateMask = 0;
+    if (!SetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling, &throttling, sizeof(throttling)))
+        fprintf(stderr, "[system] power throttling: could not opt out (error %lu)\n", GetLastError());
+    else
+        fprintf(stderr, "[system] power throttling: off (full speed and 1 ms timers out of focus)\n");
 #endif
 }
 
@@ -215,6 +229,37 @@ bool PlatformProtectReadOnly(void* address, size_t size, bool readOnly)
 #endif
 }
 
+size_t PlatformPageSize()
+{
+    SYSTEM_INFO info;
+    GetSystemInfo(&info);
+    return info.dwPageSize;
+}
+
+namespace
+{
+    bool (*volatile g_writeFaultFilter)(void* address);
+
+    // A write to a page write_watch.cpp made read-only; anything else goes on to the other handlers. ExceptionInformation:
+    // [0] 1 for a write, [1] the address.
+    LONG WINAPI OnWriteFault(EXCEPTION_POINTERS* pointers)
+    {
+        const EXCEPTION_RECORD& record = *pointers->ExceptionRecord;
+        bool (*filter)(void*) = g_writeFaultFilter;
+        if (filter != nullptr && record.ExceptionCode == EXCEPTION_ACCESS_VIOLATION && record.NumberParameters >= 2 &&
+            record.ExceptionInformation[0] == 1 && filter(reinterpret_cast<void*>(record.ExceptionInformation[1])))
+            return EXCEPTION_CONTINUE_EXECUTION;
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+}
+
+bool PlatformInstallWriteFaultFilter(bool (*handled)(void* address))
+{
+    g_writeFaultFilter = handled;
+    static void* const installed = AddVectoredExceptionHandler(1, OnWriteFault);
+    return installed != nullptr;
+}
+
 void PlatformStartThread(size_t stackSize, std::function<void()> body)
 {
     // The stack size is a reservation: pages are committed as the stack grows.
@@ -225,6 +270,46 @@ void PlatformStartThread(size_t stackSize, std::function<void()> body)
 }
 
 void PlatformSetThreadName(const char* name) { SetThreadDescription(GetCurrentThread(), Widen(name).c_str()); }
+
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+namespace
+{
+    uint64_t CpuNs(const FILETIME& kernel, const FILETIME& user)
+    {
+        auto ticks = [](const FILETIME& t) { return uint64_t(t.dwHighDateTime) << 32 | t.dwLowDateTime; };
+        return (ticks(kernel) + ticks(user)) * 100; // 100 ns units
+    }
+}
+
+bool PlatformProcessCpuNs(uint64_t& ns)
+{
+    FILETIME created, exited, kernel, user;
+    if (!GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user))
+        return false;
+    ns = CpuNs(kernel, user);
+    return true;
+}
+
+// A handle of its own, kept for the run (one per measured thread).
+uint64_t PlatformThreadCpuClock()
+{
+    HANDLE thread = OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, GetCurrentThreadId());
+    return thread != nullptr ? uint64_t(reinterpret_cast<uintptr_t>(thread)) : 0;
+}
+
+bool PlatformThreadCpuNs(uint64_t clock, uint64_t& ns)
+{
+    FILETIME created, exited, kernel, user;
+    if (clock == 0 || !GetThreadTimes(reinterpret_cast<HANDLE>(uintptr_t(clock)), &created, &exited, &kernel, &user))
+        return false;
+    ns = CpuNs(kernel, user);
+    return true;
+}
+#else
+bool PlatformProcessCpuNs(uint64_t&) { return false; }
+uint64_t PlatformThreadCpuClock() { return 0; }
+bool PlatformThreadCpuNs(uint64_t, uint64_t&) { return false; }
+#endif
 
 void PlatformSetThreadTimingCritical(uint32_t)
 {

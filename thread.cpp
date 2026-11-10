@@ -30,6 +30,7 @@ namespace
     };
 
     std::atomic<uint32_t> g_nextThreadId{ 1 };
+    std::atomic<uint32_t> g_threadsRunning;
 
     // KPCR fields read by game code through r13.
     constexpr uint32_t PcrTlsPointer = 0x0;
@@ -104,6 +105,7 @@ namespace
         PPCContext& ctx = thread.context->ctx;
         t_guestContext = &ctx;
         ctx.fpscr.loadFromHost();
+        g_threadsRunning.fetch_add(1, std::memory_order_relaxed);
 
         uint32_t function = info->start;
         if (info->xapiStartup != 0)
@@ -127,6 +129,7 @@ namespace
         {
             exitCode = exit.code;
         }
+        g_threadsRunning.fetch_sub(1, std::memory_order_relaxed);
 
         {
             std::lock_guard lock(g_kernelLock);
@@ -189,6 +192,8 @@ std::shared_ptr<GuestThread> CreateGuestThread(
 
 void ExitGuestThread(uint32_t exitCode) { throw ThreadExit{ exitCode }; }
 
+uint32_t GuestThreadsRunning() { return g_threadsRunning.load(std::memory_order_relaxed); }
+
 std::shared_ptr<GuestThread> CurrentGuestThread(uint32_t pcr)
 {
     return std::dynamic_pointer_cast<GuestThread>(LookupDispatcher(CurrentKThread(pcr)));
@@ -248,6 +253,12 @@ void PrintGuestLocation()
     }
     uint32_t pcr = ctx->r13.u32;
     uint32_t threadId = pcr != 0 ? g_memory.Read<uint32_t>(CurrentKThread(pcr) + 0x14C) : 0;
+#if defined(PPC_CONFIG_CTR_AS_LOCAL) && defined(PPC_CONFIG_NON_VOLATILE_AS_LOCAL)
+    // ctr and r31 are the translated functions' locals (docs/tools/toolchain/xenonrecomp.md): not in the context.
+    fprintf(stderr, "[crash] where: guest thread %u, lr 0x%08X, r1 0x%08X, r3 0x%08X\n", threadId, uint32_t(ctx->lr),
+        ctx->r1.u32, ctx->r3.u32);
+#else
     fprintf(stderr, "[crash] where: guest thread %u, lr 0x%08X, ctr 0x%08X, r1 0x%08X, r3 0x%08X, r31 0x%08X\n",
         threadId, uint32_t(ctx->lr), ctx->ctr.u32, ctx->r1.u32, ctx->r3.u32, ctx->r31.u32);
+#endif
 }

@@ -1,4 +1,4 @@
-// Checks the frame rate limiter's schedule and its wait without sleeping. usage: SSAFrameLimiterTest
+// Checks the frame rate limiter's schedule and its wait without sleeping. usage: ArkeyanFrameLimiterTest
 #include "kernel/frame_limiter.h"
 #include <cstdio>
 #include <initializer_list>

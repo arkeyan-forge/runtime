@@ -30,7 +30,7 @@ extern const size_t g_dxilCacheCompressedSize;
 extern const size_t g_dxilCacheDecompressedSize;
 #endif
 
-#if defined(SSA_METAL)
+#if defined(ARKEYAN_METAL)
 extern const uint8_t g_compressedAirCache[];
 extern const size_t g_airCacheCompressedSize;
 extern const size_t g_airCacheDecompressedSize;

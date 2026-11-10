@@ -5,6 +5,7 @@
 //
 //   <game folder>/textures-dump/<hash>.dds   written when the dump is on, one file per distinct texture
 //   <game folder>/textures/<hash>.dds        read at start-up (subfolders allowed): any size, mip count, BC1-BC5 or RGBA8
+//   <game folder>/textures-hd/<hash>.dds     the same, made by Arkeyan-Builder's HD texture step; textures/ wins over it
 //
 // <hash> is 16 lowercase hex digits: ContentHash() of the texture as the renderer uploads it. The renderer looks files up
 // by hash in an index made at start-up (only the headers are read, so nothing blocks the render thread); the texture
@@ -31,15 +32,21 @@ namespace texpack
         std::filesystem::path path;
     };
 
-    // Turns the dump on and/or indexes `packs` (a missing folder is no pack). `dump` is created when the first texture
-    // is written. Logs one line with the counts, and one line per file it can't use.
-    void Configure(const std::filesystem::path& dump, bool dumping, const std::filesystem::path& packs, bool replacing);
-    // The same for a game's folders: datadir::Game(gameId) / "textures-dump" and / "textures".
-    void ConfigureForGame(std::string_view gameId, bool dumping, bool replacing);
+    // Turns the dump on and/or indexes `generated` (when not empty), then `packs` (when `replacing`): a missing folder is
+    // no pack; a hash in both is the file in `packs`. `dump` is created when the first texture is written. Logs one line
+    // per folder with the counts, and one line per file it can't use.
+    void Configure(const std::filesystem::path& dump, bool dumping, const std::filesystem::path& packs, bool replacing,
+        const std::filesystem::path& generated = {});
+    // The same for a game's folders: datadir::Game(gameId) / "textures-dump", / "textures" (`replacing`: texture_packs)
+    // and / "textures-hd" (`hd`: hd_textures, on its own).
+    void ConfigureForGame(std::string_view gameId, bool dumping, bool replacing, bool hd);
 
     bool Dumping();
     // Anything to do per texture: the dump is on or the index holds a file.
     bool Active();
+
+    // The files the index holds (the debug screen).
+    size_t Files();
 
     // The replacement for a content hash, or null. Valid for the whole run.
     const Replacement* Find(uint64_t hash);

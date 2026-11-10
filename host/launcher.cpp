@@ -13,6 +13,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fmt/format.h>
+#include <image.h>
 #include <optional>
 
 #ifdef __APPLE__
@@ -274,6 +275,20 @@ GameSourceCheck CheckGameSource(const std::string& path, const GameInfo& game, c
     for (const GameRelease& release : game.releases)
     {
         if (sha256 == release.defaultXexSha256)
+        {
+            report(1.0f, "Verified");
+            return { Ok, {} };
+        }
+    }
+    // Another edition of the same code (a header-only edition: another region's media ID and version).
+    report(0.98f, "Comparing the game code with the supported releases");
+    std::string imageSha256;
+    if (XexImageReadable(xex))
+        if (Image image = Image::ParseImage(xex.data(), xex.size()); image.data != nullptr)
+            imageSha256 = Sha256Hex({ image.data.get(), size_t(image.size) });
+    for (const GameRelease& release : game.releases)
+    {
+        if (!imageSha256.empty() && imageSha256 == release.imageSha256)
         {
             report(1.0f, "Verified");
             return { Ok, {} };

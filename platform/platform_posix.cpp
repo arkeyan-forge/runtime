@@ -10,7 +10,9 @@
 #include <memory>
 #include <pthread.h>
 #include <sys/mman.h>
+#include <sys/resource.h>
 #include <sys/ucontext.h>
+#include <time.h>
 #include <unistd.h>
 #if defined(__APPLE__)
 #include <mach/mach.h>
@@ -21,6 +23,7 @@
 namespace
 {
     void (*g_onFault)(const char* description, const void* address);
+    std::atomic<bool (*)(void* address)> g_writeFaultFilter;
 
     // The thread printing a fault report. A fault on another thread meanwhile waits for the report to end the
     // process; a fault inside the report itself ends it at once.
@@ -193,6 +196,18 @@ namespace
 
     void OnSignal(int signal, siginfo_t* info, void* context)
     {
+        if (signal == SIGSEGV || signal == SIGBUS)
+        {
+            bool (*filter)(void*) = g_writeFaultFilter.load(std::memory_order_acquire);
+            if (filter != nullptr && filter(info->si_addr))
+                return;
+        }
+        if (g_onFault == nullptr)
+        {
+            // Only the write fault filter is installed (a unit test): the access faults again into the default action.
+            ::signal(signal, SIG_DFL);
+            return;
+        }
         bool expected = false;
         if (!g_reporting.compare_exchange_strong(expected, true))
         {
@@ -261,6 +276,22 @@ bool PlatformProtectReadOnly(void* address, size_t size, bool readOnly)
     return mprotect(address, size, readOnly ? PROT_READ : PROT_READ | PROT_WRITE) == 0;
 }
 
+size_t PlatformPageSize() { return size_t(sysconf(_SC_PAGESIZE)); }
+
+bool PlatformInstallWriteFaultFilter(bool (*handled)(void* address))
+{
+    g_writeFaultFilter.store(handled, std::memory_order_release);
+    if (g_onFault == nullptr)
+    {
+        struct sigaction action{};
+        action.sa_sigaction = OnSignal;
+        action.sa_flags = SA_SIGINFO | SA_ONSTACK;
+        sigaction(SIGSEGV, &action, nullptr);
+        sigaction(SIGBUS, &action, nullptr);
+    }
+    return true;
+}
+
 void PlatformStartThread(size_t stackSize, std::function<void()> body)
 {
     pthread_attr_t attributes;
@@ -282,6 +313,53 @@ void PlatformSetThreadName(const char* name)
     char truncated[16];
     snprintf(truncated, sizeof(truncated), "%s", name);
     pthread_setname_np(pthread_self(), truncated);
+#endif
+}
+
+bool PlatformProcessCpuNs(uint64_t& ns)
+{
+    rusage usage{};
+    if (getrusage(RUSAGE_SELF, &usage) != 0)
+        return false;
+    auto total = [](const timeval& t) { return uint64_t(t.tv_sec) * 1'000'000'000ull + uint64_t(t.tv_usec) * 1000; };
+    ns = total(usage.ru_utime) + total(usage.ru_stime);
+    return true;
+}
+
+// The clock's kind in the high word (1), its id in the low one: macOS a Mach thread port, Linux a CPU clock id.
+uint64_t PlatformThreadCpuClock()
+{
+#if defined(__APPLE__)
+    return 1ull << 32 | pthread_mach_thread_np(pthread_self());
+#else
+    clockid_t clock;
+    if (pthread_getcpuclockid(pthread_self(), &clock) != 0)
+        return 0;
+    return 1ull << 32 | uint32_t(clock);
+#endif
+}
+
+bool PlatformThreadCpuNs(uint64_t clock, uint64_t& ns)
+{
+    if (clock >> 32 != 1)
+        return false;
+#if defined(__APPLE__)
+    thread_basic_info_data_t info{};
+    mach_msg_type_number_t count = THREAD_BASIC_INFO_COUNT;
+    if (thread_info(mach_port_t(uint32_t(clock)), THREAD_BASIC_INFO, reinterpret_cast<thread_info_t>(&info), &count) !=
+        KERN_SUCCESS)
+        return false;
+    auto total = [](const time_value_t& t) {
+        return uint64_t(t.seconds) * 1'000'000'000ull + uint64_t(t.microseconds) * 1000;
+    };
+    ns = total(info.user_time) + total(info.system_time);
+    return true;
+#else
+    timespec time{};
+    if (clock_gettime(clockid_t(int32_t(uint32_t(clock))), &time) != 0)
+        return false;
+    ns = uint64_t(time.tv_sec) * 1'000'000'000ull + uint64_t(time.tv_nsec);
+    return true;
 #endif
 }
 

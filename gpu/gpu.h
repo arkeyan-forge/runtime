@@ -3,6 +3,7 @@
 // Host renderer over plume: Metal on Apple, D3D12 on Windows (and later Xbox), Vulkan elsewhere. Today it only presents
 // CPU-made images (Bink movies) and, through gpu/draw.h, the game's own draws. Thread-safe. The command list work runs on
 // a GPU thread of its own (worker.cpp), in call order: the calls queue it and return (SKY_GPU_THREAD=0: on the caller).
+#include "gpu/gpu_backend.h"
 #include <SDL3/SDL_video.h>
 #include <plume_render_interface_types.h>
 #include <cstdint>
@@ -30,6 +31,7 @@ namespace gpu
             Sampled = 1u << 0,
             RenderTarget = 1u << 1,
             DepthStencil = 1u << 2,
+            Storage = 1u << 3, // written by compute work (the upscaler's output)
         };
     }
 
@@ -70,8 +72,12 @@ namespace gpu
         uint32_t fpsLimit = 30; // the game's frame rate (fps_limit), for the [perf] log's GPU-bound hint
         uint32_t edgeSmoothing =
             0; // edgesmoothing::Mode of the game's FXAA pass (gpu/edge_smoothing.h); changed while playing
+        // Desktop Windows: [<game>.video] gpu_backend, the one tried first (gpu/gpu_backend.h); ignored elsewhere.
+        gpubackend::Backend backend = gpubackend::RuntimeDefault;
     };
     extern Settings g_settings;
+    // The backend that runs, once Init has made its device: "Metal", "D3D12" or "Vulkan".
+    const char* BackendName();
     void Shutdown();
 
     // Textures may be created at any time; a destroyed one goes once the frames queued before have used it.
@@ -132,13 +138,16 @@ namespace gpu
         uint32_t drawTimeBuilds = 0;
         bool available = false, videoUsageKnown = false, videoBudgetKnown = false;
     };
-    DebugSnapshot ReadDebugSnapshot();
+    // Without `wait`: false, and nothing read, while the GPU thread holds the renderer (a GPU-bound frame waits for the
+    // GPU there, the offscreen output paces itself there): the debug screen tries again at its next update instead of
+    // stalling the main thread, and waits only when it could not read for a quarter of a second.
+    bool ReadDebugSnapshot(DebugSnapshot& snapshot, bool wait);
     bool ReadbackOutput(std::vector<uint32_t>& rgba, uint32_t& width, uint32_t& height);
 
     // Reads back a colour texture's base level as RGBA8 (finishes the frame's GPU work first); with `raw`, the bits of
-    // its red channel instead (float targets such as R32_FLOAT). For debugging.
-    bool ReadbackTexture(
-        const Texture* texture, std::vector<uint32_t>& rgba, uint32_t& width, uint32_t& height, bool raw = false);
+    // one channel instead (0 red to 3 alpha; float targets such as R32_FLOAT). For debugging.
+    bool ReadbackTexture(const Texture* texture, std::vector<uint32_t>& rgba, uint32_t& width, uint32_t& height,
+        bool raw = false, uint32_t channel = 0);
 
     // Reads back the bits of a texture's red channel (R32_FLOAT depth resolves), one texel per `step` x `step` block,
     // without stalling either thread: RequestReadback queues the copy after the caller's earlier commands;

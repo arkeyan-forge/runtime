@@ -1,7 +1,7 @@
 // The kernel side of the achievements (kernel/xam_achievements.cpp) without a game: the calls a title makes, run on a fake
 // guest context against the player's disc. A title writes an unlock, the Toy Box's toast is raised (name, points, picture), the enumeration shows
 // it; a second process, "after a restart", enumerates it again from the data folder. Scratch folders only (SKY_SAVE_DIR).
-//   SSAAchievementsKernelTest <game disc .iso>             Exit code 0 = pass.
+//   ArkeyanAchievementsKernelTest <game disc .iso>             Exit code 0 = pass.
 #include "kernel/objects.h"
 #include "host/toybox.h"
 #include "memory.h"
@@ -33,6 +33,7 @@ void ToyboxAchievement(const std::string& name, uint32_t points, std::vector<uin
     g_lastPicture = png.size();
 }
 void ToyboxSetAchievementPreview(void (*)()) {}
+void ToyboxSetAchievementList(std::vector<ToyboxAchievementRow> (*)()) {}
 std::string_view TextLanguage() { return "en"; }
 // The test passes no XOVERLAPPED, so no call completes asynchronously.
 std::shared_ptr<GuestThread> CurrentGuestThread(uint32_t) { return nullptr; }
@@ -136,7 +137,7 @@ int main(int argc, char** argv)
     }
     bool second = argc > 2; // the process "after a restart"
     fs::path scratch =
-        fs::temp_directory_path() / ("SSAAchievementsKernelTest-" + std::to_string(second ? getppid() : getpid()));
+        fs::temp_directory_path() / ("ArkeyanAchievementsKernelTest-" + std::to_string(second ? getppid() : getpid()));
     fs::create_directories(scratch);
     setenv("SKY_SAVE_DIR", scratch.string().c_str(), 1);
 

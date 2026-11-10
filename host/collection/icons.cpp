@@ -555,6 +555,30 @@ namespace collection
         return JoinHalves(LoadPng(upper), LoadPng(lower));
     }
 
+    Image CrystalPicture(const Toy& toy, const std::string& path)
+    {
+        if (toy.category != Category::CreationCrystal || path.empty())
+            return {};
+        Image picture = LoadPng(path);
+        const uint32_t tint = ElementRgb(toy.element);
+        const int tr = int(tint >> 16 & 0xFF), tg = int(tint >> 8 & 0xFF), tb = int(tint & 0xFF);
+        for (uint32_t& texel : picture.rgba)
+        {
+            const int r = int(texel & 0xFF), g = int(texel >> 8 & 0xFF), b = int(texel >> 16 & 0xFF);
+            // Magenta: red and blue together well above green. The crystal's gold frame and dark metal are not.
+            const int magenta = std::min(r, b) - g;
+            if (magenta <= 16 || std::abs(r - b) > 110)
+                continue;
+            const int t = std::min(256, (magenta - 16) * 256 / 48), shade = std::max(r, b);
+            auto mix = [&](int from, int to) {
+                const int toned = std::min(255, to * shade / 200);
+                return uint32_t((from * (256 - t) + toned * t) >> 8);
+            };
+            texel = (texel & 0xFF000000) | mix(b, tb) << 16 | mix(g, tg) << 8 | mix(r, tr);
+        }
+        return picture;
+    }
+
     uint16_t VariantFor(const Toy& toy, VariantKind kind)
     {
         if (kind == VariantKind::Base || kind == toy.edition)
@@ -579,7 +603,7 @@ namespace collection
                 variant = VariantFor(*toy, kind);
             std::string path = PortraitPath(gameId, *toy, variant, size > 128);
             if (!path.empty())
-                image = LoadPng(path);
+                image = toy->category == Category::CreationCrystal ? CrystalPicture(*toy, path) : LoadPng(path);
         }
         if (fromDisc != nullptr)
             *fromDisc = !image.Empty();

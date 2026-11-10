@@ -1,5 +1,5 @@
 // Checks the settings parser: launcher.ini, SKY_* variables (and the older SSA_* names) and the command line, and their precedence.
-// usage: SSASettingsTest
+// usage: ArkeyanSettingsTest
 #include "host/env.h"
 #include "host/debug_screen.h"
 #include "host/gamemenu.h"
@@ -271,6 +271,37 @@ int main()
         Parse({ { "swapforce.video", { { "original_resolution", "1" } } } }, {}, {}); // another game's section: ignored
     CHECK(run.ok && !run.settings.originalResolution);
 
+    // gpu_backend (desktop Windows' API): D3D12 by default; d3d12 or vulkan in [video] or [<game>.video], the game's wins.
+    CHECK(Parse({}, {}, {}).settings.gpuBackend == gpubackend::Backend::D3D12);
+    run = Parse({ { "ssa.video", { { "gpu_backend", "vulkan" } } } }, {}, {});
+    CHECK(run.ok && run.warnings.empty() && run.settings.gpuBackend == gpubackend::Backend::Vulkan);
+    run = Parse(
+        { { "video", { { "gpu_backend", "vulkan" } } }, { "ssa.video", { { "gpu_backend", "d3d12" } } } }, {}, {});
+    CHECK(run.ok && run.settings.gpuBackend == gpubackend::Backend::D3D12);
+    run = Parse({ { "ssa.video", { { "gpu_backend", "opengl" } } } }, {}, {});
+    CHECK(run.ok && run.warnings.size() == 1 && run.settings.gpuBackend == gpubackend::Backend::D3D12);
+    run = Parse({ { "giants.video", { { "gpu_backend", "vulkan" } } } }, {}, {}); // another game's: ignored
+    CHECK(run.ok && run.settings.gpuBackend == gpubackend::Backend::D3D12);
+
+    // fsr_frame_generation: off by default; off or on in [video] or [<game>.video]; SKY_FSR_FRAME_GENERATION over both.
+    CHECK(!Parse({}, {}, {}).settings.fsrFrameGeneration);
+    run = Parse({ { "video", { { "fsr_frame_generation", "on" } } } }, {}, {});
+    CHECK(run.ok && run.warnings.empty() && run.settings.fsrFrameGeneration);
+    run = Parse(
+        { { "video", { { "fsr_frame_generation", "on" } } }, { "ssa.video", { { "fsr_frame_generation", "off" } } } },
+        {}, {});
+    CHECK(run.ok && !run.settings.fsrFrameGeneration);
+    run =
+        Parse({ { "ssa.video", { { "fsr_frame_generation", "off" } } } }, { { "SKY_FSR_FRAME_GENERATION", "on" } }, {});
+    CHECK(run.ok && run.settings.fsrFrameGeneration);
+    run = Parse({ { "video", { { "fsr_frame_generation", "maybe" } } } }, {}, {});
+    CHECK(run.ok && run.warnings.size() == 1 && !run.settings.fsrFrameGeneration);
+    run = Parse({ { "swapforce.video", { { "fsr_frame_generation", "on" } } } }, {}, {}); // another game's: ignored
+    CHECK(run.ok && !run.settings.fsrFrameGeneration);
+    CHECK(DescribeSettings(Parse({}, {}, {}).settings).find("frame generation") == std::string::npos);
+    CHECK(DescribeSettings(Parse({}, { { "SKY_FSR_FRAME_GENERATION", "1" } }, {}).settings).find("frame generation") !=
+          std::string::npos);
+
     // edge_smoothing: not chosen by default (auto); [video], then the game's [<game>.video], then the command line.
     CHECK(Parse({}, {}, {}).settings.edgeSmoothing == edgesmoothing::Auto);
     run = Parse({ { "video", { { "edge_smoothing", "off" } } } }, {}, {});
@@ -330,6 +361,22 @@ int main()
           DescribeSettings(run.settings).find("portal sound off") != std::string::npos);
     run = Parse({ { "ssa.audio", { { "portal_sound", "yes" } } } }, {}, {});
     CHECK(run.ok && run.warnings.size() == 1 && run.settings.portalSound);
+    // speakers: auto by default; [audio], then the game's own [<game>.audio], then SKY_SPEAKERS; a bad value warns and
+    // keeps the previous source's.
+    run = Parse({}, {}, {});
+    CHECK(run.settings.speakers == speakers::Auto &&
+          DescribeSettings(run.settings).find("speakers") == std::string::npos);
+    run = Parse({ { "audio", { { "speakers", "stereo" } } }, { "ssa.audio", { { "speakers", "5.1" } } },
+                    { "giants.audio", { { "speakers", "stereo" } } } },
+        {}, {});
+    CHECK(run.ok && run.warnings.empty() && run.settings.speakers == speakers::Surround &&
+          DescribeSettings(run.settings).find("speakers 5.1") != std::string::npos);
+    run = Parse({ { "ssa.audio", { { "speakers", "5.1" } } } }, { { "SKY_SPEAKERS", "stereo" } }, {});
+    CHECK(run.ok && run.warnings.empty() && run.settings.speakers == speakers::Stereo);
+    run = Parse({ { "ssa.audio", { { "speakers", "stereo" } } } }, { { "SKY_SPEAKERS", "auto" } }, {});
+    CHECK(run.ok && run.warnings.empty() && run.settings.speakers == speakers::Auto);
+    run = Parse({ { "ssa.audio", { { "speakers", "7.1" } } } }, { { "SKY_SPEAKERS", "surround" } }, {});
+    CHECK(run.ok && run.warnings.size() == 2 && run.settings.speakers == speakers::Auto);
     // reduce_motion: off by default; [video] or the game's own [<game>.video]; a bad value warns and keeps the default.
     run = Parse({}, {}, {});
     CHECK(!run.settings.reduceMotion && DescribeSettings(run.settings).find("reduced motion") == std::string::npos);
@@ -369,31 +416,36 @@ int main()
     CHECK(run.settings.textureDump && run.settings.texturePacks);
     run = Parse({}, { { "SKY_TEXTURE_DUMP", "yes" } }, {});
     CHECK(!run.settings.textureDump && run.warnings.size() == 1);
+    // HD textures ([<game>] hd_textures, the launcher's switch): on when not set, and texture_packs has no say in them.
+    run = Parse({ { "video", { { "texture_packs", "0" } } } }, {}, {});
+    CHECK(run.settings.hdTextures && !run.settings.texturePacks);
+    run = Parse({ { "ssa", { { "hd_textures", "0" } } }, { "giants", { { "hd_textures", "1" } } } }, {}, {});
+    CHECK(!run.settings.hdTextures && run.settings.texturePacks && run.warnings.empty() &&
+          DescribeSettings(run.settings).find("HD textures off") != std::string::npos);
+    run = Parse({ { "ssa", { { "hd_textures", "0" } } } }, { { "SKY_HD_TEXTURES", "1" } }, {});
+    CHECK(run.settings.hdTextures);
 
-    // fps_limit: 30, 60, 120, 144, 240 or 0 (no limit); another value is lowered to the rate below it, with a warning.
+    // fps_limit: 30 or 60. An older limit above 60 (120, 144, 240) and no limit (0) read as 60, another number as the
+    // rate below it, with a warning.
     run = Parse({ { "video", { { "fps_limit", "60" } } } }, {}, {});
     CHECK(run.settings.fpsLimit == 60 && run.warnings.empty());
-    for (const char* rate : { "30", "120", "144", "240", "0" })
+    run = Parse({}, {}, { "--fps-limit", "30" });
+    CHECK(run.settings.fpsLimit == 30 && run.warnings.empty());
+    for (const char* rate : { "120", "144", "240", "0", "165", "1000", "100" })
     {
-        run = Parse({}, {}, { "--fps-limit", rate });
-        CHECK(run.settings.fpsLimit == uint32_t(atoi(rate)) && run.warnings.empty());
+        run = Parse({ { "video", { { "fps_limit", rate } } } }, {}, {});
+        CHECK(run.settings.fpsLimit == 60 && run.warnings.size() == 1);
     }
     run = Parse({ { "video", { { "fps_limit", "display" } } } }, {}, {});
     CHECK(run.settings.fpsLimit == 60 && run.warnings.empty());
-    run = Parse({}, {}, { "--fps-limit", "165" });
-    CHECK(run.settings.fpsLimit == 144 && run.warnings.size() == 1);
-    run = Parse({}, {}, { "--fps-limit", "1000" });
-    CHECK(run.settings.fpsLimit == 240 && run.warnings.size() == 1);
-    run = Parse({}, {}, { "--fps-limit", "100" });
-    CHECK(run.settings.fpsLimit == 60 && run.warnings.size() == 1);
     run = Parse({}, {}, { "--fps-limit", "45" });
     CHECK(run.settings.fpsLimit == 30 && run.warnings.size() == 1);
 
-    // The F3 menu keeps a limit above 60 and lowers none by opening it: every rate stands for itself.
+    // The F3 menu offers 30 and 60; any other value stands for one of them, so opening it never lowers 60.
     for (uint32_t rate : gamemenu::FrameRates)
         CHECK(gamemenu::NormalFrameRate(rate) == rate);
-    CHECK(gamemenu::NormalFrameRate(165) == 144 && gamemenu::NormalFrameRate(45) == 30 &&
-          gamemenu::NormalFrameRate(1000) == 240);
+    CHECK(std::size(gamemenu::FrameRates) == 2 && gamemenu::NormalFrameRate(144) == 60 &&
+          gamemenu::NormalFrameRate(0) == 60 && gamemenu::NormalFrameRate(45) == 30);
 
     // A game's cap (Giants 60): higher rates and no limit are lowered to it, lower ones stay, 0 is no cap.
     CHECK(gamemenu::CapFrameRate(120, 60) == 60 && gamemenu::CapFrameRate(0, 60) == 60 &&
@@ -540,6 +592,11 @@ int main()
             .settings.debugScreen);
     run = Parse({ { "ssa.video", { { "debug_screen", "bad" } } } }, {}, {});
     CHECK(!run.settings.debugScreen && run.warnings.size() == 1);
+    CHECK(Parse({ { "ssa.video", { { "debug_screen", "2" } } } }, {}, {}).settings.debugScreen == 2);
+    run = Parse({ { "ssa.video", { { "debug_screen", "3" } } } }, {}, {});
+    CHECK(run.settings.debugScreen == 0 && run.warnings.size() == 1);
+    CHECK(DescribeSettings(Parse({ { "ssa.video", { { "debug_screen", "2" } } } }, {}, {}).settings)
+              .find(", debug screen full") != std::string::npos);
     using namespace debugscreen;
     Rate rate;
     CHECK(rate.Update(0, 10) && rate.fps == 0 && !rate.ready);
@@ -566,6 +623,12 @@ int main()
     bounded[0] = 1'000'000'000;
     CHECK(LowOnePercent(bounded) == 100); // the old sample lies outside the bounded history
 
+    // The accent: a readable glow stays as it is, Trap Team's red is lightened to 4.5:1 on the strips.
+    CHECK(ReadableAccent(0x6BBAFF) == 0x6BBAFF && ReadableAccent(0xBFE04A) == 0xBFE04A);
+    uint32_t red = ReadableAccent(0xDE0018);
+    CHECK(red != 0xDE0018 && (Luminance(red) + 0.05) / (Luminance(0x15171C) + 0.05) >= 4.5);
+    CHECK(NextLevel(Off) == Compact && NextLevel(Compact) == Full && NextLevel(Full) == Off);
+
     char text[32];
     Bytes(text, sizeof(text), 3ull << 29);
     CHECK(std::string_view(text) == "1.50 GiB");
@@ -587,15 +650,19 @@ int main()
     CHECK(std::string_view(text) == "n/a");
     Label(text, sizeof(text), "Skylanders: Trap Team");
     CHECK(std::string_view(text) == "Skylanders: Trap Team");
+    Label(text, sizeof(text), "game n/a  host 2");
+    CHECK(std::string_view(text) == "game n/a  host 2");
+    Label(text, sizeof(text), "an/a/b");
+    CHECK(std::string_view(text) == "n/a");
     Label(text, sizeof(text), "@");
     CHECK(std::string_view(text) == "n/a");
     Panel panel;
-    panel.Add(Group::Game, "Game", "Example");
-    panel.Add(Group::Game, "Version", "1");
-    panel.Add(Group::Frame, "FPS", "30");
+    panel.Add(Group::Frame, "fps", "30");
+    panel.Add(Group::Frame, "frame", "33.3 ms");
+    panel.Add(Group::Guest, "level", "level_027");
     CHECK(panel.count == 3 && panel.StartsGroup(0) && !panel.StartsGroup(1) && panel.StartsGroup(2));
     for (int row = 0; row < 50; row++)
-        panel.Add(Group::Frame, "FPS", "30");
+        panel.Add(Group::Frame, "fps", "30");
     CHECK(panel.count == panel.rows.size());
 
     printf("settings test: %d checks, %d failures\n", g_checks, g_failures);

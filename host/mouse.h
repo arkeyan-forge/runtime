@@ -2,7 +2,7 @@
 
 // The mouse in the games (docs/runtime/xbox360/input.md, "Mouse"): its buttons and wheel bound to the game's actions, a switch
 // per game, and when the game holds the pointer (Capture). Off by default: with the switch off nothing here is used and the
-// pointer is never hidden or held. Plain C++ (no SDL): SSAMouseTest runs it.
+// pointer is never hidden or held. Plain C++ (no SDL): ArkeyanMouseTest runs it.
 #include <cstddef>
 #include <cstdint>
 #include <span>

@@ -2,7 +2,7 @@
 // copy seeded once from [input], the swap with the row that had the key, the pad jobs swapped so none is lost, the mouse's
 // switch and buttons (one action per button), the Toy Box's keys (swapped with the game's), Reset, the game's keys put in
 // [input] as Skylauncher's PLAY does, and the bindings the running game takes.
-// usage: SSACommandsTest [<scratch dir>] (default: the system's temporary folder)
+// usage: ArkeyanCommandsTest [<scratch dir>] (default: the system's temporary folder)
 #include "host/commands.h"
 #include "host/settings.h"
 #include "host/toybox/keys.h"
@@ -162,7 +162,7 @@ int main(int argc, char** argv)
         CHECK(commands::SetKey(config, "game", rows, 2, "T") == -1);
     }
     namespace fs = std::filesystem;
-    fs::path scratch = argc > 1 ? fs::path(argv[1]) : fs::temp_directory_path() / "SSACommandsTest";
+    fs::path scratch = argc > 1 ? fs::path(argv[1]) : fs::temp_directory_path() / "ArkeyanCommandsTest";
     fs::create_directories(scratch);
     const std::string path = (scratch / "launcher.ini").string();
     {

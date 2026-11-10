@@ -206,9 +206,9 @@ int TestAccentedRuntimePaths(const std::filesystem::path& scratch)
         fs::remove_all(root);
         fs::create_directories(root);
 #ifdef _WIN32
-        fs::path self = ExecutableDirectory() / "SSAArtTest.exe";
+        fs::path self = ExecutableDirectory() / "ArkeyanArtTest.exe";
 #else
-        fs::path self = ExecutableDirectory() / "SSAArtTest";
+        fs::path self = ExecutableDirectory() / "ArkeyanArtTest";
 #endif
         RunOptions run;
         run.cwd = root;

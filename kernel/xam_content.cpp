@@ -6,6 +6,7 @@
 #include "kernel/xam_enumerator.h"
 #include "memory.h"
 #include "host/collection/save_backup.h"
+#include "host/profiles.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <cstdio>
@@ -52,7 +53,7 @@ namespace
 
     const fs::path& SaveRoot()
     {
-        static const fs::path root = savebackup::Root(SSA_GAME_ID);
+        static const fs::path root = savebackup::Root(ARKEYAN_GAME_ID);
         return root;
     }
 
@@ -249,12 +250,15 @@ PPC_FUNC(__imp__XamContentDelete)
     ctx.r3.u64 = FinishXamCall(ctx.r5.u32, result, 0, ctx.r13.u32);
 }
 
-// XamContentGetCreator(user index, XCONTENT_DATA*, is creator out, creator XUID out, overlapped): the one local profile
-// made every save on the drive; a package that is not there gives ERROR_PATH_NOT_FOUND (as Xenia answers). Giants asks
-// before opening its save: "yes" for a missing save made it open it, fail, and call the save damaged.
+// XamContentGetCreator(user index, XCONTENT_DATA*, is creator out, creator XUID out, overlapped): the user who asks made
+// every save on the drive (the save folder is the profile's own); a package that is not there gives ERROR_PATH_NOT_FOUND
+// (as Xenia answers). Giants asks before opening its save: "yes" for a missing save made it open it, fail, and call the
+// save damaged.
 PPC_FUNC(__imp__XamContentGetCreator)
 {
-    constexpr uint64_t LocalXuid = 0xE000000000000001ull; // kernel/xam_user.cpp
+    const auto& players = profiles::Current();
+    uint64_t creator =
+        ctx.r3.u32 < players.size() && players[ctx.r3.u32].signedIn ? players[ctx.r3.u32].xuid : players[0].xuid;
     uint32_t contentData = ctx.r4.u32;
     uint32_t result = ErrorSuccess;
     fs::path name = HostFileName(GuestCString(contentData + ContentDataFileName, ContentFileNameLength));
@@ -270,7 +274,7 @@ PPC_FUNC(__imp__XamContentGetCreator)
         if (ctx.r5.u32 != 0)
             g_memory.Write<uint32_t>(ctx.r5.u32, 1);
         if (ctx.r6.u32 != 0)
-            g_memory.Write<uint64_t>(ctx.r6.u32, LocalXuid);
+            g_memory.Write<uint64_t>(ctx.r6.u32, creator);
     }
     fprintf(stderr, "[content] creator of \"%s\" type %s -> %u\n", name.string().c_str(), type, result);
     ctx.r3.u64 = FinishXamCall(ctx.r7.u32, result, 0, ctx.r13.u32);

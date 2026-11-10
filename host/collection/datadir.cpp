@@ -112,6 +112,13 @@ namespace datadir
         return root.empty() ? fs::path() : root / GameFolderName(id);
     }
 
+    fs::path PlayerGame(std::string_view id)
+    {
+        if (const char* profile = skyenv::Get("SKY_PROFILE_DIR"); profile != nullptr && *profile != '\0')
+            return FromText(profile) / GameFolderName(id);
+        return Game(id);
+    }
+
     namespace
     {
         fs::path Below(const char* name)

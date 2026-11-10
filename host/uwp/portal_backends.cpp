@@ -676,7 +676,7 @@ namespace
                     if (Contains(device.id, L"VID_1430&PID_1F17") || Contains(device.id, L"VID_24C6&PID_FA00"))
                         fprintf(stderr,
                             "[portal]   ^ an Xbox 360 portal: the console has no driver for it, use another portal\n");
-                    else if (Contains(device.id, L"VID_1430&PID_09AB"))
+                    else if (Contains(device.id, L"VID_1430&PID_09AA") || Contains(device.id, L"VID_1430&PID_09AB"))
                         fprintf(stderr, "[portal]   ^ the Xbox One portal (reached through GIP, not this device)\n");
                 }
             }
@@ -998,3 +998,5 @@ std::unique_ptr<PortalBackend> CreateUsbPortal() { return nullptr; }
 std::string ProbeHidPortals(std::vector<PortalProbe>&) { return "not on this platform"; }
 
 std::string ProbeUsbPortals(std::vector<PortalProbe>&) { return "not on this platform"; }
+
+std::vector<std::string> ProbeNotes() { return {}; }

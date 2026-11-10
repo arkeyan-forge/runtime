@@ -1,5 +1,5 @@
 // Checks that the depth write-back's tile-by-tile offsets (d3d/tiled_depth.h) are xenos::Tiled2D's for the pitches a
-// 32-bit tiled target has. usage: SSATiledDepthTest
+// 32-bit tiled target has. usage: ArkeyanTiledDepthTest
 #include "d3d/tiled_depth.h"
 #include <cstdio>
 

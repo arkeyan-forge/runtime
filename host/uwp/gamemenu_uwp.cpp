@@ -22,6 +22,8 @@ void gamemenu::Init(const RuntimeSettings& settings, SDL_Window*, const char* ve
     g_values.reduceMotion = settings.reduceMotion;
     g_values.portalSound = settings.portalSound;
     g_values.portalSoundShown = PortalGameHasSpeaker();
+    g_values.speakers = settings.speakers;
+    g_values.speakersNow = HostAudioLayout();
     HostAudioSetVolume(settings.volume);
     PortalSetSound(settings.portalSound);
 }
@@ -39,16 +41,29 @@ bool gamemenu::SetPortalSound(bool on)
     PortalSetSound(on);
     return true;
 }
+bool gamemenu::SetSpeakers(uint32_t mode)
+{
+    g_values.speakers = mode;
+    return true;
+}
+bool gamemenu::SetGpuBackend(uint32_t backend) // one backend here: the row is hidden
+{
+    g_values.gpuBackend = backend;
+    return true;
+}
 bool gamemenu::SetShowFps(bool on)
 {
     g_values.showFps = on;
     return true;
 }
-bool gamemenu::SetDebugScreen(bool on)
+bool gamemenu::SetDebugScreen(uint32_t level)
 {
-    g_values.debugScreen = on;
+    g_values.debugScreen = level % 3;
     return true;
 }
+bool gamemenu::CycleDebugScreen() { return SetDebugScreen(g_values.debugScreen + 1); }
+// No logs folder to write to on this target.
+bool gamemenu::SetPerfLog(bool) { return false; }
 bool gamemenu::SetFullscreen(bool on)
 {
     g_values.fullscreen = on;
@@ -89,6 +104,16 @@ bool gamemenu::SetSkipIntroMovies(bool on)
 bool gamemenu::SetEdgeSmoothing(uint32_t mode)
 {
     g_values.edgeSmoothing = mode;
+    return true;
+}
+bool gamemenu::SetUpscaler(uint32_t upscaler)
+{
+    g_values.upscaler = upscaler;
+    return true;
+}
+bool gamemenu::SetFsrQuality(uint32_t quality)
+{
+    g_values.fsrQuality = quality;
     return true;
 }
 uint32_t gamemenu::EdgeSmoothingNow() { return g_values.edgeSmoothing; }

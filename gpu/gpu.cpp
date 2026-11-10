@@ -2,6 +2,12 @@
 #include "gpu/auto_scale.h"
 #include "gpu/buffer_cache.h"
 #include "gpu/context.h"
+#include "gpu/fsr/fsr.h"
+#include "gpu/fsr/framegen.h"
+#include "gpu/frame_stats.h"
+#include "gpu/shader_cache.h"
+#include "../write_watch.h"
+#include "../platform/platform.h"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_metal.h>
 #include <plume_render_interface.h>
@@ -19,7 +25,7 @@
 #include <thread>
 #include <utility>
 #include "../host/env.h"
-#if defined(SSA_METAL)
+#if defined(ARKEYAN_METAL)
 #include <plume_metal.h>
 #else
 #if !defined(PLUME_D3D12_COREWINDOW)
@@ -34,7 +40,7 @@
 #endif
 #endif
 
-#if defined(SSA_METAL)
+#if defined(ARKEYAN_METAL)
 #include "shaders/present_metallib.h"
 #endif
 #if defined(_WIN32)
@@ -45,7 +51,7 @@
 #include "shaders/present_ReadbackRawCS_dxil.h"
 #include "shaders/present_ResolveDepthPS_dxil.h"
 #endif
-#if !defined(SSA_METAL) && !defined(PLUME_D3D12_COREWINDOW)
+#if !defined(ARKEYAN_METAL) && !defined(PLUME_D3D12_COREWINDOW)
 #include "shaders/present_OverlayPS_spirv.h"
 #include "shaders/present_PresentPS_spirv.h"
 #include "shaders/present_PresentVS_spirv.h"
@@ -58,25 +64,25 @@ using namespace plume;
 
 namespace plume
 {
-#if defined(SSA_METAL)
+#if defined(ARKEYAN_METAL)
     std::unique_ptr<RenderInterface> CreateMetalInterface();
 #endif
 #if defined(_WIN32)
     std::unique_ptr<RenderInterface> CreateD3D12Interface();
 #endif
-#if !defined(SSA_METAL) && !defined(PLUME_D3D12_COREWINDOW)
+#if !defined(ARKEYAN_METAL) && !defined(PLUME_D3D12_COREWINDOW)
     std::unique_ptr<RenderInterface> CreateVulkanInterface();
 #endif
 }
 
 namespace
 {
-#if defined(SSA_METAL)
-    const char* BackendName = "Metal";
+#if defined(ARKEYAN_METAL)
+    const char* g_backendName = "Metal";
 #elif defined(PLUME_D3D12_COREWINDOW)
-    const char* BackendName = "D3D12";
+    const char* g_backendName = "D3D12";
 #else
-    const char* BackendName = "Vulkan"; // desktop Windows: or D3D12 (CreateDevice)
+    const char* g_backendName = "Vulkan"; // desktop Windows: or D3D12 (CreateDevice)
 #endif
 
     constexpr RenderFormat OutputFormat = RenderFormat::B8G8R8A8_UNORM;
@@ -135,14 +141,106 @@ namespace gpu::detail
 #endif
     }
 
+    // The debug screen's GPU time per frame (frame_stats.h): Metal reads its command buffers' own GPU start and end,
+    // Vulkan and D3D12 a timestamp at each end of a command list. Nothing is done while nothing measures.
+    bool MetalTiming()
+    {
+#if defined(ARKEYAN_METAL)
+        return g_context->renderInterface->getCapabilities().shaderFormat == RenderShaderFormat::METAL;
+#else
+        return false;
+#endif
+    }
+
+    void StartTiming(Context::Submission& s)
+    {
+        s.timestamped = false;
+        if (!framestats::Enabled() || MetalTiming() || !g_context->device->getCapabilities().queryPools)
+            return;
+        if (s.timestamps == nullptr)
+            s.timestamps = g_context->device->createQueryPool(2);
+        s.commandList->resetQueryPool(s.timestamps.get(), 0, 2);
+        s.commandList->writeTimestamp(s.timestamps.get(), 0);
+        s.timestamped = true;
+    }
+
+    // Before the list ends; `present`: it carries the frame's present pass, the frame's last list.
+    void EndTiming(Context::Submission& s, bool present)
+    {
+        s.timedFrame = 0;
+        if (!framestats::Enabled())
+            return;
+        s.timedFrame = ConsumerFrame();
+        s.timedPresent = present;
+        if (s.timestamped)
+            s.commandList->writeTimestamp(s.timestamps.get(), 1);
+    }
+
+    // After the list ends, before its execution: plume releases a Metal command buffer when it commits it.
+    void KeepMetalBuffer(Context::Submission& s)
+    {
+#if defined(ARKEYAN_METAL)
+        if (s.timedFrame != 0 && MetalTiming())
+        {
+            MTL::CommandBuffer* buffer = static_cast<MetalCommandList&>(*s.commandList).mtl;
+            buffer->retain();
+            s.metalBuffer = buffer;
+        }
+#else
+        (void)s;
+#endif
+    }
+
+    // Once its fence was waited for.
+    void ReadTiming(Context::Submission& s)
+    {
+        if (s.timedFrame == 0 && s.metalBuffer == nullptr)
+            return;
+        uint64_t costStart = SDL_GetTicksNS();
+        uint64_t start = 0, end = 0;
+        bool known = false;
+#if defined(ARKEYAN_METAL)
+        if (s.metalBuffer != nullptr)
+        {
+            auto* buffer = static_cast<MTL::CommandBuffer*>(s.metalBuffer);
+            double from = buffer->GPUStartTime(), to = buffer->GPUEndTime();
+            buffer->release();
+            s.metalBuffer = nullptr;
+            known = from > 0 && to >= from;
+            start = uint64_t(from * 1e9);
+            end = uint64_t(to * 1e9);
+        }
+#endif
+        if (s.timedFrame == 0)
+            return;
+        if (s.timestamped)
+        {
+            s.timestamps->queryResults();
+            const uint64_t* results = s.timestamps->getResults();
+            start = results[0];
+            end = results[1];
+            known = start != 0 && end >= start;
+            s.timestamped = false;
+        }
+        framestats::GpuSpan(s.timedFrame, start, end, known, s.timedPresent);
+        s.timedFrame = 0;
+        framestats::AddCost(SDL_GetTicksNS() - costStart);
+    }
+
     RenderCommandList& Record()
     {
         Context& c = *g_context;
         if (!c.recording)
         {
             if (c.submitted == c.submissions.size())
-                c.submissions.push_back({ c.queue->createCommandList(), c.device->createCommandFence() });
+            {
+                Context::Submission submission;
+                submission.commandList = c.queue->createCommandList();
+                submission.fence = c.device->createCommandFence();
+                c.submissions.push_back(std::move(submission));
+            }
             c.submissions[c.submitted].commandList->begin();
+            StartTiming(c.submissions[c.submitted]);
             c.recording = true;
             c.boundFramebuffer = nullptr;
             c.bound = {};
@@ -151,7 +249,8 @@ namespace gpu::detail
         return *c.submissions[c.submitted].commandList;
     }
 
-    void Flush()
+    // `present`: the list carries the frame's present pass (the offscreen output's).
+    void FlushList(bool present)
     {
         if (g_context->recording)
             g_context->perf.flushes++;
@@ -159,11 +258,15 @@ namespace gpu::detail
         if (!c.recording)
             return;
         Context::Submission& submission = c.submissions[c.submitted++];
+        EndTiming(submission, present);
         submission.commandList->end();
+        KeepMetalBuffer(submission);
         c.recording = false;
         c.queue->executeCommandLists(submission.commandList.get(), submission.fence.get());
         Step("command list executed");
     }
+
+    void Flush() { FlushList(false); }
 
     // Waits for the frame before (Context::previous); its upload memory becomes free.
     static void WaitForPrevious()
@@ -171,7 +274,10 @@ namespace gpu::detail
         Context::Frame& previous = g_context->previous;
         uint64_t start = SDL_GetTicksNS();
         for (uint32_t i = 0; i < previous.submitted; i++)
+        {
             g_context->queue->waitForCommandFence(previous.submissions[i].fence.get());
+            ReadTiming(previous.submissions[i]);
+        }
         g_context->perf.gpuWaitNs += SDL_GetTicksNS() - start;
         previous.submitted = 0;
         previous.retiredStaging.clear();
@@ -189,7 +295,10 @@ namespace gpu::detail
         WaitForPrevious();
         uint64_t start = SDL_GetTicksNS();
         for (uint32_t i = 0; i < c.submitted; i++)
+        {
             c.queue->waitForCommandFence(c.submissions[i].fence.get());
+            ReadTiming(c.submissions[i]);
+        }
         c.perf.gpuWaitNs += SDL_GetTicksNS() - start;
         c.submitted = 0;
         CheckDeviceLost();
@@ -201,6 +310,7 @@ namespace gpu::detail
             return;
         list.setFramebuffer(framebuffer);
         g_context->boundFramebuffer = framebuffer;
+        g_context->targetSwitches++;
     }
 
     static void FrameDone()
@@ -264,6 +374,7 @@ namespace gpu::detail
         std::swap(c.submissions, previous.submissions);
         std::swap(c.submitted, previous.submitted);
         std::swap(c.staging, previous.staging);
+        std::swap(c.stagingMemory, previous.stagingMemory);
         std::swap(c.stagingCapacity, previous.stagingCapacity);
         std::swap(c.retiredStaging, previous.retiredStaging);
         std::swap(c.presentSet, previous.presentSet);
@@ -289,17 +400,24 @@ namespace gpu::detail
         if (c.staging == nullptr || offset + size > c.stagingCapacity)
         {
             if (c.staging != nullptr)
+            {
+                if (c.stagingMemory != nullptr)
+                    c.staging->unmap();
                 c.retiredStaging.push_back(std::move(c.staging));
+            }
             c.stagingCapacity = std::max({ size, c.stagingCapacity * 2, MinStagingSize });
             c.staging = c.device->createBuffer(RenderBufferDesc::UploadBuffer(
                 c.stagingCapacity, RenderBufferFlag::VERTEX | RenderBufferFlag::INDEX | RenderBufferFlag::CONSTANT |
                                        RenderBufferFlag::DEVICE_ADDRESSABLE));
+            c.stagingMemory = c.staging != nullptr ? static_cast<uint8_t*>(c.staging->map()) : nullptr;
             offset = 0;
         }
         c.stagingUsed = offset + size;
         buffer = c.staging.get();
         return offset;
     }
+
+    uint8_t* StagingMemory() { return g_context->stagingMemory; }
 }
 
 using namespace gpu::detail;
@@ -311,7 +429,7 @@ namespace
     std::unique_ptr<RenderShader> CreatePresentShader(const char* entryPoint)
     {
         RenderShaderFormat format = g_context->renderInterface->getCapabilities().shaderFormat;
-#if defined(SSA_METAL)
+#if defined(ARKEYAN_METAL)
         return g_context->device->createShader(g_presentMetallib, sizeof(g_presentMetallib), entryPoint, format);
 #else
         std::span<const std::pair<const char*, std::span<const uint8_t>>> blobs;
@@ -372,6 +490,11 @@ namespace
         c.overlaySet = setBuilder.create(c.device.get());
         c.previous.presentSet = setBuilder.create(c.device.get());
         c.previous.overlaySet = setBuilder.create(c.device.get());
+        for (uint32_t i = 0; i < 2; i++)
+        {
+            c.generatedSets[i] = setBuilder.create(c.device.get());
+            c.generatedOverlaySets[i] = setBuilder.create(c.device.get());
+        }
 
         RenderPipelineLayoutBuilder layoutBuilder;
         layoutBuilder.begin();
@@ -439,7 +562,7 @@ namespace
     bool GetRenderWindow(SDL_Window* window, RenderWindow& renderWindow)
     {
         SDL_PropertiesID properties = SDL_GetWindowProperties(window);
-#if defined(SSA_METAL)
+#if defined(ARKEYAN_METAL)
         void* nsWindow = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, nullptr);
         if (nsWindow == nullptr || (SDL_GetWindowFlags(window) & SDL_WINDOW_METAL) == 0)
             return false;
@@ -464,10 +587,13 @@ namespace
         (void)properties;
         renderWindow = window;
 #if defined(__APPLE__)
-        // MoltenVK test build (SSA_MACOS_VULKAN): SDL's offscreen driver has no surface, so draw offscreen like the Metal
+        // MoltenVK test build (ARKEYAN_MACOS_VULKAN): SDL's offscreen driver has no surface, so draw offscreen like the Metal
         // build does (SKY_GPU_SNAPSHOT reads frames back). Linux keeps SDL's headless swapchain (SKY_DUMP_FRAME).
         const char* driver = SDL_GetCurrentVideoDriver();
-        if (driver != nullptr && SDL_strcmp(driver, "offscreen") == 0)
+        // SKY_GPU_HEADLESS_SWAPCHAIN=1 keeps a swap chain there (MoltenVK's VK_EXT_headless_surface), for the swap
+        // chain's own tests (SKY_GPU_TEST_ACQUIRE_FAIL below).
+        if (driver != nullptr && SDL_strcmp(driver, "offscreen") == 0 &&
+            skyenv::Get("SKY_GPU_HEADLESS_SWAPCHAIN") == nullptr)
             return false;
 #endif
         return (SDL_GetWindowFlags(window) & SDL_WINDOW_VULKAN) != 0;
@@ -492,6 +618,124 @@ namespace
         }
         while (c.releaseSemaphores.size() < c.swapChain->getTextureCount())
             c.releaseSemaphores.push_back(c.device->createCommandSemaphore());
+    }
+
+    // Vulkan: whether the swap chain got its window's surface (plume leaves it null when SDL cannot make one).
+    bool HasSurface(const RenderSwapChain& swapChain)
+    {
+#if !defined(ARKEYAN_METAL) && !defined(PLUME_D3D12_COREWINDOW)
+        if (g_context->renderInterface->getCapabilities().shaderFormat == RenderShaderFormat::SPIRV)
+            return static_cast<const VulkanSwapChain&>(swapChain).surface != VK_NULL_HANDLE;
+#endif
+        (void)swapChain;
+        return true;
+    }
+
+    void CreateSwapChain()
+    {
+        Context& c = *g_context;
+        c.swapChain = c.queue->createSwapChain(RenderSwapChainDesc(c.renderWindow, OutputFormat, SwapChainBufferCount));
+        c.swapChain->setVsyncEnabled(gpu::g_settings.vsync);
+        c.swapChainNoSurface = !HasSurface(*c.swapChain);
+        if (!c.swapChainNoSurface)
+            ResizeSwapChain();
+    }
+
+    // SKY_GPU_TEST_ACQUIRE_FAIL=<n>[:lost]: once a frame has been shown, the next n acquires fail as
+    // VK_ERROR_OUT_OF_DATE_KHR (VK_ERROR_SURFACE_LOST_KHR with :lost) without asking the driver, so a test run proves
+    // that frames come back (docs/runtime/gpu/plume_backends.md).
+    struct AcquireFailTest
+    {
+        uint32_t left = 0;
+        int32_t result = gpu::swapchain::OutOfDate;
+    };
+
+    AcquireFailTest ReadAcquireFailTest()
+    {
+        AcquireFailTest test;
+        if (const char* value = skyenv::Get("SKY_GPU_TEST_ACQUIRE_FAIL"))
+        {
+            test.left = uint32_t(std::max(atoi(value), 0));
+            if (strstr(value, ":lost") != nullptr)
+                test.result = gpu::swapchain::SurfaceLost;
+            if (test.left > 0)
+                fprintf(stderr, "[gpu] test: %u acquires will fail as %s once a frame is shown\n", test.left,
+                    gpu::swapchain::ResultName(test.result));
+        }
+        return test;
+    }
+
+    // `result` is the backend's code when it fails (Vulkan: the VkResult; Metal and D3D12: 0).
+    bool AcquireImage(RenderCommandSemaphore* signal, uint32_t* index, int32_t& result)
+    {
+        Context& c = *g_context;
+        static AcquireFailTest test = ReadAcquireFailTest();
+        if (c.presented && test.left > 0)
+        {
+            test.left--;
+            result = test.result;
+            return false;
+        }
+        if (c.swapChain->acquireTexture(signal, index))
+            return true;
+        result = c.swapChain->getLastResult();
+        return false;
+    }
+
+    // An acquire or a present failed on a window that has a size: the swap chain, or the swap chain and its surface, are
+    // rebuilt before the next frame (gpu/swapchain_recovery.h). Before, plume's size check alone decided, and a driver
+    // that refused every image at an unchanged size (NVIDIA on Wayland, fullscreen) left the screen black for good.
+    // D3D12 names the present's HRESULT the same way; Metal names no result (0) and keeps its behaviour.
+    void SwapChainFailed(const char* what, int32_t result)
+    {
+        Context& c = *g_context;
+        int width = 0, height = 0;
+        if (result == gpu::swapchain::Success || c.window == nullptr ||
+            !SDL_GetWindowSizeInPixels(c.window, &width, &height) || width <= 0 || height <= 0)
+            return;
+        // A removed or reset D3D12 device fails every present: a new swap chain would too.
+        if (gpu::swapchain::DeviceGone(result))
+        {
+            static bool logged = false;
+            if (!logged)
+                fprintf(stderr, "[gpu] swap chain: %s failed (%s, 0x%08X): the device is gone, not rebuilt\n", what,
+                    gpu::swapchain::ResultName(result), uint32_t(result));
+            logged = true;
+            CheckDeviceLost();
+            return;
+        }
+        const gpu::swapchain::Action action = c.recovery.Failed(result, SDL_GetTicks());
+        if (action == gpu::swapchain::Action::Wait)
+            return;
+        const uint32_t attempt = c.recovery.Failures();
+        if (c.recovery.LogStreak() && (attempt == 1 || attempt == gpu::swapchain::Recovery::FastAttempts + 1))
+        {
+            char code[16]; // an HRESULT in hexadecimal, as Microsoft writes them
+            if (gpu::swapchain::IsHresult(result))
+                snprintf(code, sizeof(code), "0x%08X", uint32_t(result));
+            else
+                snprintf(code, sizeof(code), "%d", result);
+            fprintf(stderr, "[gpu] swap chain: %s failed (%s, %s) on a %dx%d window: %s\n", what,
+                gpu::swapchain::ResultName(result), code, width, height,
+                attempt == 1 ? "rebuilding it" : "still failing after 5 rebuilds, trying again every 2 s");
+        }
+        if (action == gpu::swapchain::Action::Rebuild && !c.swapChainNoSurface)
+        {
+            ResizeSwapChain();
+            return;
+        }
+        // The swap chain goes first, then its surface (plume's destructor), then both come back.
+        WaitForSubmissions();
+        c.swapChainFramebuffers.clear();
+        c.swapChain.reset();
+        CreateSwapChain();
+    }
+
+    void FramePresented()
+    {
+        Context& c = *g_context;
+        if (uint32_t attempts = c.recovery.Presented(); attempts > 0 && c.recovery.LogStreak())
+            fprintf(stderr, "[gpu] swap chain: frames again after %u rebuild%s\n", attempts, attempts == 1 ? "" : "s");
     }
 
     void ResizeOffscreen(uint32_t width, uint32_t height)
@@ -619,7 +863,7 @@ namespace
 
 SDL_WindowFlags gpu::WindowFlags()
 {
-#if defined(SSA_METAL)
+#if defined(ARKEYAN_METAL)
     return SDL_WINDOW_METAL;
 #elif defined(_WIN32)
     return 0;
@@ -638,43 +882,54 @@ bool gpu::Init(SDL_Window* window, uint32_t width, uint32_t height)
     g_context = std::make_unique<Context>();
     Context& c = *g_context;
     c.window = window;
-#if defined(SSA_METAL)
+#if defined(ARKEYAN_METAL)
     c.renderInterface = CreateMetalInterface();
 #elif defined(PLUME_D3D12_COREWINDOW)
     D3D12EnableDred();
     c.renderInterface = CreateD3D12Interface();
-#else
-    // Desktop Windows: Vulkan, then D3D12 when there is no Vulkan device. SKY_GPU_BACKEND=vulkan or d3d12 picks one.
-#if defined(_WIN32)
-    const char* requested = skyenv::Get("SKY_GPU_BACKEND");
-    bool tryVulkan = requested == nullptr || SDL_strcasecmp(requested, "d3d12") != 0;
-#else
-    bool tryVulkan = true;
+#elif defined(_WIN32)
+    // Desktop Windows: the chosen backend (gpu_backend, D3D12 by default), then the other when it has no device;
+    // SKY_GPU_BACKEND=d3d12 or vulkan names one and allows no other (gpu/gpu_backend.h).
+    const gpubackend::Plan plan = gpubackend::Choose(g_settings.backend, skyenv::Get("SKY_GPU_BACKEND"));
+    // SKY_GPU_TEST_NO_DEVICE=d3d12 or vulkan: that backend reports no device, so a test run proves the fallback.
+    const char* refused = skyenv::Get("SKY_GPU_TEST_NO_DEVICE");
+    auto open = [&](gpubackend::Backend backend) -> const char* {
+        c.device.reset();
+        c.renderInterface.reset();
+        g_backendName = gpubackend::Label(backend);
+        gpubackend::Backend test;
+        if (refused != nullptr && gpubackend::Parse(refused, test) && test == backend)
+            return "SKY_GPU_TEST_NO_DEVICE";
+#if defined(ARKEYAN_SHADER_CACHE)
+        // A cache made without the D3D12 stream (an older or a foreign one) leaves D3D12 nothing to draw the game with.
+        if (backend == gpubackend::Backend::D3D12 && g_shaderCacheEntryCount != 0 && g_dxilCacheDecompressedSize == 0)
+            return "the shader cache has no DXIL";
 #endif
-    if (tryVulkan)
-        c.renderInterface = CreateVulkanInterface();
+        if (backend == gpubackend::Backend::D3D12)
+        {
+            D3D12EnableDred();
+            c.renderInterface = CreateD3D12Interface();
+        }
+        else
+            c.renderInterface = CreateVulkanInterface();
+        if (c.renderInterface == nullptr)
+            return "its interface could not be created";
+        c.device = c.renderInterface->createDevice();
+        return c.device == nullptr ? "no device was created" : nullptr;
+    };
+    gpubackend::Run(plan, open, [](const char* line) { fprintf(stderr, "%s\n", line); });
+#else
+    c.renderInterface = CreateVulkanInterface();
     if (c.renderInterface != nullptr)
         c.device = c.renderInterface->createDevice();
-#if defined(_WIN32)
-    if (c.device == nullptr && (requested == nullptr || SDL_strcasecmp(requested, "vulkan") != 0))
-    {
-        if (tryVulkan)
-            fprintf(stderr, "[gpu] no Vulkan device, trying D3D12\n");
-        BackendName = "D3D12";
-        D3D12EnableDred();
-        c.renderInterface = CreateD3D12Interface();
-        if (c.renderInterface != nullptr)
-            c.device = c.renderInterface->createDevice();
-    }
 #endif
-#endif
-#if defined(SSA_METAL) || defined(PLUME_D3D12_COREWINDOW)
+#if defined(ARKEYAN_METAL) || defined(PLUME_D3D12_COREWINDOW)
     if (c.renderInterface != nullptr)
         c.device = c.renderInterface->createDevice();
 #endif
     if (c.device == nullptr)
     {
-        fprintf(stderr, "[gpu] no %s device\n", BackendName);
+        fprintf(stderr, "[gpu] no %s device\n", g_backendName);
         g_context.reset();
         return false;
     }
@@ -691,12 +946,13 @@ bool gpu::Init(SDL_Window* window, uint32_t width, uint32_t height)
     if (window != nullptr && GetRenderWindow(window, renderWindow))
     {
         Step("present pipelines created");
-        c.swapChain = c.queue->createSwapChain(RenderSwapChainDesc(renderWindow, OutputFormat, SwapChainBufferCount));
-        Step("swap chain created");
-        c.swapChain->setVsyncEnabled(gpu::g_settings.vsync);
         c.acquireSemaphore = c.device->createCommandSemaphore();
         c.previous.acquireSemaphore = c.device->createCommandSemaphore();
-        ResizeSwapChain();
+        for (auto& semaphore : c.generatedAcquire)
+            semaphore = c.device->createCommandSemaphore();
+        c.renderWindow = renderWindow;
+        CreateSwapChain();
+        Step("swap chain created");
     }
     else
     {
@@ -706,7 +962,7 @@ bool gpu::Init(SDL_Window* window, uint32_t width, uint32_t height)
         ResizeOffscreen(uint32_t(std::max(pixelWidth, 1)), uint32_t(std::max(pixelHeight, 1)));
     }
 
-    fprintf(stderr, "[gpu] %s on %s, %s output\n", BackendName, c.device->getDescription().name.c_str(),
+    fprintf(stderr, "[gpu] %s on %s, %s output\n", g_backendName, c.device->getDescription().name.c_str(),
         c.swapChain != nullptr ? "swapchain" : "offscreen");
     LogAdapter(window, requestedScale);
 #if defined(_WIN32)
@@ -720,6 +976,8 @@ bool gpu::Init(SDL_Window* window, uint32_t width, uint32_t height)
     return true;
 }
 
+const char* gpu::BackendName() { return g_backendName; }
+
 void gpu::Shutdown()
 {
     ProducerLock producer;
@@ -729,9 +987,14 @@ void gpu::Shutdown()
         return;
     if (g_context->recording || g_context->submitted != 0 || g_context->previous.submitted != 0)
         Submit();
+    fsr::Shutdown();
     DrawShutdown();
     BufferCacheShutdown();
     ShutdownUploads();
+    for (auto [buffer, memory] : { std::pair(g_context->staging.get(), g_context->stagingMemory),
+             std::pair(g_context->previous.staging.get(), g_context->previous.stagingMemory) })
+        if (buffer != nullptr && memory != nullptr)
+            buffer->unmap();
     SDL_MetalView metalView = g_context->metalView;
     g_context.reset();
     if (metalView != nullptr)
@@ -749,6 +1012,8 @@ gpu::Texture* gpu::CreateTexture(const TextureDesc& desc)
         flags |= RenderTextureFlag::RENDER_TARGET;
     if (desc.usage & TextureUsage::DepthStencil)
         flags |= RenderTextureFlag::DEPTH_TARGET;
+    if (desc.usage & TextureUsage::Storage) // UNORDERED_ACCESS for D3D12 and Metal, STORAGE for Vulkan's usage bit
+        flags |= RenderTextureFlag::UNORDERED_ACCESS | RenderTextureFlag::STORAGE;
     if (desc.cube)
         flags |= RenderTextureFlag::CUBE;
 
@@ -799,6 +1064,9 @@ void gpu::DestroyTexture(Texture* texture)
 
 namespace
 {
+    // Texture uploads queued since the start, while frame_stats.h measures (under the producer lock).
+    uint64_t g_uploads, g_uploadBytes;
+
     // Where a subresource upload goes: producer upload memory with D3D12's row alignment, and the copy's footprint.
     struct UploadPlace
     {
@@ -820,6 +1088,11 @@ namespace
         place.rows = (height + blockWidth - 1) / blockWidth;
         place.pitch = uint32_t(AlignUp(place.rowBytes, UploadRowAlignment));
         place.offset = AllocateUpload(uint64_t(place.pitch) * place.rows, place.buffer, UploadOffsetAlignment);
+        if (gpu::framestats::Enabled())
+        {
+            g_uploads++;
+            g_uploadBytes += uint64_t(place.pitch) * place.rows;
+        }
         auto mapped = static_cast<uint8_t*>(place.buffer->map());
         if (mapped == nullptr)
         {
@@ -850,6 +1123,7 @@ namespace
             std::lock_guard lock(g_mutex);
             if (DeviceLost())
                 return;
+            SettleCopies(texture);
             RenderCommandList& list = Record();
             Transition(list, *texture, RenderTextureLayout::COPY_DEST, RenderBarrierStage::COPY);
             list.copyTextureRegion(RenderTextureCopyLocation::Subresource(texture->texture.get(), mipLevel, arraySlice),
@@ -958,8 +1232,12 @@ namespace
         static uint64_t windowStart = SDL_GetTicksNS(), lastFrame = windowStart;
         auto& frameNs = g_perfFrameNs;
         static Context::Perf total;
+        static uint64_t windowTimes[uint32_t(gpu::FrameTime::Count)];
         uint64_t now = SDL_GetTicksNS();
         frameNs.push_back(now - lastFrame);
+        if (gpu::framestats::Enabled())
+            gpu::framestats::Presented(
+                ConsumerFrame(), now, now - lastFrame, { c.perf.presentNs, DrawTimeBuilds(), c.targetSwitches });
         lastFrame = now;
         total.drawNs += c.perf.drawNs;
         total.draws += c.perf.draws;
@@ -1013,9 +1291,14 @@ namespace
             }
             // "rest" split: the renderer's own work on the game's render thread, the vblank wait, and what remains: the
             // guest's own code (game logic, its D3D calls) and the render thread's waits for the GPU thread or the guest.
+            // The totals keep counting (frame_stats.h reads the renderer's per frame): the window is their difference.
             uint64_t times[uint32_t(gpu::FrameTime::Count)];
             for (uint32_t i = 0; i < uint32_t(gpu::FrameTime::Count); i++)
-                times[i] = g_frameTimes[i].exchange(0, std::memory_order_relaxed);
+            {
+                uint64_t counted = g_frameTimes[i].load(std::memory_order_relaxed);
+                times[i] = counted - windowTimes[i];
+                windowTimes[i] = counted;
+            }
             double renderer = ms(times[uint32_t(gpu::FrameTime::Renderer)]);
             double vblank = ms(times[uint32_t(gpu::FrameTime::VblankWait)]);
             double presentPath = WorkerRunning() ? double(workers.producerWaitNs) / 1e6 / double(frames)
@@ -1040,8 +1323,8 @@ namespace
         }
         else
         {
-            for (auto& time : g_frameTimes)
-                time.store(0, std::memory_order_relaxed);
+            for (uint32_t i = 0; i < uint32_t(gpu::FrameTime::Count); i++)
+                windowTimes[i] = g_frameTimes[i].load(std::memory_order_relaxed);
         }
         frameNs.clear();
         total = {};
@@ -1069,8 +1352,117 @@ void gpu::Present(const Texture* image)
     ProducerLock producer;
     if (g_context == nullptr)
         return;
+    if (framestats::Enabled())
+    {
+        // The game's render thread's CPU time (from any thread: a movie presents from the main thread).
+        uint64_t gameCpu = UINT64_MAX;
+        uint64_t clock = framestats::ThreadClock(framestats::Thread::Game);
+        if (clock == 0 || !PlatformThreadCpuNs(clock, gameCpu))
+            gameCpu = UINT64_MAX;
+        framestats::ProducerFrame(ProducerFrame(),
+            { g_frameTimes[uint32_t(FrameTime::Renderer)].load(std::memory_order_relaxed), g_uploads, g_uploadBytes,
+                writewatch::FaultCount(), g_frameTimes[uint32_t(FrameTime::VblankWait)].load(std::memory_order_relaxed),
+                gameCpu });
+    }
     BufferCacheFrameDone(CompletedFrame());
     EndProducerFrame([image] { PresentNow(image); });
+}
+
+namespace
+{
+    // Frame generation: the generated frame before the real one, through the same present pass with its own sets and
+    // acquire semaphore. False when there is nothing to present to (the real frame then goes as usual).
+    bool PresentGenerated(const gpu::Texture& generated)
+    {
+        Context& c = *g_context;
+        const uint32_t slot = uint32_t(c.frames & 1);
+        Flush(); // the optical flow and the interpolation go first, without waiting for a swap chain image
+        uint32_t imageIndex = 0;
+        RenderTexture* target;
+        const RenderFramebuffer* framebuffer;
+        uint32_t width, height;
+        if (c.swapChain != nullptr)
+        {
+            if (c.swapChainNoSurface || c.swapChain->needsResize() || c.swapChain->isEmpty() ||
+                c.swapChainFramebuffers.empty())
+                return false;
+            if (int32_t result = 0; !AcquireImage(c.generatedAcquire[slot].get(), &imageIndex, result))
+            {
+                SwapChainFailed("acquire", result);
+                return false;
+            }
+            target = c.swapChain->getTexture(imageIndex);
+            framebuffer = c.swapChainFramebuffers[imageIndex].get();
+            width = c.swapChain->getWidth();
+            height = c.swapChain->getHeight();
+        }
+        else
+        {
+            target = c.offscreen.texture.get();
+            framebuffer = c.offscreenFramebuffer.get();
+            width = c.offscreen.desc.width;
+            height = c.offscreen.desc.height;
+        }
+        RenderCommandList& list = Record();
+        Transition(list, generated, RenderTextureLayout::SHADER_READ, RenderBarrierStage::GRAPHICS);
+        if (c.swapChain != nullptr)
+            list.barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(target, RenderTextureLayout::COLOR_WRITE));
+        else
+            Transition(list, c.offscreen, RenderTextureLayout::COLOR_WRITE, RenderBarrierStage::GRAPHICS);
+        SetFramebuffer(list, framebuffer);
+        c.bound = {};
+        list.setViewports(RenderViewport(0.0f, 0.0f, float(width), float(height)));
+        list.setScissors(RenderRect(0, 0, int32_t(width), int32_t(height)));
+        list.clearColor(0, RenderColor(0.0f, 0.0f, 0.0f, 1.0f));
+        c.generatedSets[slot]->setTexture(0, generated.texture.get(), RenderTextureLayout::SHADER_READ);
+        list.setViewports(Letterbox(generated.desc, width, height));
+        list.setGraphicsPipelineLayout(c.presentLayout.get());
+        list.setPipeline(c.presentPipeline.get());
+        list.setGraphicsDescriptorSet(c.generatedSets[slot].get(), 0);
+        list.drawInstanced(3, 1, 0, 0);
+        if (c.overlay != nullptr)
+        {
+            // The F3 menu on both frames: it would flicker otherwise.
+            Transition(list, *c.overlay, RenderTextureLayout::SHADER_READ, RenderBarrierStage::GRAPHICS);
+            c.generatedOverlaySets[slot]->setTexture(0, c.overlay->texture.get(), RenderTextureLayout::SHADER_READ);
+            list.setViewports(Letterbox(c.overlay->desc, width, height));
+            list.setPipeline(c.overlayPipeline.get());
+            list.setGraphicsDescriptorSet(c.generatedOverlaySets[slot].get(), 0);
+            list.drawInstanced(3, 1, 0, 0);
+        }
+        bool presented = true;
+        if (c.swapChain != nullptr)
+        {
+            list.barriers(RenderBarrierStage::NONE, RenderTextureBarrier(target, RenderTextureLayout::PRESENT));
+            EndTiming(c.submissions[c.submitted], false);
+            list.end();
+            KeepMetalBuffer(c.submissions[c.submitted]);
+            c.recording = false;
+            const RenderCommandList* lists = &list;
+            RenderCommandSemaphore* acquired = c.generatedAcquire[slot].get();
+            RenderCommandSemaphore* rendered = c.releaseSemaphores[imageIndex].get();
+            c.queue->executeCommandLists(
+                &lists, 1, &acquired, 1, &rendered, 1, c.submissions[c.submitted++].fence.get());
+            const uint64_t presentStart = SDL_GetTicksNS();
+            presented = PresentSwapChain(imageIndex, rendered);
+            c.perf.presentNs += SDL_GetTicksNS() - presentStart;
+            if (presented)
+                FramePresented();
+            else
+                SwapChainFailed("present", c.swapChain->getLastResult());
+        }
+        else
+        {
+            FlushList(false);
+            const uint64_t now = SDL_GetTicksNS();
+            if (gpu::g_settings.vsync && c.nextOffscreenFrame > now)
+                SDL_DelayPrecise(c.nextOffscreenFrame - now);
+            c.nextOffscreenFrame = std::max(c.nextOffscreenFrame, now) + OffscreenFrameNs;
+        }
+        if (presented)
+            g_framesPresented++; // the FPS counter counts the frames shown
+        return presented;
+    }
 }
 
 void gpu::detail::PresentNow(const Texture* image)
@@ -1081,19 +1473,35 @@ void gpu::detail::PresentNow(const Texture* image)
         SDL_Delay(16);
         return;
     }
+    if (image != nullptr)
+        SettleCopies(image);
     Context& c = *g_context;
+    // Frame generation: the frame between the last real one and this one goes first, the real one half a real frame
+    // later. The lock stays held: nothing may record into this frame's command lists between the two presents.
+    const Texture* generated = image != nullptr && framegen::Enabled() ? framegen::detail::Generate(image) : nullptr;
+    if (generated != nullptr && !PresentGenerated(*generated))
+        generated = nullptr;
+    if (generated != nullptr)
+    {
+        framegen::detail::Shown();
+        SDL_DelayPrecise(framegen::detail::RealFrameDelayNs());
+    }
     uint32_t imageIndex = 0;
     RenderTexture* target;
     const RenderFramebuffer* framebuffer;
     uint32_t width, height;
     if (c.swapChain != nullptr)
     {
-        if (c.swapChain->needsResize())
+        int32_t result = 0;
+        if (c.swapChainNoSurface)
+            SwapChainFailed("making the surface", gpu::swapchain::SurfaceLost);
+        else if (c.swapChain->needsResize())
             ResizeSwapChain();
         // Minimised or zero-sized window: nothing to present to.
-        if (c.swapChain->isEmpty() || c.swapChainFramebuffers.empty() ||
-            !c.swapChain->acquireTexture(c.acquireSemaphore.get(), &imageIndex))
+        if (c.swapChainNoSurface || c.swapChain->isEmpty() || c.swapChainFramebuffers.empty() ||
+            !AcquireImage(c.acquireSemaphore.get(), &imageIndex, result))
         {
+            SwapChainFailed("acquire", result);
             if (c.recording || c.submitted != 0)
                 Submit();
             SDL_Delay(16);
@@ -1155,7 +1563,9 @@ void gpu::detail::PresentNow(const Texture* image)
     if (c.swapChain != nullptr)
     {
         list.barriers(RenderBarrierStage::NONE, RenderTextureBarrier(target, RenderTextureLayout::PRESENT));
+        EndTiming(c.submissions[c.submitted], true);
         list.end();
+        KeepMetalBuffer(c.submissions[c.submitted]);
         c.recording = false;
         const RenderCommandList* lists = &list;
         RenderCommandSemaphore* acquired = c.acquireSemaphore.get();
@@ -1165,6 +1575,10 @@ void gpu::detail::PresentNow(const Texture* image)
         uint64_t presentStart = SDL_GetTicksNS();
         bool presented = PresentSwapChain(imageIndex, rendered);
         Step(presented ? "presented" : "present failed");
+        if (presented)
+            FramePresented();
+        else
+            SwapChainFailed("present", c.swapChain->getLastResult());
         c.perf.presentNs += SDL_GetTicksNS() - presentStart;
         EndFrame();
         if (presented && !c.presented)
@@ -1174,7 +1588,7 @@ void gpu::detail::PresentNow(const Texture* image)
     }
     else
     {
-        Flush();
+        FlushList(true);
         EndFrame();
         // Stand-in for vsync.
         uint64_t now = SDL_GetTicksNS();
@@ -1182,6 +1596,9 @@ void gpu::detail::PresentNow(const Texture* image)
             SDL_DelayPrecise(c.nextOffscreenFrame - now);
         c.nextOffscreenFrame = std::max(c.nextOffscreenFrame, now) + OffscreenFrameNs;
     }
+    framegen::detail::Shown();
+    if (generated != nullptr)
+        framegen::detail::RealPresented(generated, image);
     LogPerf();
 }
 
@@ -1211,21 +1628,22 @@ bool gpu::ReadbackOutput(std::vector<uint32_t>& rgba, uint32_t& width, uint32_t&
 }
 
 bool gpu::ReadbackTexture(
-    const Texture* texture, std::vector<uint32_t>& rgba, uint32_t& width, uint32_t& height, bool raw)
+    const Texture* texture, std::vector<uint32_t>& rgba, uint32_t& width, uint32_t& height, bool raw, uint32_t channel)
 {
     ProducerLock producer;
     bool result = false;
-    RunAndWait([&] { result = ReadbackNow(texture, rgba, width, height, raw); });
+    RunAndWait([&] { result = ReadbackNow(texture, rgba, width, height, raw, channel); });
     return result;
 }
 
 bool gpu::detail::ReadbackNow(
-    const Texture* texture, std::vector<uint32_t>& rgba, uint32_t& width, uint32_t& height, bool raw)
+    const Texture* texture, std::vector<uint32_t>& rgba, uint32_t& width, uint32_t& height, bool raw, uint32_t channel)
 {
     std::lock_guard lock(g_mutex);
     Context& c = *g_context;
     if (texture == nullptr || DeviceLost())
         return false;
+    SettleCopies(texture);
 
     width = texture->desc.width;
     height = texture->desc.height;
@@ -1243,15 +1661,25 @@ bool gpu::detail::ReadbackNow(
     RenderCommandList& list = Record();
     Transition(list, *texture, RenderTextureLayout::SHADER_READ, RenderBarrierStage::COMPUTE);
     list.barriers(RenderBarrierStage::COMPUTE, RenderBufferBarrier(c.readbackGpu.get(), RenderBufferAccess::WRITE));
-    c.readbackSet->setTexture(0, texture->texture.get(), RenderTextureLayout::SHADER_READ);
+    // A cube or array texture is read through a 2D view of its first slice: bound whole to the shader's 2D texture, Metal
+    // returned garbage (Trap Team's cube map read as one flat grey) and D3D12 face 0.
+    std::unique_ptr<RenderTextureView> slice;
+    if (texture->desc.cube || texture->desc.arraySize > 1)
+    {
+        RenderTextureViewDesc view = RenderTextureViewDesc::Texture2D(texture->desc.format);
+        view.mipLevels = 1;
+        view.arraySize = 1;
+        slice = texture->texture->createTextureView(view);
+    }
+    c.readbackSet->setTexture(0, texture->texture.get(), RenderTextureLayout::SHADER_READ, slice.get());
     c.bound = {}; // a compute pipeline replaces the draws' pipeline state on D3D12
-    // `raw`: ReadbackRawCS at step 1 (its layout has the same set, plus the step as a push constant).
+    // `raw`: ReadbackRawCS at step 1 (its layout has the same set, plus the step and the channel as push constants).
     list.setComputePipelineLayout(raw ? c.rawReadbackLayout.get() : c.readbackLayout.get());
     list.setPipeline(raw ? c.readbackRawPipeline.get() : c.readbackPipeline.get());
     list.setComputeDescriptorSet(c.readbackSet.get(), 0);
     if (raw)
     {
-        int32_t constants[2] = { 1, 0 };
+        int32_t constants[2] = { 1, int32_t(channel) };
         list.setComputePushConstants(0, constants);
     }
     list.dispatch((width + 7) / 8, (height + 7) / 8, 1);
@@ -1279,6 +1707,7 @@ void gpu::RequestReadback(const Texture* texture, uint32_t step, ReadbackConvert
         Context::RawReadback& slot = c.rawReadbacks[c.frames & 1];
         if (texture == nullptr || slot.pending || DeviceLost())
             return;
+        SettleCopies(texture);
 
         slot.width = texture->desc.width / step;
         slot.height = texture->desc.height / step;
@@ -1355,12 +1784,16 @@ void gpu::ServicePresents(uint32_t timeoutMs)
 }
 
 // Read only: sampling never resets the perf log or creates renderer resources.
-gpu::DebugSnapshot gpu::ReadDebugSnapshot()
+bool gpu::ReadDebugSnapshot(DebugSnapshot& result, bool wait)
 {
-    std::lock_guard lock(g_mutex);
-    DebugSnapshot result;
+    std::unique_lock lock(g_mutex, std::defer_lock);
+    if (wait)
+        lock.lock();
+    else if (!lock.try_lock())
+        return false;
+    result = {};
     if (g_context == nullptr)
-        return result;
+        return true;
     const auto& c = *g_context;
     const auto& description = c.device->getDescription();
     auto format = c.renderInterface->getCapabilities().shaderFormat;
@@ -1373,7 +1806,7 @@ gpu::DebugSnapshot gpu::ReadDebugSnapshot()
     WriteDriverVersion(result.driver, sizeof(result.driver), description, format);
     result.width = c.swapChain ? c.swapChain->getWidth() : c.offscreen.desc.width;
     result.height = c.swapChain ? c.swapChain->getHeight() : c.offscreen.desc.height;
-#if defined(SSA_METAL)
+#if defined(ARKEYAN_METAL)
     if (format == RenderShaderFormat::METAL)
     {
         auto* device = static_cast<plume::MetalDevice&>(*c.device).mtl;
@@ -1425,5 +1858,5 @@ gpu::DebugSnapshot gpu::ReadDebugSnapshot()
     std::copy(g_perfFrameNs.end() - result.frameCount, g_perfFrameNs.end(), result.frameNs.begin());
     result.available = true;
     ReadDebugDrawSnapshot(result);
-    return result;
+    return true;
 }

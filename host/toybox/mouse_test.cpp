@@ -18,12 +18,22 @@ int main()
     check(HoverTarget() == "card=3" && model.list.cursor == 0);
     Click(model, 5, 5, 1, false);
     check(model.list.cursor == 3);
-    AddHit({ 30, 0 }, { 50, 20 }, [&] { model.menuRow = 1; });
-    g_hits.back().target = "menu=1";
+    AddHit({ 30, 0 }, { 50, 20 }, [&] { model.menuRow = Model::MainSettings; });
+    g_hits.back().target = "menu=4";
     Pointer(35, 5, true);
-    check(HoverTarget() == "menu=1" && model.menuRow == 0);
+    check(HoverTarget() == "menu=4" && model.menuRow == Model::MainResume); // the panel opens on Resume
     Click(model, 35, 5, 1, false);
-    check(model.menuRow == 1);
+    check(model.menuRow == Model::MainSettings);
+    // A Settings row and a rail row: hover names them, a click does them.
+    AddHit({ 90, 0 }, { 110, 20 }, [&] { model.settingsRow = 6; });
+    g_hits.back().target = "settings=6";
+    AddHit({ 120, 0 }, { 140, 20 }, [&] { model.achievementTab = 2; });
+    g_hits.back().target = "rail=1";
+    Pointer(95, 5, true);
+    check(HoverTarget() == "settings=6" && model.settingsRow == 0);
+    Click(model, 95, 5, 1, false);
+    Click(model, 125, 5, 1, false);
+    check(model.settingsRow == 6 && model.achievementTab == 2);
     AddHit({ 60, 0 }, { 80, 20 }, [&] {
         model.commandRow = 7;
         model.commandColumn = 2;
@@ -63,8 +73,8 @@ int main()
     g_hovered = HoveredHit();
     Pointer(65, 5, true);
     check(focused == 1);
-    printf("%d checks, %d failures\n", 13, failures);
+    printf("%d checks, %d failures\n", 15, failures);
     puts(failures ? "FAIL: menu pointer and click"
-                  : "PASS: menu/card/Commands hover and click, blocked and outside hits, hover focus");
+                  : "PASS: menu/Settings/rail/card/Commands hover and click, blocked and outside hits, hover focus");
     return failures ? 1 : 0;
 }

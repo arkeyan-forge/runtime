@@ -1,4 +1,4 @@
-// The portal speaker's ADPCM decoder against an encoder that lives only here (no game data): ./SSAPortalAdpcmTest
+// The portal speaker's ADPCM decoder against an encoder that lives only here (no game data): ./ArkeyanPortalAdpcmTest
 #include "portal_adpcm.h"
 #include <cmath>
 #include <cstdio>

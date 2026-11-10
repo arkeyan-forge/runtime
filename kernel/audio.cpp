@@ -2,12 +2,17 @@
 // once per audio frame (256 samples at 48 kHz) and the client answers with XAudioSubmitRenderDriverFrame.
 // Submitted frames go to the host output device (host/audio), which also paces the driver.
 #include "host/audio.h"
+#include "host/speakers.h"
+#include "gpu/frame_stats.h"
+#include "platform/platform.h"
 #include "memory.h"
 #include "thread.h"
 #include <algorithm>
+#include <atomic>
 #include <bit>
 #include "byteswap.h"
 #include <chrono>
+#include <cstdio>
 #include <mutex>
 #include <thread>
 #include <ppc_config.h>
@@ -38,9 +43,13 @@ namespace
     // driver thread, before the next client's callback runs.
     float g_mix[AudioFrameChannels * AudioFrameSamples];
 
+    uint32_t g_framesOut = 0;            // frames output so far (the driver thread)
+    std::atomic<uint32_t> g_underruns;   // outputs that found the device's queue empty
+
     // One thread plays the hardware: every frame period it asks each client for a frame, in turn, then outputs the mix.
     void DriverThread(PPCContext& ctx)
     {
+        gpu::framestats::RegisterThread(gpu::framestats::Thread::Audio, PlatformThreadCpuClock());
         auto next = std::chrono::steady_clock::now();
         while (true)
         {
@@ -64,7 +73,13 @@ namespace
             // The device still sets the pace: its queue level trims the period, 1/64 per frame off the target.
             auto period = FramePeriod;
             if (HostAudioActive())
-                period += FramePeriod * (int32_t(HostAudioQueuedFrames()) - int32_t(TargetQueuedFrames)) / 64;
+            {
+                uint32_t queued = HostAudioQueuedFrames();
+                // The device found nothing queued once started (the debug screen's underruns): this frame came late.
+                if (queued == 0 && ++g_framesOut > 2 * TargetQueuedFrames)
+                    g_underruns.fetch_add(1, std::memory_order_relaxed);
+                period += FramePeriod * (int32_t(queued) - int32_t(TargetQueuedFrames)) / 64;
+            }
             next += period;
             auto now = std::chrono::steady_clock::now();
             if (now - next > FramePeriod * TargetQueuedFrames)
@@ -124,9 +139,12 @@ PPC_FUNC(__imp__XAudioSubmitRenderDriverFrame)
     ctx.r3.u64 = StatusSuccess;
 }
 
+// At the title's audio start (its XAudio2 registers its render client right after; SSA asks twice).
 PPC_FUNC(__imp__XAudioGetSpeakerConfig)
 {
-    g_memory.Write<uint32_t>(ctx.r3.u32, 0x00010001);
+    const uint32_t config = speakers::GuestSpeakerConfig(HostAudioLayout());
+    fprintf(stderr, "[audio] speaker config 0x%08X (%s)\n", config, speakers::Name(HostAudioLayout()));
+    g_memory.Write<uint32_t>(ctx.r3.u32, config);
     ctx.r3.u64 = StatusSuccess;
 }
 
@@ -140,4 +158,17 @@ PPC_FUNC(__imp__XAudioGetDuckerLevel)
 {
     g_memory.Write<uint32_t>(ctx.r3.u32, 0);
     ctx.r3.u64 = StatusSuccess;
+}
+
+uint32_t AudioUnderruns() { return g_underruns.load(std::memory_order_relaxed); }
+
+uint32_t AudioVoicesActive()
+{
+    uint32_t active = 0;
+    for (Client& client : g_clients)
+    {
+        std::lock_guard lock(client.mutex);
+        active += client.active;
+    }
+    return active;
 }

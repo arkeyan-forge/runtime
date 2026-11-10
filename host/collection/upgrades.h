@@ -74,4 +74,10 @@ namespace collection
 
     // <data>/<Game>/upgrades.json (SKYLANDERS_DATA moves the data root for tests).
     std::filesystem::path UpgradeFile(std::string_view game);
+
+    // Imaginators' creation parts: the name the game shows for a part id (a crystal recipe's head, weapon, power...), in
+    // `language` or else the disc's first language; empty when <data>/<Game>/parts.json (art::ExtractPartNames, read
+    // from the player's disc) does not have it.
+    std::string PartName(const std::string& game, int id, std::string_view language);
+    std::filesystem::path PartFile(std::string_view game);
 }

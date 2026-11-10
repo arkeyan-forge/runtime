@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 // Read-only view of the game's files: the disc's XDVDFS file system read straight from the ISO, a folder holding a copy of
@@ -48,6 +49,8 @@ private:
     PlatformFile m_file = InvalidPlatformFile;
     uint64_t m_partition = 0;
     std::unordered_map<std::string, Entry> m_entries;
+    uint64_t m_imageSize = 0; // the image file's length (0: unknown)
+    std::unordered_set<uint32_t> m_directories; // the extents indexed so far, while Open walks
     bool m_folder = false;
     bool m_pack = false;
 
@@ -56,7 +59,9 @@ private:
     // A real disc's directories are a few sectors and a few levels deep.
     static constexpr uint32_t MaxDirectorySize = 16u << 20;
     static constexpr int MaxDirectoryDepth = 64;
-    void IndexDirectory(uint32_t sector, uint32_t size, const std::string& prefix, int depth = 0);
+    static constexpr size_t MaxEntries = 1u << 18;
+    // False: the tree loops, is too deep or too big. Each directory extent is walked once (m_directories).
+    bool IndexDirectory(uint32_t sector, uint32_t size, const std::string& prefix, int depth = 0);
 };
 
 extern DiscFileSystem g_disc;

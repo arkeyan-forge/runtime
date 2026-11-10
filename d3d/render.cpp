@@ -4,21 +4,27 @@
 // XenosRecomp translated them. EDRAM surfaces become host render targets; resolves copy them into host textures that
 // stand in for the guest textures they were resolved to.
 #include "d3d/capture.h"
-#include "d3d/render_stats.h"
 #include "d3d/command_buffers.h"
+#include "d3d/render_stats.h"
 #include "d3d/depth_readback.h"
+#include "d3d/mrt_alias.h"
+#include "d3d/target_writes.h"
 #include "d3d/tiled_depth.h"
 #include "d3d/device.h"
+#include "d3d/float_scan.h"
 #include "d3d/render_scale.h"
 #include "d3d/vertex_pairs.h"
 #include "d3d/ring.h"
 #include "d3d/shaders.h"
 #include "d3d/step_pacer.h"
 #include "d3d/ultrawide.h"
+#include "d3d/upscale.h"
 #include "d3d/xenos.h"
 #include "gpu/buffer_cache.h"
 #include "gpu/draw.h"
 #include "gpu/edge_smoothing.h"
+#include "gpu/frame_stats.h"
+#include "gpu/fsr/framegen.h"
 #include "host/display.h"
 #include "host/dds.h"
 #include "host/art/xenos_texture.h"
@@ -28,6 +34,9 @@
 #include "game.h"
 #include "game_hooks.h"
 #include "memory.h"
+#include "platform/clock.h"
+#include "platform/platform.h"
+#include "write_watch.h"
 #include <algorithm>
 #include <atomic>
 #include <bit>
@@ -37,9 +46,6 @@
 #include <cstdio>
 #include <cstring>
 #include <array>
-#if defined(__APPLE__)
-#include <mach/mach_time.h>
-#endif
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -72,8 +78,13 @@ namespace
     // change is logged once.
     edgesmoothing::Mode EdgeSmoothing()
     {
-        const edgesmoothing::Mode mode = edgesmoothing::Resolve(edgesmoothing::Mode(gpu::g_settings.edgeSmoothing),
-            uint32_t(gpu::g_settings.resolutionScale), game::InMenuLevel());
+        // FSR anti-aliases the scene itself, and its picture has no luma in alpha for the game's FXAA (Trap Team's
+        // composite is its tone map and FXAA pass): in a level the pass draws the plain copy.
+        const edgesmoothing::Mode mode =
+            upscale::Active() && !game::InMenuLevel()
+                ? edgesmoothing::Off
+                : edgesmoothing::Resolve(edgesmoothing::Mode(gpu::g_settings.edgeSmoothing),
+                      uint32_t(gpu::g_settings.resolutionScale), game::InMenuLevel());
         static edgesmoothing::Mode logged = edgesmoothing::Auto;
         if (mode != logged)
         {
@@ -84,7 +95,8 @@ namespace
         return mode;
     }
 
-    int32_t TargetScale(const gpu::TextureDesc& desc) { return d3d::TargetScale(desc.width, desc.height, Scale()); }
+    // The frame's scale: the resolution scale, or with upscaling (d3d/upscale.h) the upscaled scene's.
+    int32_t FrameScale() { return upscale::Active() ? int32_t(upscale::FrameScale()) : Scale(); }
 
     struct Stats
     {
@@ -94,32 +106,57 @@ namespace
     // --- Render targets: one host texture per EDRAM surface (base tile, format, size). ---------------------------------
 
     std::unordered_map<uint64_t, gpu::Texture*> g_targets;
+    // Surfaces that once shared a draw's colour set with another surface of the same key (d3d/mrt_alias.h) have a host
+    // target of their own, kept with the key it was made for.
+    struct OwnTarget
+    {
+        uint64_t key = 0;
+        gpu::Texture* texture = nullptr;
+    };
+    std::unordered_map<uint32_t, OwnTarget> g_ownTargets;
 
     // --- Ultrawide: the frame (the game's 1280x720 back buffer and its depth) is wider than the game thinks. -------------
     // The game composes the scene and draws the HUD for 1280x720 guest pixels. With a wide window the host target is
     // ultrawide::FrameWidth() wide: the composite (the pass that reads the scene) fills it, every other draw into it is
     // moved to the middle, so the HUD keeps its 16:9 layout.
 
+    // Upscaling also tracks the frame: it has its own scale, and its composite is where the upscaled scene goes.
     bool IsFrameSize(uint32_t guestWidth, uint32_t guestHeight)
     {
-        return ultrawide::Active() && guestWidth == ultrawide::FrameWidth16x9 && guestHeight == ultrawide::FrameHeight;
+        return (ultrawide::Active() || upscale::Active()) && guestWidth == ultrawide::FrameWidth16x9 &&
+               guestHeight == ultrawide::FrameHeight;
     }
 
-    // A host target made for the frame: the wide frame at the current scale.
+    // A host target made for the frame: the wide frame at the frame's scale.
     bool IsFrameTexture(const gpu::TextureDesc& desc)
     {
-        return ultrawide::Active() && desc.width == ultrawide::FrameWidth() * Scale() &&
-               desc.height == ultrawide::FrameHeight * Scale();
+        return (ultrawide::Active() || upscale::Active()) && desc.width == ultrawide::FrameWidth() * FrameScale() &&
+               desc.height == ultrawide::FrameHeight * FrameScale();
+    }
+
+    int32_t TargetScale(const gpu::TextureDesc& desc)
+    {
+        return IsFrameTexture(desc) ? FrameScale() : d3d::TargetScale(desc.width, desc.height, Scale());
+    }
+
+    // A host target of the 3D scene's size (upscaling: its draws are jittered, its composite upscaled).
+    bool IsSceneTexture(const gpu::TextureDesc& desc)
+    {
+        return desc.width == ultrawide::SceneWidth() * Scale() && desc.height == ultrawide::SceneHeight() * Scale();
     }
 
     // How far the guest's frame sits from the wide frame's left edge, in host pixels.
-    int32_t FrameShift() { return int32_t(ultrawide::FrameWidth() - ultrawide::FrameWidth16x9) / 2 * Scale(); }
+    int32_t FrameShift() { return int32_t(ultrawide::FrameWidth() - ultrawide::FrameWidth16x9) / 2 * FrameScale(); }
 
     // D3DSurface: +0x1C RB_COLOR_INFO / RB_DEPTH_INFO (EDRAM base tile, format), +0x24 size (width-1 << 18 | height-1 << 3).
-    gpu::Texture* TargetFor(uint32_t device, uint32_t surface, bool depth)
+    struct TargetShape
     {
-        if (surface == 0)
-            return nullptr;
+        uint64_t key;
+        uint32_t width, height, format;
+    };
+
+    TargetShape ShapeOf(uint32_t device, uint32_t surface, bool depth)
+    {
         uint32_t info = Read32(surface + 0x1C);
         uint32_t size = Read32(surface + 0x24);
         uint32_t width = ((size >> 18) & 0x3FFF) + 1;
@@ -147,12 +184,39 @@ namespace
             }
         }
         uint32_t format = depth ? 0x10 : (info >> 16) & 0xF;
-        uint64_t key = (info & 0xFFF) | uint64_t(format) << 12 | uint64_t(width) << 20 | uint64_t(height) << 36;
+        return { (info & 0xFFF) | uint64_t(format) << 12 | uint64_t(width) << 20 | uint64_t(height) << 36, width,
+            height, format };
+    }
 
-        gpu::Texture*& texture = g_targets[key];
+    // The scales changed (upscale::Request): every target is made again at its new size when next drawn into. What the
+    // EDRAM held is lost for that frame, as after a mode change.
+    void DropTargets()
+    {
+        for (auto& [key, texture] : g_targets)
+            gpu::DestroyTexture(texture);
+        g_targets.clear();
+        for (auto& [surface, own] : g_ownTargets)
+            gpu::DestroyTexture(own.texture);
+        g_ownTargets.clear();
+        fprintf(stderr, "[upscale] the render targets are made again at scale %d (the frame at %d)\n", Scale(),
+            FrameScale());
+    }
+
+    gpu::Texture* TargetFor(uint32_t device, uint32_t surface, bool depth)
+    {
+        if (surface == 0)
+            return nullptr;
+        const auto [key, width, height, format] = ShapeOf(device, surface, depth);
+        auto own = depth ? g_ownTargets.end() : g_ownTargets.find(surface);
+        if (own != g_ownTargets.end() && own->second.key != key)
+        {
+            gpu::DestroyTexture(own->second.texture);
+            own->second = { key, nullptr };
+        }
+        gpu::Texture*& texture = own != g_ownTargets.end() ? own->second.texture : g_targets[key];
         if (texture == nullptr)
         {
-            const int32_t scale = d3d::TargetScale(width, height, Scale());
+            const int32_t scale = IsFrameSize(width, height) ? FrameScale() : d3d::TargetScale(width, height, Scale());
             gpu::TextureDesc desc{ .width = (IsFrameSize(width, height) ? ultrawide::FrameWidth() : width) * scale,
                 .height = height * scale };
             desc.format = depth ? xenos::DepthTargetFormat : xenos::ColorTargetFormat(format);
@@ -177,6 +241,8 @@ namespace
         uint64_t sampleHash = 0; // GuestSampleHash then
         uint64_t fullFrame = 0; // the frame of the next full check
         uint64_t glyphHash = 0; // the guest hash of the button glyph it holds (host/glyphs.h); 0: the game's texture
+        // writewatch::Watch of the guestHash bytes before their last full hash: unwritten since, guestHash holds.
+        uint64_t watchStamp = 0, watchBytes = 0;
     };
     std::unordered_map<uint64_t, HostTexture> g_textures;
 
@@ -303,21 +369,42 @@ namespace
 
     struct TextureStats
     {
-        uint64_t checks = 0, full = 0, bytes = 0, sampled = 0, missed = 0, changed = 0;
+        uint64_t checks = 0, full = 0, bytes = 0, sampled = 0, missed = 0, changed = 0, unwritten = 0, watchMissed = 0;
     } g_textureStats;
     const bool g_textureStatsOn = skyenv::Get("SKY_TEXTURE_STATS") != nullptr;
 
-    // The texture's guest hash this frame: GuestContentHash, or the last one when its sample says it did not change.
+    // The texture's guest hash this frame: GuestContentHash, or the last one when nothing wrote its pages since (the
+    // write watch: exact) or its sample says it did not change.
     uint64_t CheckGuestContent(
         HostTexture& host, uint64_t key, const xenos::TextureFetch& fetch, const xenos::TextureFormatInfo& info)
     {
         g_textureStats.checks++;
         uint64_t bytes = GuestContentBytes(fetch, info);
-        if (bytes < SampledBytes || PhysicalToGuest(fetch.BaseAddress()) == 0)
+        uint32_t guest = PhysicalToGuest(fetch.BaseAddress());
+        const void* data = guest != 0 ? g_memory.Translate(guest) : nullptr;
+        if (host.texture != nullptr && data != nullptr && bytes == host.watchBytes &&
+            writewatch::Unchanged(data, bytes, host.watchStamp))
+        {
+            g_textureStats.unwritten++;
+            if (!writewatch::Checking())
+                return host.guestHash;
+            if (GuestContentHash(fetch, info) != host.guestHash)
+            {
+                g_textureStats.watchMissed++;
+                fprintf(stderr, "[textures] the write watch missed a change: %08X format %u %ux%u, %llu bytes\n",
+                    fetch.BaseAddress(), fetch.Format(), fetch.Width(), fetch.Height(), (unsigned long long)bytes);
+            }
+        }
+        if (bytes < SampledBytes || guest == 0)
         {
             g_textureStats.full++;
             g_textureStats.bytes += bytes;
-            return GuestContentHash(fetch, info);
+            uint64_t stamp = data != nullptr ? writewatch::Watch(data, bytes) : 0;
+            uint64_t hash = GuestContentHash(fetch, info);
+            host.guestHash = hash;
+            host.watchStamp = stamp;
+            host.watchBytes = bytes;
+            return hash;
         }
         uint64_t sample = GuestSampleHash(fetch, bytes);
         if (host.texture != nullptr && sample == host.sampleHash && g_frame < host.fullFrame)
@@ -336,6 +423,7 @@ namespace
         }
         g_textureStats.full++;
         g_textureStats.bytes += bytes;
+        uint64_t stamp = writewatch::Watch(data, bytes);
         uint64_t hash = GuestContentHash(fetch, info);
         bool changed = host.texture != nullptr && hash != host.guestHash;
         g_textureStats.changed += changed;
@@ -344,6 +432,8 @@ namespace
         host.fullFrame = g_frame + (host.fullFrame == 0 ? 1 + key % FullCheckFrames : changed ? 1 : FullCheckFrames);
         host.guestHash = hash;
         host.sampleHash = sample;
+        host.watchStamp = stamp;
+        host.watchBytes = bytes;
         return hash;
     }
 
@@ -511,20 +601,24 @@ namespace
     // The perf log's texture time: hashing the guest data, copying it and (without the GPU thread) decoding it. A texture
     // already checked this frame (most draws' textures) returns before the timer: its two clock reads cost more than the
     // lookup.
-    gpu::Texture* TextureFor(const xenos::TextureFetch& fetch)
+    // `entry`: the texture's entry in g_textures (nullptr if it has none), for the caller's own reads of it.
+    gpu::Texture* TextureFor(const xenos::TextureFetch& fetch, HostTexture*& entry)
     {
         if (fetch.Type() != 2 || fetch.Dimension() == 2)
+        {
+            auto found = g_textures.find(TextureKey(fetch));
+            entry = found != g_textures.end() ? &found->second : nullptr;
             return nullptr; // 3D textures: not yet (a 1D one is a 2D texture of one row, as the translated shaders sample it)
+        }
         const xenos::TextureFormatInfo& info = xenos::TextureFormat(fetch.Format());
         uint64_t key = TextureKey(fetch);
         HostTexture& host = g_textures[key];
+        entry = &host;
         if (host.resolved || info.host == gpu::Format::UNKNOWN || host.checkedFrame == g_frame)
             return host.texture;
-        auto start = std::chrono::steady_clock::now();
+        const uint64_t start = PlatformNowNs();
         gpu::Texture* texture = TextureForUntimed(fetch, info, key, host);
-        gpu::AddFrameTime(gpu::FrameTime::Textures,
-            uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start)
-                    .count()));
+        gpu::AddFrameTime(gpu::FrameTime::Textures, PlatformNowNs() - start);
         return texture;
     }
 
@@ -647,6 +741,8 @@ namespace
     // resolved during the first frame after that time, then the presented one, as <prefix>_<n>_<width>x<height>.ppm
     // (with SKY_DUMP_DRAWS, also the target after every draw; R32_FLOAT ones as grey from their minimum to their maximum,
     // with the values logged). A debugging aid.
+    // SKY_DUMP_FLOATS=1 (with or without a prefix): every such texture's four channels read back as floats and scanned
+    // for NaN, infinities, negatives and denormals, one "[dump] floats" line each (no picture without a prefix).
     struct FrameDump
     {
         bool active = false;
@@ -655,14 +751,53 @@ namespace
         std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
     } g_dump;
 
+    void DumpFloats(const gpu::Texture* texture, char tag)
+    {
+        std::vector<uint32_t> bits;
+        uint32_t width = 0, height = 0;
+        std::string line;
+        bool bad = false;
+        int64_t firstBad = -1;
+        for (uint32_t channel = 0; channel < 4; channel++)
+        {
+            if (!gpu::ReadbackTexture(texture, bits, width, height, true, channel))
+                return;
+            const d3d::FloatScan scan = d3d::ScanFloats(bits.data(), bits.size());
+            char text[192];
+            snprintf(text, sizeof(text), " %c nan %llu inf %llu/%llu neg %llu den %llu [%g, %g] mean %.4f",
+                "rgba"[channel], static_cast<unsigned long long>(scan.nan),
+                static_cast<unsigned long long>(scan.positiveInf), static_cast<unsigned long long>(scan.negativeInf),
+                static_cast<unsigned long long>(scan.negative), static_cast<unsigned long long>(scan.denormal),
+                scan.min, scan.max, scan.mean);
+            line += text;
+            bad |= scan.Bad();
+            if (scan.firstBad >= 0 && (firstBad < 0 || scan.firstBad < firstBad))
+                firstBad = scan.firstBad;
+        }
+        fprintf(stderr, "[dump] floats file %02u%c fmt %d %ux%u%s%s", g_dump.index, tag, int(gpu::Desc(texture).format),
+            width, height, bad ? " BAD" : "", line.c_str());
+        if (firstBad >= 0)
+            fprintf(stderr, " first at %lld %lld", static_cast<long long>(firstBad % width),
+                static_cast<long long>(firstBad / width));
+        fprintf(stderr, "\n");
+    }
+
     void DumpResolve(const gpu::Texture* texture, char tag = 'r')
     {
         static const char* prefix = skyenv::Get("SKY_DUMP_PREFIX");
         static const bool draws = skyenv::Get("SKY_DUMP_DRAWS") != nullptr;
-        if (!g_dump.active || prefix == nullptr || (tag == 'd' && !draws))
+        static const bool floats = skyenv::Get("SKY_DUMP_FLOATS") != nullptr;
+        if (!g_dump.active || (prefix == nullptr && !floats) || (tag == 'd' && !draws))
             return;
-        std::vector<uint32_t> rgba;
         uint32_t width, height;
+        if (floats)
+            DumpFloats(texture, tag);
+        if (prefix == nullptr)
+        {
+            g_dump.index++;
+            return;
+        }
+        std::vector<uint32_t> rgba;
         if (!gpu::ReadbackTexture(texture, rgba, width, height))
             return;
         if (gpu::Desc(texture).format == gpu::Format::R32_FLOAT)
@@ -715,6 +850,14 @@ namespace
         }
     }
 
+    // SKY_DUMP_DRAWS: the draw's first target; with SKY_DUMP_FLOATS, every target.
+    void DumpDraw(const gpu::DrawDesc& draw)
+    {
+        static const bool floats = skyenv::Get("SKY_DUMP_FLOATS") != nullptr;
+        for (uint32_t i = 0; i < (floats ? draw.colorTargetCount : std::min(draw.colorTargetCount, 1u)); i++)
+            DumpResolve(draw.colorTargets[i], 'd');
+    }
+
     // --- Draws --------------------------------------------------------------------------------------------------------
 
     gpu::Format AsUint(gpu::Format format)
@@ -747,10 +890,15 @@ namespace
     bool g_frameDraw, g_frameSceneRead, g_frameComposite;
     // The draw's guest shader hashes, for the frame dump's lines (0: none).
     uint64_t g_drawVertexShader, g_drawPixelShader;
+    // The render targets the draw's pixel shader writes (GuestShader::colorOutputs; 0: none, or no pixel shader).
+    uint32_t g_drawColorOutputs;
     // The draw's textures that hold a button glyph (their guest hashes, 0 for the others), and the vertex constant of a
     // glyph model's texture matrix to set to the identity (glyphs::UvMatrix; -1: none).
     uint64_t g_drawGlyphs[gpu::MaxSamplers];
     int g_drawUvMatrix = -1;
+    // A glyph prompt's face or letters being built (host/glyphs.h, Prompt): the XXH3 of its indices (0: none), which makes its
+    // streams and constants CPU copies the draw can rewrite and keep.
+    uint64_t g_promptFaceHash = 0;
 
     void ReadConstants(uint32_t device, float* out)
     {
@@ -885,7 +1033,28 @@ namespace
         }
 
         // Render targets.
+        uint32_t surfaces[gpu::MaxRenderTargets];
+        uint64_t keys[gpu::MaxRenderTargets];
+        uint32_t surfaceCount = 0;
+        for (; surfaceCount < gpu::MaxRenderTargets; surfaceCount++)
+        {
+            surfaces[surfaceCount] = Read32(device + Device::RenderTargets + surfaceCount * 4);
+            if (surfaces[surfaceCount] == 0)
+                break;
+            keys[surfaceCount] = ShapeOf(device, surfaces[surfaceCount], false).key;
+        }
+        for (uint32_t own = d3d::SlotsNeedingOwnTarget(keys, surfaces, surfaceCount); own != 0; own &= own - 1)
+        {
+            const uint32_t slot = uint32_t(std::countr_zero(own));
+            if (g_ownTargets.try_emplace(surfaces[slot]).second)
+                fprintf(stderr,
+                    "[render] render target %u (surface %08X) shares its EDRAM key %llX with another of the "
+                    "draw's targets: a host target of its own\n",
+                    slot, surfaces[slot], (unsigned long long)keys[slot]);
+        }
         uint32_t colorMask = GpuRegister(device, Reg::RB_COLOR_MASK);
+        // A target the pixel shader does not write (every target without one) is masked: it keeps its contents.
+        g_drawColorOutputs = ps != nullptr ? ps->colorOutputs : 0;
         const uint32_t blendRegisters[4] = { Reg::RB_BLENDCONTROL0, 0x2209, 0x220A, 0x220B };
         for (uint32_t i = 0; i < gpu::MaxRenderTargets; i++)
         {
@@ -893,7 +1062,8 @@ namespace
             if (target == nullptr)
                 break;
             draw.colorTargets[i] = target;
-            draw.blend[i] = BlendFor(GpuRegister(device, blendRegisters[i]), colorMask >> (i * 4));
+            draw.blend[i] = BlendFor(
+                GpuRegister(device, blendRegisters[i]), d3d::TargetWriteMask(colorMask, g_drawColorOutputs, i));
             draw.colorTargetCount++;
         }
         for (uint32_t i = 0; i < 4; i++)
@@ -1057,16 +1227,15 @@ namespace
                 fetch.dword[i] = fetchConstants[slot * 6 + i];
             if (fetch.Type() != 2)
                 continue;
-            draw.textures[slot] = TextureFor(fetch);
-            auto host = g_textures.find(TextureKey(fetch));
-            if (host != g_textures.end() && host->second.glyphHash != 0)
+            HostTexture* host;
+            draw.textures[slot] = TextureFor(fetch, host);
+            if (host != nullptr && host->glyphHash != 0)
             {
-                g_drawGlyphs[slot] = host->second.glyphHash;
+                g_drawGlyphs[slot] = host->glyphHash;
                 glyphBound = true;
             }
-            draw.swizzles[slot] = SwizzleFor(fetch, host != g_textures.end() && host->second.swapRB);
-            if (host != g_textures.end() && host->second.resolved &&
-                gpu::Desc(host->second.texture).width != fetch.Width())
+            draw.swizzles[slot] = SwizzleFor(fetch, host != nullptr && host->swapRB);
+            if (host != nullptr && host->resolved && gpu::Desc(host->texture).width != fetch.Width())
                 draw.scaledTextures |= 1u << slot; // a resolve: resolution-scale times its guest size
             draw.samplers[slot] = SamplerFor(fetch);
         }
@@ -1085,9 +1254,9 @@ namespace
                     fetch.dword[i] = vertexFetch[slot * 6 + i];
                 if ((vs->samplers & (1u << slot)) == 0 || fetch.Type() != 2)
                     continue;
-                draw.vertexTextures[slot] = TextureFor(fetch);
-                auto host = g_textures.find(TextureKey(fetch));
-                draw.vertexSwizzles[slot] = SwizzleFor(fetch, host != g_textures.end() && host->second.swapRB);
+                HostTexture* host;
+                draw.vertexTextures[slot] = TextureFor(fetch, host);
+                draw.vertexSwizzles[slot] = SwizzleFor(fetch, host != nullptr && host->swapRB);
                 draw.vertexSamplers[slot] = SamplerFor(fetch);
             }
         }
@@ -1193,22 +1362,31 @@ namespace
         g_streamData.resize(gpu::MaxVertexStreams);
         // Vertex data is byte-swapped in 32-bit words, which swaps the halves of 16-bit component pairs; for
         // texture coordinates the translated shaders swap them back (.yxwz) when told to. Any other input in such a
-        // format (a SHORT4N position) is swapped back here, on a CPU copy of its stream.
+        // format (a SHORT4N position, FLOAT16_4 normals) is swapped back when its stream is converted: by the buffer
+        // cache (pairWords), or on a CPU copy where the cache is not used or the mask cannot describe the element.
         auto sixteenBitPairs = [](gpu::Format host) {
             return host == gpu::Format::R16G16_FLOAT || host == gpu::Format::R16G16_SINT ||
                    host == gpu::Format::R16G16_SNORM || host == gpu::Format::R16G16_UNORM ||
                    host == gpu::Format::R16G16B16A16_FLOAT || host == gpu::Format::R16G16B16A16_SINT ||
                    host == gpu::Format::R16G16B16A16_SNORM || host == gpu::Format::R16G16B16A16_UNORM;
         };
-        uint32_t pairStreams = 0;
+        uint64_t pairWords[16] = {};
+        uint32_t unmaskedPairStreams = 0;
         for (uint32_t i = 0; i < elementCount; i++)
         {
             uint32_t element = declaration + 0x34 + i * 12;
             uint32_t stream = g_memory.Read<uint16_t>(element);
-            if (stream < 16 && g_memory.Read<uint8_t>(element + 9) != 5 &&
-                sixteenBitPairs(xenos::VertexFormat(Read32(element + 4)).host))
-                pairStreams |= 1u << stream;
+            xenos::VertexFormatInfo format = xenos::VertexFormat(Read32(element + 4));
+            if (stream < 16 && g_memory.Read<uint8_t>(element + 9) != 5 && sixteenBitPairs(format.host))
+            {
+                uint64_t words = d3d::PairWords(g_memory.Read<uint16_t>(element + 2), format.size);
+                pairWords[stream] |= words;
+                unmaskedPairStreams |= uint32_t(words == 0) << stream;
+            }
         }
+        // The cached streams start at vertexStart (IssueDraw moves the draw's base to match), so do their CPU copies.
+        const bool fromVertexStart = upData == 0 && !expand && !g_dump.active && g_promptFaceHash == 0;
+        uint32_t cachedStreams = 0;
         for (uint32_t i = 0; i < elementCount; i++)
         {
             uint32_t element = declaration + 0x34 + i * 12;
@@ -1264,24 +1442,30 @@ namespace
                 streamGuest[stream] = guest;
                 streamBytes[stream] = bytes;
                 streamStride[stream] = stride;
-                if (upData == 0 && !expand && !g_dump.active && ((pairStreams >> stream) & 1) == 0)
+                uint32_t begin = 0, end = bytes;
+                if (fromVertexStart)
+                {
+                    begin = uint32_t(std::min<uint64_t>(uint64_t(vertexStart) * stride, bytes));
+                    end = uint32_t(std::clamp<uint64_t>(uint64_t(vertexEnd) * stride, begin, bytes));
+                }
+                if (fromVertexStart && ((unmaskedPairStreams >> stream) & 1) == 0)
                 {
                     // Keep the converted vertices on the GPU: level geometry is shared by many draws.
-                    uint32_t begin = uint32_t(std::min<uint64_t>(uint64_t(vertexStart) * stride, bytes));
-                    uint32_t end = uint32_t(std::clamp<uint64_t>(uint64_t(vertexEnd) * stride, begin, bytes));
                     draw.streams[slot] = { nullptr, end - begin, stride, false,
-                        gpu::CacheVertices(g_memory.Translate(guest + begin), guest + begin, end - begin) };
+                        gpu::CacheVertices(
+                            g_memory.Translate(guest + begin), guest + begin, end - begin, stride, pairWords[stream]) };
+                    cachedStreams |= 1u << stream;
                 }
                 else
                 {
-                    data.assign(static_cast<uint8_t*>(g_memory.Translate(guest)),
-                        static_cast<uint8_t*>(g_memory.Translate(guest)) + bytes);
+                    data.assign(static_cast<uint8_t*>(g_memory.Translate(guest + begin)),
+                        static_cast<uint8_t*>(g_memory.Translate(guest + begin)) + (end - begin));
                     xenos::SwapEndian(data.data(), data.size(), 2);
-                    draw.streams[slot] = { data.data(), bytes, stride, false, {} };
+                    draw.streams[slot] = { data.data(), end - begin, stride, false, {} };
                 }
             }
 
-            if (usage != 5 && pairs)
+            if (usage != 5 && pairs && ((cachedStreams >> stream) & 1) == 0)
             {
                 std::vector<uint8_t>& data = g_streamData[streamSlots[stream]];
                 d3d::SwapHalfPairs(data.data(), data.size(), streamStride[stream], offset, format.size);
@@ -1423,6 +1607,15 @@ namespace
                 draw.viewport = plume::RenderViewport(
                     0, 0, float(size.width), float(size.height), draw.viewport.minDepth, draw.viewport.maxDepth);
                 draw.scissor = plume::RenderRect(0, 0, int32_t(size.width), int32_t(size.height));
+                // Upscaling: the composite reads the upscaled scene instead.
+                for (uint32_t slot = 0; upscale::Active() && slot < gpu::MaxSamplers; slot++)
+                    if ((game::UltrawideCompositeSlot < 0 || int(slot) == game::UltrawideCompositeSlot) &&
+                        draw.textures[slot] != nullptr && IsSceneTexture(gpu::Desc(draw.textures[slot])))
+                    {
+                        if (gpu::Texture* upscaled = upscale::Composite(draw.textures[slot]))
+                            draw.textures[slot] = upscaled;
+                        break;
+                    }
             }
             else
             {
@@ -1435,6 +1628,7 @@ namespace
 
         uint32_t vertexCount = indexed ? 0 : first + count;
         uint32_t vertexStart = 0, vertexEnd = UINT32_MAX; // the vertices the draw reads
+        uint64_t identity = 0; // upscaling: the same draw in the next frame has the same (indexed draws only)
         if (indexed)
         {
             // Index buffer: +0x18 address; 16-bit indices (32-bit index buffers not seen yet).
@@ -1442,8 +1636,12 @@ namespace
             uint32_t guest = indices != 0 ? PhysicalToGuest(Read32(indices + Resource::IndexBufferAddress)) : 0;
             if (guest == 0)
                 return false;
+            if (upscale::Active())
+                identity = XXH3_64bits_withSeed(&g_drawPixelShader, sizeof(g_drawPixelShader),
+                    g_drawVertexShader ^ (uint64_t(guest + first * 2) << 32 | count) ^
+                        uint64_t(uint32_t(baseVertex)) << 20);
             uint32_t bytes = count * 2;
-            if (!g_dump.active)
+            if (!g_dump.active && g_promptFaceHash == 0)
             {
                 uint32_t minIndex, maxIndex;
                 draw.indicesConverted = gpu::CacheIndices(
@@ -1478,7 +1676,7 @@ namespace
         if (!PrepareVertices(device, draw, vs != nullptr ? vs->inputs : 0, vs != nullptr ? vs->pulled : 0, vertexCount,
                 upData, upStride, expand, vertexStart, vertexEnd))
             return false;
-        if (upData == 0 && !expand && !g_dump.active)
+        if (upData == 0 && !expand && !g_dump.active && g_promptFaceHash == 0)
         {
             // The cached streams start at vertexStart.
             if (indexed)
@@ -1498,8 +1696,9 @@ namespace
         const bool hostKernel = fxaaPass && Scale() > 1;
         // The "Edge smoothing" setting: Game leaves the pass's contrast thresholds, Light and Off raise them (gpu/edge_smoothing.h).
         const edgesmoothing::Mode smoothing = fxaaPass ? EdgeSmoothing() : edgesmoothing::Game;
-        if (upData != 0 || g_dump.active || (g_frameComposite && game::UltrawideCompositeVpos) || hostKernel ||
-            smoothing != edgesmoothing::Game || g_drawUvMatrix >= 0)
+        if (upData != 0 || g_dump.active || g_promptFaceHash != 0 ||
+            (g_frameComposite && game::UltrawideCompositeVpos) || hostKernel || smoothing != edgesmoothing::Game ||
+            g_drawUvMatrix >= 0)
         {
             // A BeginVertices draw captures the constants when the buffer is requested, before the game fills the
             // vertices (and may change state); the debug dump wants the same host-order copy.
@@ -1547,6 +1746,33 @@ namespace
             draw.guestConstants = GpuFloatConstants(device, &draw.guestConstantsId,
                 &draw.guestConstantGroups); // valid until the next call: gpu::Draw copies it
         }
+        // Upscaling: the scene's draws with the depth test move by this frame's sub-pixel jitter (the shader adds the
+        // half-pixel offset times w to the position), sample their textures one mip level finer per doubling, and give
+        // the camera vote their position matrix.
+        if (upscale::Active() && draw.depthTarget != nullptr && draw.depthStencil.depthEnabled &&
+            IsSceneTexture(gpu::Desc(draw.depthTarget)) && draw.viewport.width > 0 && draw.viewport.height > 0)
+        {
+            const std::array<float, 2> jitter = upscale::Jitter();
+            draw.halfPixelOffset[0] += 2.0f * jitter[0] / draw.viewport.width;
+            draw.halfPixelOffset[1] -= 2.0f * jitter[1] / draw.viewport.height;
+            // Textures as sharp as the upscaled picture needs: the mip level of the frame's scale. The translated pixel
+            // shaders apply it to every implicit-LOD fetch, on every backend (Metal ignores a sampler's bias:
+            // MTLSamplerDescriptor.lodBias, macOS 26, changed nothing on an M1 Pro; docs/runtime/gpu/upscaling.md).
+            draw.mipBias = upscale::MipBias();
+            float rows[16];
+            const int32_t matrix = game::UpscalePositionMatrix;
+            if (matrix >= 0 && draw.vertexConstants != nullptr)
+                std::copy_n(draw.vertexConstants + matrix * 4, 16, rows);
+            else if (matrix >= 0 && draw.guestConstants != nullptr)
+                for (uint32_t i = 0; i < 16; i++)
+                    rows[i] = std::bit_cast<float>(
+                        ByteSwap(static_cast<const uint32_t*>(draw.guestConstants)[matrix * 4 + i]));
+            const plume::RenderComparisonFunction test = draw.depthStencil.depthFunction;
+            upscale::SceneDraw(identity, matrix >= 0 ? rows : nullptr, draw.count, draw.depthTarget,
+                draw.viewport.minDepth, draw.viewport.maxDepth,
+                test == plume::RenderComparisonFunction::GREATER ||
+                    test == plume::RenderComparisonFunction::GREATER_EQUAL);
+        }
         if (g_dump.active)
         {
             fprintf(stderr,
@@ -1565,6 +1791,20 @@ namespace
                 static_cast<unsigned long long>(g_drawPixelShader), GpuRegister(device, Reg::PA_SU_SC_MODE_CNTL),
                 std::bit_cast<float>(GpuRegister(device, 0x2380)), std::bit_cast<float>(GpuRegister(device, 0x2381)),
                 std::bit_cast<float>(GpuRegister(device, 0x2382)), std::bit_cast<float>(GpuRegister(device, 0x2383)));
+            // A target the pixel shader does not write (its mask is then 0), or whose blend or write mask is not
+            // target 0's (D3D12 needs IndependentBlendEnable for it).
+            for (uint32_t i = 0; i < draw.colorTargetCount; i++)
+            {
+                const gpu::BlendState &a = draw.blend[0], &b = draw.blend[i];
+                const bool sameBlend =
+                    a.enabled == b.enabled &&
+                    (!a.enabled || (a.srcColor == b.srcColor && a.dstColor == b.dstColor && a.colorOp == b.colorOp &&
+                                       a.srcAlpha == b.srcAlpha && a.dstAlpha == b.dstAlpha && a.alphaOp == b.alphaOp));
+                const bool unwritten = ((g_drawColorOutputs >> i) & 1) == 0;
+                if (unwritten || !sameBlend || a.writeMask != b.writeMask)
+                    fprintf(stderr, "[dump]   target %u blend %d %d/%d mask %x%s\n", i, b.enabled, int(b.srcColor),
+                        int(b.dstColor), b.writeMask, unwritten ? " (the pixel shader does not write it)" : "");
+            }
             for (uint32_t i = 0; i < draw.inputCount; i++)
                 fprintf(stderr, "[dump]   input loc %u stream %u off %u fmt %d\n", draw.inputs[i].location,
                     draw.inputs[i].stream, draw.inputs[i].offset, int(draw.inputs[i].format));
@@ -1621,27 +1861,208 @@ namespace
         return true;
     }
 
-    // A glyph model's letters of geometry (host/glyphs.h, Model): not drawn while its card shows the style's glyph.
-    bool GlyphLetters(uint32_t device, uint32_t first, uint32_t count)
+    // The guest's 16-bit indices of an indexed draw (as stored), or nullptr.
+    const void* DrawIndices(uint32_t device, uint32_t first)
     {
         uint32_t indices = Read32(device + Device::Indices);
         uint32_t guest = indices != 0 ? PhysicalToGuest(Read32(indices + Resource::IndexBufferAddress)) : 0;
-        return guest != 0 && glyphs::HidesDraw(count, g_memory.Translate(guest + first * 2));
+        return guest != 0 ? g_memory.Translate(guest + first * 2) : nullptr;
+    }
+
+    // The picture of a glyph prompt (host/glyphs.h, Prompt) for the style in use, kept per prompt.
+    gpu::Texture* PromptPicture(const glyphs::Prompt& prompt)
+    {
+        struct Picture
+        {
+            gpu::Texture* texture = nullptr;
+            uint64_t hostHash = 0;
+        };
+        static std::unordered_map<uint64_t, Picture> pictures;
+        Picture& picture = pictures[prompt.picture];
+        glyphs::Replace(prompt.picture, prompt.width, prompt.height, 5, {}, picture.texture, picture.hostHash);
+        return picture.texture;
+    }
+
+    // A draw of a glyph prompt (its face or its letters, host/glyphs.h PromptPartOf), built as the game drew it and held for one
+    // draw: the other part of the prompt comes next, before or after it. It owns copies of its data (the next BuildDraw reuses
+    // the renderer's buffers); every vector is reused.
+    struct HeldDraw
+    {
+        bool valid = false;
+        gpu::DrawDesc draw;
+        std::vector<uint8_t> streams[gpu::MaxVertexStreams];
+        std::vector<uint8_t> indices;
+        std::vector<float> constants;
+        std::vector<uint16_t> hostIndices; // the draw's indices in host order, for PlanarUv
+        glyphs::PromptPart part = glyphs::PromptPart::None;
+        uint32_t count = 0;
+        int32_t baseVertex = 0;
+        uint64_t hash = 0;
+    };
+    HeldDraw g_held, g_current; // the draw held, and a face that arrived after its letters
+
+    void CopyDraw(HeldDraw& held, const gpu::DrawDesc& draw, const void* guestIndices, uint32_t count,
+        int32_t baseVertex, glyphs::PromptPart part, uint64_t hash)
+    {
+        held.draw = draw;
+        for (uint32_t i = 0; i < draw.streamCount; i++)
+            if (draw.streams[i].data != nullptr)
+            {
+                auto data = static_cast<const uint8_t*>(draw.streams[i].data);
+                held.streams[i].assign(data, data + draw.streams[i].size);
+                held.draw.streams[i].data = held.streams[i].data();
+            }
+        auto indices = static_cast<const uint8_t*>(draw.indices);
+        held.indices.assign(indices, indices + draw.indexBytes);
+        held.draw.indices = held.indices.data();
+        held.constants.assign(g_constants.begin(), g_constants.end());
+        held.draw.vertexConstants = held.constants.data();
+        held.draw.pixelConstants = held.constants.data() + 256 * 4;
+        held.hostIndices.resize(count);
+        memcpy(held.hostIndices.data(), guestIndices, size_t(count) * 2);
+        for (uint16_t& index : held.hostIndices)
+            index = ByteSwap(index);
+        held.count = count;
+        held.baseVertex = baseVertex;
+        held.part = part;
+        held.hash = hash;
+        held.valid = true;
+    }
+
+    // Frame generation keeps the frame as the composite left it: the picture without the HUD (gpu/fsr/framegen.h). In
+    // the game's own menus (its front end) it makes no frames.
+    void CaptureHudless(const gpu::DrawDesc& draw)
+    {
+        if (g_frameComposite && upscale::Active() && draw.colorTargetCount != 0)
+            gpu::framegen::CaptureHudless(::game::InMenuLevel() ? nullptr : draw.colorTargets[0]);
+    }
+
+    void SubmitDraw(const gpu::DrawDesc& draw)
+    {
+        gpu::Draw(draw);
+        CaptureHudless(draw);
+        g_stats.draws++;
+        DumpDraw(draw);
+    }
+
+    // Issues the held draw as the game drew it: whatever else the renderer is about to do (a draw that is not the other part,
+    // a clear, a resolve, the present) comes after it.
+    void FlushHeldDraw()
+    {
+        if (!g_held.valid)
+            return;
+        g_held.valid = false;
+        SubmitDraw(g_held.draw);
+    }
+
+    // The face `held` with the glyph of `prompt`: the prompt's picture instead of its colour map, and the face's texture
+    // coordinates spread over its whole area. False (nothing changed) when its layout is not handled.
+    bool GlyphFace(HeldDraw& held, const glyphs::Prompt& prompt)
+    {
+        gpu::DrawDesc& draw = held.draw;
+        const gpu::VertexInput *position = nullptr, *texcoord = nullptr;
+        for (uint32_t i = 0; i < draw.inputCount; i++)
+        {
+            if (draw.inputs[i].location == 0)
+                position = &draw.inputs[i];
+            else if (draw.inputs[i].location == 4)
+                texcoord = &draw.inputs[i];
+        }
+        static bool logged = false;
+        if (position == nullptr || texcoord == nullptr || position->stream != texcoord->stream ||
+            position->format != gpu::Format::R16G16B16A16_SNORM || texcoord->format != gpu::Format::R16G16_FLOAT ||
+            draw.streams[position->stream].data == nullptr)
+        {
+            if (!std::exchange(logged, true))
+                fprintf(
+                    stderr, "[glyphs] a world prompt's face has a vertex layout not handled: it stays the game's\n");
+            return false;
+        }
+        gpu::Texture* picture = PromptPicture(prompt);
+        if (picture == nullptr)
+            return false;
+        std::vector<uint8_t>& vertices = held.streams[position->stream];
+        if (!glyphs::PlanarUv(prompt, vertices, draw.streams[position->stream].stride, position->offset,
+                texcoord->offset, held.hostIndices, held.baseVertex))
+            return false;
+        draw.textures[0] = picture;
+        draw.samplers[0].addressU = draw.samplers[0].addressV = plume::RenderTextureAddressMode::CLAMP;
+        draw.samplers[0].minLod = 0.0f;
+        draw.samplers[0].maxLod = 1000.0f;
+        draw.samplers[0].minFilter = draw.samplers[0].magFilter = plume::RenderFilter::LINEAR;
+        draw.samplers[0].mipFilter = plume::RenderMipmapMode::LINEAR;
+        static uint64_t seen[16];
+        static uint32_t seenCount = 0;
+        bool known = false;
+        for (uint32_t i = 0; i < seenCount; i++)
+            known = known || seen[i] == prompt.picture;
+        if (!known && seenCount < 16)
+        {
+            seen[seenCount++] = prompt.picture;
+            fprintf(stderr, "[glyphs] world prompt %016llX (face of %u, letters of %u indices) drawn as its glyph\n",
+                static_cast<unsigned long long>(prompt.picture), prompt.faceCount, prompt.lettersCount);
+        }
+        return true;
     }
 
     void IssueDraw(
         uint32_t device, uint32_t primitive, uint32_t first, uint32_t count, bool indexed, int32_t baseVertex)
     {
-        if (indexed && GlyphLetters(device, first, count))
+        const void* indices = indexed ? DrawIndices(device, first) : nullptr;
+        // A glyph model's letters of geometry (host/glyphs.h, Model): not drawn while the style's glyph replaces them.
+        if (indices != nullptr && glyphs::HidesDraw(count, indices))
             return;
-        gpu::DrawDesc draw;
-        if (BuildDraw(device, primitive, first, count, 0, 0, indexed, baseVertex, draw))
+        uint64_t hash = 0;
+        glyphs::PromptPart part =
+            indices != nullptr ? glyphs::PromptPartOf(count, indices, hash) : glyphs::PromptPart::None;
+        if (g_held.valid)
         {
-            gpu::Draw(draw);
-            g_stats.draws++;
-            if (draw.colorTargetCount != 0)
-                DumpResolve(draw.colorTargets[0], 'd');
+            const glyphs::Prompt* pair = nullptr;
+            if (part != glyphs::PromptPart::None && part != g_held.part)
+                pair = part == glyphs::PromptPart::Letters ? glyphs::PromptOf(g_held.count, g_held.hash, count, hash)
+                                                           : glyphs::PromptOf(count, hash, g_held.count, g_held.hash);
+            if (pair != nullptr && part == glyphs::PromptPart::Letters && GlyphFace(g_held, *pair))
+            {
+                // The face came first: with the button's glyph, and these letters are not drawn.
+                g_held.valid = false;
+                SubmitDraw(g_held.draw);
+                return;
+            }
+            if (pair != nullptr && part == glyphs::PromptPart::Face)
+            {
+                // The letters came first, held: build this face, give it the glyph, and drop the letters.
+                g_promptFaceHash = hash;
+                gpu::DrawDesc draw;
+                const bool built = BuildDraw(device, primitive, first, count, 0, 0, indexed, baseVertex, draw);
+                g_promptFaceHash = 0;
+                if (!built)
+                {
+                    FlushHeldDraw();
+                    return;
+                }
+                CopyDraw(g_current, draw, indices, count, baseVertex, part, hash);
+                g_current.valid = false;
+                if (GlyphFace(g_current, *pair))
+                    g_held.valid = false;
+                else
+                    FlushHeldDraw();
+                SubmitDraw(g_current.draw);
+                return;
+            }
+            FlushHeldDraw();
+            if (pair != nullptr)
+                part = glyphs::PromptPart::None; // the face's glyph was not possible: these letters are the game's
         }
+        g_promptFaceHash = part != glyphs::PromptPart::None ? hash : 0;
+        gpu::DrawDesc draw;
+        const bool built = BuildDraw(device, primitive, first, count, 0, 0, indexed, baseVertex, draw);
+        g_promptFaceHash = 0;
+        if (!built)
+            return;
+        if (part != glyphs::PromptPart::None && draw.pulledCount == 0 && draw.indices != nullptr)
+            CopyDraw(g_held, draw, indices, count, baseVertex, part, hash);
+        else
+            SubmitDraw(draw);
     }
 
     // BeginVertices hands the game a buffer it fills after the call: the draw is issued at the next D3D call.
@@ -1651,6 +2072,7 @@ namespace
         if (!p.pending)
             return;
         p.pending = false;
+        FlushHeldDraw();
 
         // The vertex stream of a BeginVertices draw is always the first one (PrepareVertices creates it first).
         std::vector<uint8_t>& data = g_streamData[0];
@@ -1661,9 +2083,9 @@ namespace
         if (p.primitive == 8)
             ExpandRectangles(p.draw, p.count);
         gpu::Draw(p.draw);
+        CaptureHudless(p.draw);
         g_stats.draws++;
-        if (p.draw.colorTargetCount != 0)
-            DumpResolve(p.draw.colorTargets[0], 'd');
+        DumpDraw(p.draw);
     }
 
     // --- Resolves and the frame ---------------------------------------------------------------------------------------
@@ -1793,6 +2215,7 @@ namespace
 
     void Resolve(uint32_t device, const ResolveArgs& args)
     {
+        FlushHeldDraw();
         if (std::exchange(g_skipStepResolve, false))
             return;
         g_stats.resolves++;
@@ -1924,6 +2347,7 @@ namespace
     // guest, the rectangle is clipped to the viewport and, with the scissor test on, to the scissor rectangle.
     void Clear(uint32_t device, uint32_t flags, uint32_t rect, uint32_t color, uint32_t stencil, float z)
     {
+        FlushHeldDraw();
         uint32_t depthSurface = Read32(device + Device::DepthStencil);
         if (depthSurface == 0)
             flags &= ~0xF0u;
@@ -1955,7 +2379,7 @@ namespace
             if (IsFrameTexture(desc))
             {
                 // The wide frame: a clear of the guest's whole frame clears all of it, a smaller one is centred.
-                if (l <= 0 && r >= int32_t(ultrawide::FrameWidth16x9) * Scale())
+                if (l <= 0 && r >= int32_t(ultrawide::FrameWidth16x9) * scale)
                     r = int32_t(desc.width);
                 else
                     l += FrameShift(), r += FrameShift();
@@ -1976,6 +2400,10 @@ namespace
                 const plume::RenderRect* r = clearRect(target, region);
                 if (r == nullptr || (r->right > r->left && r->bottom > r->top))
                     gpu::ClearColor(target, rgba, r);
+                if (g_dump.active)
+                    fprintf(stderr, "[dump] clear target %u fmt %d %ux%u to %g %g %g %g%s\n", i,
+                        int(gpu::Desc(target).format), gpu::Desc(target).width, gpu::Desc(target).height, rgba[0],
+                        rgba[1], rgba[2], rgba[3], r == nullptr ? "" : " (part)");
             }
         }
         gpu::Texture* depthTarget = flags & 0x30 ? TargetFor(device, depthSurface, true) : nullptr;
@@ -1997,24 +2425,6 @@ void d3d::Draw(uint32_t device, uint32_t primitive, uint32_t first, uint32_t cou
 
 namespace
 {
-    // For durations only (the perf log's renderer time, two calls a draw): mach_absolute_time costs a third of
-    // steady_clock::now on macOS (6 against 19 ns).
-    uint64_t NowNs()
-    {
-#if defined(__APPLE__)
-        static const mach_timebase_info_data_t timebase = [] {
-            mach_timebase_info_data_t info;
-            mach_timebase_info(&info);
-            return info;
-        }();
-        return mach_absolute_time() * timebase.numer / timebase.denom;
-#else
-        return uint64_t(
-            std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
-                .count());
-#endif
-    }
-
     // The perf log's renderer time (gpu::AddFrameTime) for one hooked D3D call: all of it but what Exclude runs (the
     // guest's own function, the vblank wait, the present), which nested hooks count themselves.
     class RendererTimer
@@ -2023,14 +2433,14 @@ namespace
         template <typename F>
         void Exclude(F&& function)
         {
-            uint64_t start = NowNs();
+            uint64_t start = PlatformNowNs();
             function();
-            m_excluded += NowNs() - start;
+            m_excluded += PlatformNowNs() - start;
         }
-        ~RendererTimer() { gpu::AddFrameTime(gpu::FrameTime::Renderer, NowNs() - m_start - m_excluded); }
+        ~RendererTimer() { gpu::AddFrameTime(gpu::FrameTime::Renderer, PlatformNowNs() - m_start - m_excluded); }
 
     private:
-        uint64_t m_start = NowNs();
+        uint64_t m_start = PlatformNowNs();
         uint64_t m_excluded = 0;
     };
 }
@@ -2158,12 +2568,50 @@ PPC_FUNC(GAME_HOOK(D3DDevice_ClearF_Worker))
 }
 #endif
 
+namespace
+{
+    // Once per movie, 3 s after it opened: how lit the frame the game presents is. A player's black movie (Giants on
+    // a Linux NVIDIA GPU, issue #20) then shows in the log whether the game's drawing was dark (the GPU's draw) or lit
+    // (the window's present). One readback per movie, never per frame.
+    void CheckMovieFrame(gpu::Texture* presented)
+    {
+        static bool playing = false, checked = false;
+        static std::chrono::steady_clock::time_point opened;
+        const bool now = ultrawide::MoviePlaying();
+        if (now && !playing)
+        {
+            opened = std::chrono::steady_clock::now();
+            checked = false;
+        }
+        playing = now;
+        if (!playing || checked || std::chrono::steady_clock::now() - opened < std::chrono::seconds(3))
+            return;
+        checked = true;
+        std::vector<uint32_t> pixels;
+        uint32_t width = 0, height = 0;
+        if (!gpu::ReadbackTexture(presented, pixels, width, height) || pixels.empty())
+            return;
+        size_t lit = 0;
+        for (uint32_t p : pixels)
+            lit += ((p & 0xFF) | (p >> 8 & 0xFF) | (p >> 16 & 0xFF)) > 8;
+        fprintf(stderr, "[movie] 3 s in: the presented frame (%ux%u) has %.1f %% of its pixels lit%s\n", width, height,
+            100.0 * double(lit) / double(pixels.size()), lit == 0 ? " (black: the game's drawing of it)" : "");
+    }
+}
+
 #ifdef GAME_HOOK_D3DDevice_Swap
 PPC_FUNC_IMPL(GAME_IMP(D3DDevice_Swap));
 // D3DDevice_Swap(device, frontBufferTexture, ...): presents the texture the frame was resolved into.
 PPC_FUNC(GAME_HOOK(D3DDevice_Swap))
 {
     RendererTimer timer;
+    // The debug screen's "game thread" CPU use (frame_stats.h): the thread that swaps.
+    static thread_local bool registered = false;
+    if (!registered)
+    {
+        registered = true;
+        gpu::framestats::RegisterThread(gpu::framestats::Thread::Game, PlatformThreadCpuClock());
+    }
     // A game that paces itself by the interval it finds in its device (game::Adapter::presentIntervalPacesGame) is shown
     // interval 1 at 60 FPS: the guest D3D then does not hold the frame to two blanks, and the engine times its frames.
     if (game::Current().presentIntervalPacesGame && (FrameRateLimit() >= 60 || FrameRateLimit() == 0) &&
@@ -2173,15 +2621,16 @@ PPC_FUNC(GAME_HOOK(D3DDevice_Swap))
     CaptureSwap(ctx);
     auto ready = std::chrono::steady_clock::now();
     timer.Exclude([&] {
-        uint64_t waitStart = NowNs();
+        uint64_t waitStart = PlatformNowNs();
         WaitForFlip(
             Read32(ctx.r3.u32 +
                    Device::PresentInterval)); // D3DRS_PRESENTINTERVAL: the console shows frames at vertical blanks
-        gpu::AddFrameTime(gpu::FrameTime::VblankWait, NowNs() - waitStart);
+        gpu::AddFrameTime(gpu::FrameTime::VblankWait, PlatformNowNs() - waitStart);
     });
     {
         std::lock_guard lock(g_mutex);
         FlushPendingVertices();
+        FlushHeldDraw();
         xenos::TextureFetch fetch;
         uint32_t texture = ctx.r4.u32;
         for (uint32_t i = 0; i < 6; i++)
@@ -2214,12 +2663,15 @@ PPC_FUNC(GAME_HOOK(D3DDevice_Swap))
             }
             fprintf(stderr, "\n");
         }
+        if (gpu::framestats::Enabled())
+            gpu::framestats::GuestFrame(g_stats.draws, g_stats.resolves);
         if (it != g_textures.end() && it->second.texture != nullptr)
         {
             SetGameRendering(true);
             DumpResolve(it->second.texture);
             timer.Exclude([&] { gpu::Present(it->second.texture); });
             SnapshotPresentedFrame();
+            CheckMovieFrame(it->second.texture);
         }
         if (skyenv::Get("SKY_RENDER_STATS") != nullptr && g_frame % 60 == 0)
         {
@@ -2252,14 +2704,18 @@ PPC_FUNC(GAME_HOOK(D3DDevice_Swap))
         {
             fprintf(stderr,
                 "[textures] last 60 frames, per frame: %.1f checked, %.1f hashed whole (%.2f MB), %.1f by sample; "
-                "%llu changes of sampled textures found, %llu missed by the sample\n",
+                "%llu changes of sampled textures found, %llu missed by the sample; %.1f unwritten (write watch), "
+                "%llu missed by it\n",
                 g_textureStats.checks / 60.0, g_textureStats.full / 60.0, g_textureStats.bytes / 60.0 / 1048576,
                 g_textureStats.sampled / 60.0, (unsigned long long)g_textureStats.changed,
-                (unsigned long long)g_textureStats.missed);
+                (unsigned long long)g_textureStats.missed, g_textureStats.unwritten / 60.0,
+                (unsigned long long)g_textureStats.watchMissed);
             g_textureStats = {};
         }
         g_stats = {};
         g_frame++;
+        if (upscale::FrameEnd())
+            DropTargets();
         AdvanceFrameDump();
     }
     uint32_t device = ctx.r3.u32;
@@ -2269,14 +2725,17 @@ PPC_FUNC(GAME_HOOK(D3DDevice_Swap))
 }
 #endif
 
+bool d3d::TryCountTextures(size_t& count)
+{
+    std::unique_lock lock(g_mutex, std::try_to_lock);
+    if (!lock.owns_lock())
+        return false;
+    count = g_textures.size();
+    return true;
+}
+
 // The light tile job's scene depth (d3d/depth_readback.h).
 void d3d::SetCpuReadDepth(uint32_t physicalAddress)
 {
     g_cpuReadDepth.store(physicalAddress & 0x1FFFFFFF, std::memory_order_relaxed);
-}
-
-d3d::RenderStats d3d::ReadRenderStats()
-{
-    std::lock_guard lock(g_mutex);
-    return { g_stats.draws, g_stats.resolves };
 }

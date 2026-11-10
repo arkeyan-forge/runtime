@@ -182,7 +182,7 @@ namespace art
                         voice.insert(folder.code);
                 }
             }
-            else if (game == "swapforce")
+            else if (game == "swapforce" || game == "superchargers" || game == "imaginators")
             {
                 // archives/<name>_<code>.pak
                 if (!StartsWith(path, "archives/") || !EndsWith(path, ".pak"))

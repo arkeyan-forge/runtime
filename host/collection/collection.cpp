@@ -412,8 +412,53 @@ namespace collection
 
     bool HasProgress(const Figure& figure) { return figure.toy != nullptr && figure.toy->category <= Category::Mini; }
 
+    const char* VirtualToyText(const std::string& language)
+    {
+        if (language == "fr")
+            return "Virtuel : un vrai jeu refuserait ce cristal";
+        if (language == "de")
+            return "Virtuell: Ein echtes Spiel würde diesen Kristall ablehnen";
+        if (language == "it")
+            return "Virtuale: un gioco vero rifiuterebbe questo cristallo";
+        if (language == "es")
+            return "Virtual: un juego real rechazaría este cristal";
+        if (language == "nl")
+            return "Virtueel: een echte game zou dit kristal weigeren";
+        return "Virtual: a real game would refuse this crystal";
+    }
+
+    std::string BattleClassText(int battleClass, bool french)
+    {
+        static const char* const France[] = { "Chevalier", "Archer", "Tireur", "Ninja", "Bagarreur", "Cogneur",
+            "Sorcier", "Bretteur", "Sentinelle", "Bazookeur" };
+        if (battleClass < 1 || battleClass > 10)
+            return {};
+        return french ? France[battleClass - 1] : figures::BattleClassName(battleClass);
+    }
+
     std::string LevelText(const Figure& figure, const std::string& game, bool french)
     {
+        if (figure.toy != nullptr && figure.toy->category == Category::CreationCrystal)
+        {
+            // Its battle class: the level table of a creation is not mapped [?].
+            if (figure.state == figures::AreaState::Blank)
+                return french ? "À créer" : "Ready to create";
+            if (figure.state != figures::AreaState::Valid)
+                return french ? "Illisible" : "Unreadable";
+            std::string text = BattleClassText(figure.battleClass, french);
+            char level[32];
+            snprintf(level, sizeof(level), french ? "Niveau %d" : "Level %d", figure.level);
+            std::string mark = figure.missingSignature ? (french ? "Virtuel · " : "Virtual · ") : "";
+            return mark + (text.empty() ? std::string("Imaginator") : text) + " · " + level;
+        }
+        if (figures::IsVehicleType(figure.type) && figure.state == figures::AreaState::Valid)
+        {
+            // The garage's upgrades (figure_tag.h): what the game's pause menu shows as the two gauges.
+            char text[48];
+            snprintf(text, sizeof(text), french ? "Bouclier %d · Arme %d" : "Shield %d · Weapon %d",
+                figures::VehicleShieldLevel(figure.stats), figures::VehicleWeaponLevel(figure.stats));
+            return text;
+        }
         if (!HasProgress(figure))
             return {};
         if (figure.state == figures::AreaState::Blank)
@@ -593,6 +638,14 @@ namespace collection
             figure.state = figures::ReadStats(tag, figure.stats);
             figure.level =
                 figures::LevelForExperience(figures::TotalExperience(figure.stats), figures::MaxLevelSwapForce);
+            figure.missingSignature = figures::NeedsFactorySignature(figure.type) && !figures::HasFactorySignature(tag);
+            if (figures::IsCrystalType(figure.type))
+            {
+                figures::CrystalStats crystal;
+                figures::ReadCrystalStats(tag, crystal);
+                figure.battleClass = crystal.battleClass;
+                figure.level = figures::CrystalLevel(crystal.experience);
+            }
             figure.lock = GetLock(path);
 
             const Json& entry = index["figures"][figure.file];
@@ -822,6 +875,72 @@ namespace collection
         if (!figures::WriteTrapStats(tag, stats))
             return Refuse(error, "cannot write the trap");
         return SaveDump(path, tag) || Refuse(error, "cannot write the file");
+    }
+
+    bool ReplaceDump(const std::string& path, const FigureData& tag, std::string* error)
+    {
+        if (GetLock(path).Busy())
+            return Refuse(error, "in use by " + GetLock(path).game);
+        if (Backup(path).empty())
+            return Refuse(error, "cannot back up the dump first");
+        PruneBackups(path);
+        return SaveDump(path, tag) || Refuse(error, "cannot write the file");
+    }
+
+    figures::AreaState ReadCrystal(const std::string& path, figures::CrystalStats& stats)
+    {
+        FigureData tag;
+        if (!LoadDump(path, tag))
+        {
+            stats = {};
+            return figures::AreaState::Damaged;
+        }
+        return figures::ReadCrystalStats(tag, stats);
+    }
+
+    bool WriteCrystal(const std::string& path, const figures::CrystalStats& stats, std::string* error)
+    {
+        if (GetLock(path).Busy())
+            return Refuse(error, "in use by " + GetLock(path).game);
+        FigureData tag;
+        if (!LoadDump(path, tag))
+            return Refuse(error, "not a figure dump");
+        if (!figures::IsCrystalType(figures::ToyType(tag)))
+            return Refuse(error, "not a creation crystal");
+        figures::CrystalStats read;
+        bool blank = figures::ReadCrystalStats(tag, read) == figures::AreaState::Blank;
+        if (Backup(path).empty())
+            return Refuse(error, "cannot back up the dump first");
+        PruneBackups(path);
+        // A blank crystal gets its first creation as the game's creator would make it; signature blocks stay.
+        if (blank)
+        {
+            FigureData made = figures::CreateCrystal(figures::ToyType(tag), figures::Variant(tag), stats);
+            FigureData plain = figures::Decrypt(tag), area = figures::Decrypt(made);
+            for (size_t block = 8; block < FigureBlockCount; block++)
+                if (block % 4 != 3 && block != 34 && block != 62)
+                    memcpy(&plain[block * FigureBlockSize], &area[block * FigureBlockSize], FigureBlockSize);
+            tag = figures::Encrypt(plain);
+        }
+        else if (!figures::WriteCrystalStats(tag, stats))
+            return Refuse(error, "not a readable crystal");
+        // A crystal made here before 2026-11-05 lacks the 2016 sector-0 trailer (the key the game checks with): set it.
+        if (!figures::HasFactorySignature(tag))
+            figures::WriteSectorKeys(tag);
+        return SaveDump(path, tag) || Refuse(error, "cannot write the file");
+    }
+
+    bool SetGearbits(const std::string& path, uint32_t gearbits, std::string* error)
+    {
+        Figure figure;
+        if (!Read(path, figure))
+            return Refuse(error, "not a figure dump");
+        if (!figures::IsVehicleType(figure.type))
+            return Refuse(error, "not a vehicle");
+        if (figure.state != figures::AreaState::Valid)
+            return Refuse(error, "never used by the game");
+        figures::SetGearbits(figure.stats, gearbits);
+        return WriteStats(path, figure.stats, error);
     }
 
     bool SetNickname(const std::string& path, const std::string& utf8, std::string* error)

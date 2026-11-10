@@ -1,6 +1,6 @@
 // Unit test of the data folder helper and its migration (datadir.h). Every path is in a scratch folder of its own;
 // the migration is only ever called with scratch roots, never with RealOldRoots().
-//   SSADatadirTest        Exit code 0 = pass.
+//   ArkeyanDatadirTest        Exit code 0 = pass.
 #include "host/collection/datadir.h"
 #include "host/runtime_names.h"
 #include <algorithm>
@@ -116,6 +116,11 @@ namespace
         CHECK(LauncherIni() == root / "launcher.ini" && Kits() == root / "kit" && Toolchains() == root / "toolchains" &&
               Logs() == root / "logs");
         CHECK(!Has(root)); // nothing is created
+        // A player profile's own folder for the games' player files (saves, achievements, portal seats).
+        CHECK(PlayerGame("ssa") == root / "SSA");
+        setenv("SKY_PROFILE_DIR", (root / "profiles" / "0A1B").string().c_str(), 1);
+        CHECK(PlayerGame("ssa") == root / "profiles" / "0A1B" / "SSA" && Game("ssa") == root / "SSA");
+        unsetenv("SKY_PROFILE_DIR");
         unsetenv("SKYLANDERS_DATA");
         CHECK(Root().filename() == "Skylanders");
         // Portable mode: portable.txt in the folder makes <folder>/data the root; the program's own folder is found.
@@ -361,7 +366,7 @@ int main(int argc, char** argv)
         printf(ApplyPortable() ? "portable %s\n" : "not portable %s\n", Root().string().c_str());
         return 0;
     }
-    g_scratch = fs::temp_directory_path() / ("SSADatadirTest-" + std::to_string(getpid()));
+    g_scratch = fs::temp_directory_path() / ("ArkeyanDatadirTest-" + std::to_string(getpid()));
     fs::remove_all(g_scratch);
     fs::create_directories(g_scratch);
     TestPaths();

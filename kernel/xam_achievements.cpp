@@ -53,7 +53,7 @@ namespace
         g_loaded = true;
         // With the pictures: an unlock's toast shows its own (a few kilobytes each, read once).
         g_list = achievements::Read(g_disc.ReadAll("default.xex"), achievements::XdbfLanguage(TextLanguage()), true);
-        g_folder = progress::Folder(SSA_GAME_ID);
+        g_folder = progress::Folder(ARKEYAN_GAME_ID);
         if (!g_folder.empty())
             g_unlocks = progress::ReadUnlocks(g_folder);
         uint32_t unlocked = 0, score = 0;
@@ -197,6 +197,31 @@ namespace
             Announce(g_list.items.front());
     }
     [[maybe_unused]] const bool g_previewSet = (ToyboxSetAchievementPreview(Preview), true);
+
+    // The overlay's Achievements page: the list in the title's order, with the player's unlocks.
+    std::vector<ToyboxAchievementRow> List()
+    {
+        std::lock_guard lock(g_lock);
+        LoadLocked();
+        std::vector<ToyboxAchievementRow> rows;
+        for (const achievements::Info& info : g_list.items)
+        {
+            const progress::Unlock* unlock = UnlockOf(info.id);
+            ToyboxAchievementRow row;
+            row.points = info.gamerscore;
+            row.unlocked = unlock != nullptr ? std::max<int64_t>(unlock->time, 1) : 0;
+            row.secret = unlock == nullptr && info.hidden;
+            if (!row.secret)
+            {
+                row.name = info.name;
+                row.description = unlock != nullptr || info.lockedDescription.empty() ? info.unlockedDescription
+                                                                                      : info.lockedDescription;
+            }
+            rows.push_back(std::move(row));
+        }
+        return rows;
+    }
+    [[maybe_unused]] const bool g_listSet = (ToyboxSetAchievementList(List), true);
 }
 
 // XMsgStartIORequest(app, message, XOVERLAPPED*, buffer, buffer size). Requests to the music player go through the

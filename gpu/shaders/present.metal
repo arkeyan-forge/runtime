@@ -56,15 +56,16 @@ kernel void ReadbackCS(uint2 id [[thread_position_in_grid]], constant ReadbackSe
     set.pixels[id.y * width + id.x] = pack_float_to_unorm4x8(set.image.read(id));
 }
 
-// The red channel's bits, unconverted, of one texel per `step` x `step` block (push constants, buffer 8), packed at
-// the reduced size: depth resolves written back to guest memory, at the guest's resolution.
+// One channel's bits (red unless asked), unconverted, of one texel per `step` x `step` block (push constants, buffer
+// 8: the step, the channel), packed at the reduced size: depth resolves written back to guest memory, at the guest's
+// resolution; the frame dump's float scan.
 kernel void ReadbackRawCS(uint2 id [[thread_position_in_grid]], constant ReadbackSet& set [[buffer(0)]],
-    constant uint& step [[buffer(8)]])
+    constant uint2& step [[buffer(8)]])
 {
-    uint width = set.image.get_width() / step;
-    if (id.x >= width || id.y >= set.image.get_height() / step)
+    uint width = set.image.get_width() / step.x;
+    if (id.x >= width || id.y >= set.image.get_height() / step.x)
         return;
-    set.pixels[id.y * width + id.x] = as_type<uint>(set.image.read(id * step).r);
+    set.pixels[id.y * width + id.x] = as_type<uint>(set.image.read(id * step.x)[step.y & 3]);
 }
 
 // EDRAM depth resolves: the depth under each pixel of the destination, read at the pixel plus `offset` (push constants,

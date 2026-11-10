@@ -4,6 +4,8 @@
 // memory of their own) and copy the rest of a draw into a per-frame arena. Present ends a producer frame; producers
 // run at most one frame ahead of the GPU thread. SKY_GPU_THREAD=0 runs everything on the caller, as before.
 #include "gpu/context.h"
+#include "gpu/frame_stats.h"
+#include "../platform/platform.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <condition_variable>
@@ -81,6 +83,7 @@ namespace
 
     void RunTextureWorker()
     {
+        gpu::framestats::RegisterThread(gpu::framestats::Thread::Textures, PlatformThreadCpuClock());
         while (true)
         {
             std::pair<std::function<void()>, std::shared_ptr<std::atomic<bool>>> job;
@@ -109,6 +112,7 @@ namespace
 
     void Run()
     {
+        gpu::framestats::RegisterThread(gpu::framestats::Thread::Renderer, PlatformThreadCpuClock());
         std::vector<std::function<void()>> batch;
         while (true)
         {
@@ -261,6 +265,7 @@ void gpu::detail::RunAndWait(const std::function<void()>& command)
         return;
     }
     bool done = false;
+    uint64_t start = gpu::framestats::Enabled() ? SDL_GetTicksNS() : 0;
     Push(
         [&] {
             command();
@@ -271,6 +276,8 @@ void gpu::detail::RunAndWait(const std::function<void()>& command)
         true);
     std::unique_lock lock(g_worker->mutex);
     WaitServicingPresents(lock, g_worker->progress, [&] { return done; });
+    if (start != 0)
+        gpu::framestats::NoteStall(SDL_GetTicksNS() - start);
 }
 
 void* gpu::detail::FrameAllocate(size_t bytes, size_t alignment)
@@ -307,6 +314,8 @@ const void* gpu::detail::FrameCopy(const void* data, size_t bytes)
 }
 
 uint64_t gpu::detail::ProducerFrame() { return g_producerFrame; }
+
+uint64_t gpu::detail::ConsumerFrame() { return g_consumerFrame; }
 
 uint64_t gpu::detail::CompletedFrame() { return g_completedFrame.load(); }
 

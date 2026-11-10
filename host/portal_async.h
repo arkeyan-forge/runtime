@@ -5,6 +5,10 @@
 // backend closed and reopened the portal, and the game froze for a second every 2 s. Here the game side only takes
 // queues and a flag under a short lock, never the device: writes go to a queue the thread sends, reports come back
 // through another, and the thread opens the device again after a failure, waiting 2 s, then 4, 8 and 10 s at most.
+// The title reads one report per poll (12 ms) and asks again when the answer is not the one it reads, while a real portal
+// streams status reports: queued in turn, every answer came a poll late, each command was sent two or three times, the
+// answers to the copies piled up and Giants reset the portal again and again (issue #20). So answers go first, and the
+// status reports waiting are one, the latest, carrying every change the others reported.
 #include "host/portal_backend.h"
 #include <atomic>
 #include <chrono>
@@ -47,6 +51,7 @@ public:
 
 private:
     void Run();
+    void Queue(const uint8_t* report, size_t size); // under m_mutex
 
     using Report = std::vector<uint8_t>;
     struct Command
@@ -63,7 +68,7 @@ private:
     std::mutex m_mutex;
     std::condition_variable m_wake;
     std::deque<Command> m_commands;           // under m_mutex
-    std::deque<Report> m_reports;             // under m_mutex
+    std::deque<Report> m_reports;             // under m_mutex: answers, in order, and one status report at most
     std::chrono::milliseconds m_delay{ 0 };    // under m_mutex
     std::thread m_thread;
 };

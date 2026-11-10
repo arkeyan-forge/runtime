@@ -15,7 +15,9 @@
 namespace
 {
     constexpr uint32_t Magic = 0x4C505353; // "SSPL"
-    constexpr uint32_t Version = 1;
+    // 2: IndependentBlendEnable (patches/plume_d3d12_blend.patch); a library of version 1 is dropped, not rebuilt pipeline
+    // by pipeline under names it already holds.
+    constexpr uint32_t Version = 2;
 
     struct Header
     {

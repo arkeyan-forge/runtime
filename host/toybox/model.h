@@ -8,6 +8,10 @@
 #include "host/collection/icons.h"
 #include "host/collection/search.h"
 #include "host/collection/upgrades.h"
+#include "host/toybox.h"
+#include "host/portal.h"
+#include "host/toybox_link.h"
+#include "host/toybox/look.h"
 #include "host/toybox/nav.h"
 #include <cstdint>
 #include <functional>
@@ -46,12 +50,17 @@ namespace toybox
         Half,      // Figure → Change the bottom / the top: the halves to choose from (docs/runtime/host/toybox_ux.md)
         Stats,     // Edit stats (the old sheet)
         Upgrades,  // Edit stats → Upgrades: the toy's upgrades by name
+        Creation,  // Imaginators: a creation crystal's editor (name, class, element, level, parts, colours)
         Add,       // screen 8
         Name,      // screen 9
         Manage,    // screen 10
         Wheel,     // screen 4, over the game
         WheelList, // screen 5, over the game
-        Menu, // the F3 menu: volume, FPS counter, settings, Report a problem (docs/runtime/host/gamemenu.md), over the game
+        Menu, // the F3 menu: a side panel over the game (docs/runtime/host/gamemenu.md)
+        // The full screens beside the rail (look::Page), opened from the F3 menu or the rail.
+        Settings,     // the settings a player changes in play, in groups
+        Achievements, // the title's achievements and the player's unlocks
+        Commands,     // Controls: the keyboard, pad and mouse bindings
     };
 
     // A place on the portal (catalogue seats) and what is on it.
@@ -190,6 +199,20 @@ namespace toybox
         int row = 0;
     };
 
+    // The creation editor: rows 0 name, 1 class, 2 element, 3 level, then the creation's parameters
+    // (figures::CrystalParams), then Cancel and Save.
+    struct CreationState
+    {
+        int figure = -1;
+        figures::CrystalStats crystal;
+        uint16_t type = 0; // the crystal's toy type (its element): changes only on a crystal made here
+        bool virtualCrystal = false; // no factory signature: made here
+        bool dirty = false;
+        int row = 0, top = 0; // the focused row, the first row shown
+        static constexpr int First = 4; // the first parameter's row
+        static int Rows() { return First + int(figures::CrystalParamCount) + 2; }
+    };
+
     // One place of the Upgrades screen's grid: an upgrade of the table, or All / None / Done.
     struct UpgradeItem
     {
@@ -211,7 +234,7 @@ namespace toybox
         int cursor = 0;
     };
 
-    // One line of the F3 menu.
+    // One line of the F3 menu's panel or of the Settings page.
     struct MenuRow
     {
         enum class Kind
@@ -224,6 +247,13 @@ namespace toybox
         std::string label, value; // value: "70 %", "On", "60", "Auto"; empty for an action
         int percent = 0; // Slider: 0-100
         bool nextStart = false; // applies at the next start (the row says so)
+        std::string section; // the header of its group (Game, Video, Audio, Debug, Help), drawn above its first row
+        // Settings: the group heading above the row when it is the first of its group, what it does (one line), its cost
+        // to the graphics card (0-5 steps; -1: none worth saying), and for a choice its place among its values.
+        std::string heading, help;
+        int cost = -1;
+        int option = 0, options = 0;
+        std::string unavailable; // why it cannot change now (the row greyed, this said under its help); empty: it can
     };
 
     // One line of the F3 menu's Commands page: an action with a cell per column (Model::CommandHeaders: the keyboard's
@@ -245,7 +275,7 @@ namespace toybox
     {
     public:
         // --- Data ------------------------------------------------------------------------------------------------------
-        std::string game = SSA_GAME_ID; // the game this runtime is built for ("ssa", "giants")
+        std::string game = ARKEYAN_GAME_ID; // the game this runtime is built for ("ssa", "giants")
         int LevelCap() const { return figures::LevelCap(game); } // the level cap of that game: 10 or 15
         // The hats of that game for the hat picker (0 first: none), empty when the catalogue lists none (Spyro's
         // Adventure: the number is edited); a hat's name ("Hat 7" when not listed).
@@ -253,6 +283,7 @@ namespace toybox
         std::string HatName(uint16_t hat) const;
         const collection::Game* gameInfo = nullptr;
         bool realPortal = false; // read-only seats from the traffic
+        bool mixed = false; // a real portal with virtual seats: its toys' seats read-only, the others as on the emulated one
         std::vector<collection::Figure> figures; // every dump but the untouched starters
         std::vector<SeatState> seats;
         std::string search;
@@ -296,6 +327,7 @@ namespace toybox
         int backup = 0;
         std::vector<std::string> backups;
         StatsState stats;
+        CreationState creation;
         UpgradesState upgrades;
         Grid add; // Add a figure: characters
         std::vector<const collection::Toy*> addToys; // per cell (Cell::figure indexes it)
@@ -309,14 +341,47 @@ namespace toybox
         uint64_t holdStart = 0; // A held on a hold button (dialog), since
         float holdProgress = 0;
 
-        // --- The F3 menu ---------------------------------------------------------------------------------------------------
-        static constexpr int MenuRowCount =
-            15; // the most rows; a game without a known FXAA pass has no edge smoothing row, one without a speaker no portal sound
-        int MenuRowTotal() const; // the rows shown
-        int menuRow = 0;
-        std::vector<MenuRow> MenuRows() const;
+        // --- The F3 menu: the side panel, then the full screens beside the rail -------------------------------------------
+        // The panel's rows (look::MainRows): Volume, Resume, Toy Box, Achievements, Settings, Performance, Report a problem,
+        // Quit to the launcher.
+        enum MainRow
+        {
+            MainVolume,
+            MainResume,
+            MainToyBox,
+            MainAchievements,
+            MainSettings,
+            MainPerformance,
+            MainReport,
+            MainQuit
+        };
+        int menuRow = MainResume;
+        std::vector<MenuRow> MainRows() const;
         void OpenMenu();
         void FocusMenuRow(int row, int step); // the mouse: focus the row, then step -1 / +1 (a value) or 0 (do it)
+        void SetVolumeAt(int percent); // the mouse on the volume's track
+        // The Settings page: the rows shown (a game without a known FXAA pass has no edge smoothing row, one without a
+        // speaker no portal sound), the focused one, the list's scroll (pixels, kept by the drawing).
+        std::vector<MenuRow> SettingsRows() const;
+        std::vector<MenuRow>
+        MenuRows() const; // every setting, by menu.cpp's own order (SettingsRows picks and groups them)
+        int SettingsRowTotal() const;
+        int settingsRow = 0;
+        float settingsScroll = 0;
+        void FocusSettingsRow(int row, int step); // the mouse: focus it, then step -1 / +1 or 0 (do it)
+        // A page beside the rail (from the F3 menu, the rail or LB / RB). `fromMenu`: B comes back to the panel.
+        void OpenPage(look::Page page);
+        look::Page CurrentPage() const; // the page shown (the Toy Box for its own screens)
+        bool fromMenu = false; // the full screen was opened from the F3 menu: B goes back to it
+        void Leave(); // B on a page beside the rail: back to the F3 menu when it opened it, else close
+        // The Achievements page: the title's list (ToyboxAchievements, read when the menu or the page opens), its tab
+        // (0 all, 1 unlocked, 2 locked), the focused card among the tab's and the first grid row shown.
+        std::vector<ToyboxAchievementRow> achievementRows;
+        int achievementTab = 0, achievementCursor = 0, achievementFirstRow = 0;
+        std::vector<int> AchievementsShown() const; // indexes of achievementRows in the tab
+        int AchievementsUnlocked() const;
+        void FocusAchievement(int index); // the mouse: an index of AchievementsShown
+        void SetAchievementTab(int tab);
         // The menu's Commands page (menu.cpp): a row per action of the game (game::Adapter::inputRows), a column per device.
         enum class Waiting
         {
@@ -325,7 +390,6 @@ namespace toybox
             PadButton,
             MouseButton
         };
-        bool commandsOpen = false;
         int commandRow = 0, commandColumn = 0;
         Waiting waiting = Waiting::None; // a key or pad cell waits for the next key or button
         bool settle =
@@ -340,11 +404,24 @@ namespace toybox
         // --- Messages --------------------------------------------------------------------------------------------------
         uint32_t lightRgb = 0; // the portal's light as the game last set it, in 4 steps per channel (0xRRGGBB); 0 = off
         std::string fps; // the FPS counter's text ("30 FPS"), empty: off; set by toybox.cpp, drawn in the corner
+        // The game asks for a figure ("Put a Skylander for Player 1", from the prompt), empty: it does not; set by
+        // toybox.cpp while the prompt lasts, shown at the top centre over the game.
+        std::string prompt;
         std::string
             toast; // shown 5 s (6 s for long ones), in the Toy Box and over the game; slides in, fades out (look.h)
         uint64_t toastSince = 0, toastUntil = 0; // shown from, until; then its fade out
-        std::string
-            toastCaption; // an achievement's line over the text ("ACHIEVEMENT UNLOCKED · 20 POINTS"); empty: a notice
+        // What the toast is: a notice (bottom right), an achievement (top right: its caption, picture and points) or a
+        // figure just put on a seat (bottom left: its picture, its seat and level).
+        enum class ToastKind
+        {
+            Notice,
+            Achievement,
+            Figure
+        } toastKind = ToastKind::Notice;
+        std::string toastCaption; // an achievement's line over its name ("ACHIEVEMENT"); empty: a notice
+        uint32_t toastPoints = 0; // an achievement's
+        std::string toastFigure; // a figure toast's dump
+        int toastSeat = -1; // ...and its seat
         collection::Image toastPicture; // an achievement's picture; empty: none
         uint32_t toastSerial = 0; // a new number with each picture (draw.cpp keeps the last one scaled)
         void Notice(const std::string& text, uint64_t seconds) { Toast(text, seconds); } // ToyboxNotice (host/toybox.h)
@@ -376,6 +453,14 @@ namespace toybox
         void WheelList(); // Y: the full list for that seat
         void PinFromWheel(uint64_t now, bool held); // X held on a place
 
+        // --- The launcher's Toy Box window (host/toybox_remote.h): the same actions as the seats here -----------------
+        // Each returns "" when done, else why not (toyboxlink::refusal). A card already on the other player's seat swaps
+        // the players, as the wheel does.
+        std::string RemotePut(int seatIndex, const std::string& path);
+        std::string RemoteOff(int seatIndex);
+        std::string RemoteSwap();
+        std::string RemoteClear();
+        std::vector<toyboxlink::Seat> RemoteSeats() const; // the seats as the window shows them
         // --- Actions the drawing's mouse areas call ----------------------------------------------------------------
         void FocusSeat(int index);
         void FocusColumnRow(int row);
@@ -392,6 +477,8 @@ namespace toybox
         void FocusSuggestion(int index);
         void FocusManage(int section, int item, bool panel);
         void FocusStatsRow(int row);
+        void OpenCreation(int index);
+        void FocusCreationRow(int row); // mouse: a click focuses a row, a second one acts on it
         void FocusUpgrade(int item); // a click: focus it and do it
         void FocusDialogButton(int index);
 
@@ -449,12 +536,13 @@ namespace toybox
         std::string GameName() const;
         // The level a card shows: "Level 6", "Level 10 (15)" (collection::LevelText), or who holds the figure.
         std::string LevelLine(const collection::Figure& f) const;
-        static constexpr int ListColumns = 7, AddColumns = 4, WheelPlaces = 8;
+        static constexpr int ListColumns = 6, AddColumns = 4, WheelPlaces = 8;
         static const std::vector<std::vector<std::string>>& Keys(bool french, bool symbols, bool shift);
 
     private:
         void Reload(); // figures from the collection
         void RefreshSeats(uint64_t now);
+        void SeatRealToys(); // the real portal's toys on the seats (a real portal, a mixed one)
         void BuildList();
         bool HalfMadeWithTop(const collection::Toy& toy) const;
         void BuildAdd(collection::Element element = collection::Element::Count);
@@ -478,6 +566,8 @@ namespace toybox
         void ChangeHalfTo(const std::string& keep, const std::string& replacement);
         void RunBackups(Command command);
         void RunStats(Command command);
+        void RunCreation(Command command);
+        void SaveCreation();
         void OpenUpgrades();
         void RunUpgrades(Command command);
         void RunAdd(Command command);
@@ -485,8 +575,12 @@ namespace toybox
         void RunManage(Command command);
         void RunDialog(Command command);
         void RunMenu(Command command);
+        void RunSettings(Command command);
+        void RunAchievements(Command command);
         void RunCommands(Command command);
+        void MainStep(int row, int step);
         void MenuStep(int row, int step);
+        void OpenCommands();
 
         // Portal.
         bool PutOn(int seatIndex, const std::string& path, bool fromWheel = false);
@@ -517,6 +611,18 @@ namespace toybox
         void Refocus(const std::string& path); // the list's cursor on that figure after a reload
 
         bool m_dirty = true;
+        std::string m_refusal; // why the last PutOn did not put the card on (toyboxlink::refusal)
+        // A command of the launcher's window is running: with the Toy Box closed, its list is not read again (Open reads
+        // it), so a change from the window costs the game no reading of the whole collection.
+        bool m_remote = false;
+        struct Remote
+        {
+            Model& model;
+            explicit Remote(Model& m) : model(m) { model.m_remote = true; }
+            ~Remote() { model.m_remote = false; }
+        };
+        bool ListShown() const { return open || !m_remote; }
+        uint32_t m_realLogged[PortalSlotCount] = {}; // per slot: the real toy's type + 1 once logged as read (0: none)
         bool m_holdArmed = false;
         uint64_t m_lastScan = 0;
     };

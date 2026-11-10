@@ -1,6 +1,6 @@
 #pragma once
 
-// The addresses of the game being built (games/<SSA_GAME>/addresses.h, on the include path). A hook is written
+// The addresses of the game being built (games/<ARKEYAN_GAME>/addresses.h, on the include path). A hook is written
 //
 //     #ifdef GAME_HOOK_Name
 //     PPC_FUNC_IMPL(GAME_IMP(Name));   // the recompiled original, only if the hook calls it

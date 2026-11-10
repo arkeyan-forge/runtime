@@ -1,5 +1,5 @@
 // Checks "Copy the game data" (game_data.h) and the game's reader of the copy (vfs.h, folder mode) on synthetic files, in a
-// scratch folder. No game data. usage: SSAGameDataTest <scratch dir>
+// scratch folder. No game data. usage: ArkeyanGameDataTest <scratch dir>
 #include "game_data.h"
 #include "vfs.h"
 #include <cstdio>
@@ -98,7 +98,7 @@ int main(int argc, char** argv)
 {
     if (argc < 2)
     {
-        fprintf(stderr, "usage: SSAGameDataTest <scratch dir>\n");
+        fprintf(stderr, "usage: ArkeyanGameDataTest <scratch dir>\n");
         return 2;
     }
     fs::path scratch = fs::path(argv[1]) / "game_data_test";

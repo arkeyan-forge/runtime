@@ -40,7 +40,7 @@ namespace progress
     {
         if (const char* saves = skyenv::Get("SKY_SAVE_DIR"); saves != nullptr && *saves != '\0')
             return datadir::FromText(saves);
-        return datadir::Game(game);
+        return datadir::PlayerGame(game);
     }
 
     std::vector<Unlock> ReadUnlocks(const fs::path& folder)

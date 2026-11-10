@@ -1,7 +1,7 @@
 // Unit test of the achievements and play time (collection/achievements.h, collection/progress.h): the XDBF reader on
 // synthetic data and on the discs given on the command line, the unlocks' round trip, the play time's accumulation. Every
 // path is in a scratch folder of its own; the player's folders are never touched.
-//   SSAProgressTest [<disc image .iso>...]       Exit code 0 = pass. A disc is only read; the counts are printed.
+//   ArkeyanProgressTest [<disc image .iso>...]       Exit code 0 = pass. A disc is only read; the counts are printed.
 #include "vfs.h"
 #include "host/collection/achievements.h"
 #include "host/collection/progress.h"
@@ -185,13 +185,19 @@ namespace
         achievements::List cached = achievements::ReadCache(folder, "fr");
         CHECK(cached.items.size() == direct.items.size());
         bool same = cached.items.size() == direct.items.size();
+        // The cache keeps each text on one line: a tab or a line break is a space there (SuperChargers' French
+        // descriptions end with line breaks).
+        auto oneLine = [](std::string text) {
+            std::replace_if(text.begin(), text.end(), [](char c) { return c == '\t' || c == '\n' || c == '\r'; }, ' ');
+            return text;
+        };
         for (size_t i = 0; same && i < cached.items.size(); i++)
         {
             const auto& a = cached.items[i];
             const auto& b = direct.items[i];
             same = a.id == b.id && a.gamerscore == b.gamerscore && a.imageId == b.imageId && a.hidden == b.hidden &&
-                   a.name == b.name && a.unlockedDescription == b.unlockedDescription &&
-                   a.lockedDescription == b.lockedDescription &&
+                   a.name == oneLine(b.name) && a.unlockedDescription == oneLine(b.unlockedDescription) &&
+                   a.lockedDescription == oneLine(b.lockedDescription) &&
                    fs::file_size(achievements::CachedImage(folder, a.imageId)) == b.imagePng.size();
         }
         CHECK(same);
@@ -272,8 +278,8 @@ namespace
             flags[item.flags]++;
         for (const auto& [value, count] : flags)
             printf("  flags 0x%08X: %d\n", value, count);
-        CacheChecks(fs::temp_directory_path() / ("SSAProgressTest-cache-" + std::to_string(getpid())), xex);
-        fs::remove_all(fs::temp_directory_path() / ("SSAProgressTest-cache-" + std::to_string(getpid())));
+        CacheChecks(fs::temp_directory_path() / ("ArkeyanProgressTest-cache-" + std::to_string(getpid())), xex);
+        fs::remove_all(fs::temp_directory_path() / ("ArkeyanProgressTest-cache-" + std::to_string(getpid())));
         CHECK(!english.items.empty());
         CHECK(english.TotalGamerscore() > 0);
         CHECK(pictures == english.items.size());
@@ -286,7 +292,7 @@ namespace
 
 int main(int argc, char** argv)
 {
-    fs::path scratch = fs::temp_directory_path() / ("SSAProgressTest-" + std::to_string(getpid()));
+    fs::path scratch = fs::temp_directory_path() / ("ArkeyanProgressTest-" + std::to_string(getpid()));
     fs::remove_all(scratch);
     fs::create_directories(scratch);
 

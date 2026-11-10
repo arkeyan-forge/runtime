@@ -12,7 +12,7 @@
 
 constexpr size_t PortalReportSize = 32;
 
-// Picks the portal (SKY_PORTAL=auto|real|hid|usb|emulated|none, default auto: a real portal plugged in at launch,
+// Picks the portal (SKY_PORTAL=auto|real|hid|usb|emulated|none|fake-real, default auto: a real portal plugged in at launch,
 // otherwise the emulated one; real waits for a real portal to be plugged in) and installs the figure hotkeys. The
 // emulated portal starts as the last session left it (portal.txt in the save folder; empty the first time), or with
 // the figures listed in SKY_PORTAL_PLACE instead. Call after SDL_Init.
@@ -50,12 +50,21 @@ void PortalSetHotkeys(int addScancode, int clearScancode);
 
 // Emulated portal only (false / empty otherwise).
 constexpr int PortalSlotCount = 16;
+// The Toy Box can put figures on the portal: the emulated portal, or the virtual seats of a mixed one.
 bool PortalIsEmulated();
+// A real portal is plugged in and the Toy Box's virtual seats share the game's portal with its toys (MixedPortal,
+// docs/runtime/host/portal.md "Mixed portal"); SKY_PORTAL_VIRTUAL=0 keeps the real portal alone.
+bool PortalIsMixed();
+// The game's slot holds a toy of the real portal (mixed portal): not the Toy Box's to change.
+bool PortalSlotIsReal(int slot);
 // Path of the dump in `slot`, empty if the slot is free.
 std::string PortalSlotFigure(int slot);
 // Where figure dumps live: the shared collection (collection::Folder(): SKY_COLLECTION, SKY_FIGURES, else
 // <user data>/Skylanders/Collection; docs/runtime/host/collection.md).
 std::string PortalFigureFolder();
+// The game's folder of portal.txt and toybox.link (SKY_SAVE_DIR, else the player profile's folder for the game; empty:
+// the current folder). The launcher computes the same (its SessionFile).
+std::string PortalSessionFolder();
 
 // What the title saw of each slot, from the traffic (any portal, real or emulated): the status reports' presence and
 // the blocks it read or wrote since the toy arrived. The Toy Box uses it to tell when the title took a figure, and to
@@ -80,6 +89,9 @@ struct PortalLightState
     uint64_t commands = 0;  // how many colour commands since the start
 };
 PortalLightState PortalLight();
+// How many times the title reset the portal (`R`, any portal): it does when it loads (Giants in bursts); the Toy Box's
+// figures start over then (host/toybox/in_play.h).
+uint64_t PortalResets();
 // True if the colour is not black.
 inline bool PortalLightOn(const PortalLightState& light) { return light.set && (light.r | light.g | light.b) != 0; }
 

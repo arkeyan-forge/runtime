@@ -6,11 +6,16 @@
 
 namespace
 {
-    // Ids from the community table of `R` replies (tsapZ/SwapForceRecomp, docs/portal-compatibility.md, MIT).
+    // Ids from the community table of `R` replies (tsapZ/SwapForceRecomp, docs/portal-compatibility.md, MIT). The id names
+    // the portal's electronics, not the box it was sold in, and the USB product string names neither: Wii portals of
+    // Spyro's Adventure and of Swap Force both say "Spyro Porta", and a Wii Swap Force portal answered 02 0A 05 08 like
+    // the Imaginators portals (issue #20), and a Wii Trap Team portal answered 02 1B, listed as the Xbox 360 one. So a name
+    // gives the console only where that console's portal is its own hardware: the wireless Xbox 360 portals of the first
+    // two games, the 3DS and mobile ones, the Xbox One's (GIP, not HID).
     const PortalModel Models[] = {
-        { { 0x01, 0x29 }, 2, "Spyro's Adventure portal (Wii, PS3)" },
+        { { 0x01, 0x29 }, 2, "Spyro's Adventure portal" },
         { { 0x01, 0x28 }, 2, "Spyro's Adventure portal (Xbox 360)" },
-        { { 0x01, 0x2C }, 2, "Spyro's Adventure portal (PC, Mac)" },
+        { { 0x01, 0x2C }, 2, "Spyro's Adventure portal" },
         { { 0x01, 0x34 }, 2, "Spyro's Adventure / Giants portal (3DS)" },
         { { 0x01, 0x3D }, 2, "Giants portal" },
         { { 0x01, 0x3C }, 2, "Giants portal" },
@@ -18,12 +23,12 @@ namespace
         { { 0x02, 0x03 }, 2, "Swap Force portal" },
         { { 0x02, 0x02 }, 2, "Swap Force portal (3DS)" },
         { { 0x02, 0x18 }, 2, "Traptanium portal", true },
-        { { 0x02, 0x1B }, 2, "Traptanium portal (Xbox 360)", true },
+        { { 0x02, 0x1B }, 2, "Traptanium portal", true },
         { { 0x02, 0x19 }, 2, "Trap Team portal (mobile)", true },
         { { 0x02, 0x27 }, 2, "Traptanium portal (Xbox One)", true },
         { { 0x02, 0x0A, 0x03, 0x02 }, 4, "SuperChargers portal" },
         { { 0x02, 0x14, 0x03, 0x02 }, 4, "SuperChargers portal (Xbox One)" },
-        { { 0x02, 0x0A, 0x05, 0x08 }, 4, "Imaginators portal" },
+        { { 0x02, 0x0A, 0x05, 0x08 }, 4, "Imaginators-era portal (Imaginators, some Swap Force)" },
     };
 
     constexpr uint16_t SsaMinimumVersion = 0x011F; // the title's own check (docs/runtime/host/portal.md)
@@ -94,9 +99,14 @@ PortalVerdict PortalVerdictFor(const char* game, const uint8_t* id, size_t lengt
     }
     if (strcmp(game, "giants") == 0)
     {
-        // Public reports: any portal of the console family works (not checked against the disc).
-        say("not checked against the game");
-        return PortalVerdict::Unknown;
+        // Runs: 01 48 (the emulated portal) and 02 0A 05 08 (a fake real portal, tools/regress/portal_renumber.sh) play;
+        // the title's own check is not read yet, so a portal under SSA's version floor stays unknown.
+        if (Version(id, length) < SsaMinimumVersion)
+        {
+            say("a version under 01 1F was never tried with this game");
+            return PortalVerdict::Unknown;
+        }
+        return PortalVerdict::Works;
     }
     if (strcmp(game, "swapforce") == 0)
     {

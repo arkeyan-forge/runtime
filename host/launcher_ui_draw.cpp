@@ -175,8 +175,8 @@ bool LauncherPainter::LoadFonts()
         directories.emplace_back(std::string(base) + "fonts");
         directories.emplace_back(std::string(base) + "../Resources/fonts");
     }
-#ifdef SSA_SOURCE_FONT_DIR
-    directories.emplace_back(SSA_SOURCE_FONT_DIR);
+#ifdef ARKEYAN_SOURCE_FONT_DIR
+    directories.emplace_back(ARKEYAN_SOURCE_FONT_DIR);
 #endif
 
     for (const std::string& directory : directories)

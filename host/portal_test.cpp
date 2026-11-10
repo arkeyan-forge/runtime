@@ -5,6 +5,7 @@
 #include "host/portal_prompt.h"
 #include "giants_portal_prompt.h"
 #include "ssa_portal_prompt.h"
+#include "superchargers_portal_prompt.h"
 #include "swapforce_portal_prompt.h"
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_iostream.h>
@@ -54,6 +55,217 @@ namespace
     }
 }
 
+namespace
+{
+    // The hardware of the mixed portal's checks: an emulated portal the test places toys on, reached as a backend.
+    class Hardware final : public PortalBackend
+    {
+    public:
+        explicit Hardware(EmulatedPortal& portal) : m_portal(portal) {}
+        const char* Name() const override { return "test"; }
+        bool IsConnected() override { return true; }
+        bool Write(const uint8_t* command, size_t size) override { return m_portal.Write(command, size); }
+        size_t Read(uint8_t* report, size_t capacity) override { return m_portal.Read(report, capacity); }
+
+    private:
+        EmulatedPortal& m_portal;
+    };
+
+    std::vector<uint8_t> Ask(PortalBackend& portal, std::initializer_list<uint8_t> command, char answer)
+    {
+        std::vector<uint8_t> bytes(command);
+        portal.Write(bytes.data(), bytes.size());
+        for (int i = 0; i < 20; i++)
+        {
+            uint8_t report[PortalReportSize];
+            size_t size = portal.Read(report, sizeof(report));
+            if (size > 0 && report[0] == answer)
+                return std::vector<uint8_t>(report, report + size);
+        }
+        return {};
+    }
+
+    // The next status report the game reads.
+    uint32_t NextStatus(PortalBackend& portal)
+    {
+        for (int i = 0; i < 20; i++)
+        {
+            uint8_t report[PortalReportSize];
+            size_t size = portal.Read(report, sizeof(report));
+            if (size >= 5 && report[0] == 'S')
+                return report[1] | report[2] << 8 | report[3] << 16 | uint32_t(report[4]) << 24;
+        }
+        return 0xFFFFFFFF;
+    }
+
+    uint16_t ToyOf(const std::vector<uint8_t>& answer)
+    {
+        return answer.size() >= 5 ? answer[3] | answer[4] << 8 : 0xFFFF;
+    }
+
+    // A real portal with Player 1 on a real figure and Player 2 on a virtual one, then the slots crossing (docs/runtime/host/
+    // portal.md "Mixed portal").
+    void MixedChecks()
+    {
+        EmulatedPortal real, seats;
+        MixedPortal mixed(std::make_unique<Hardware>(real), seats);
+        // Reset and activate are the real portal's.
+        std::vector<uint8_t> reset = Ask(mixed, { 'R' }, 'R');
+        CHECK(reset.size() >= 3 && reset[1] == real.Model().id[0]);
+        CHECK(!Ask(mixed, { 'A', 0x01 }, 'A').empty() && real.IsActive() && !seats.IsActive());
+
+        // Player 1: a real Spyro, in the real portal's slot 0, the game's slot 0.
+        CHECK(real.Place(CreateBlankFigure(16), {}) == 0);
+        uint32_t status = NextStatus(mixed);
+        CHECK((status & 3) == 3 && mixed.IsRealSlot(0) && mixed.RealSlotOf(0) == 0);
+        CHECK(ToyOf(Ask(mixed, { 'Q', 0x10, 1 }, 'Q')) == 16);
+        // Player 2: a virtual Whirlwind. Slot 0 is the real toy's: it takes slot 1.
+        CHECK(seats.Place(CreateBlankFigure(0), {}, 0) == 1);
+        status = NextStatus(mixed);
+        CHECK((status & 3) == 1 && (status >> 2 & 3) == 3);
+        std::vector<uint8_t> read = Ask(mixed, { 'Q', 0x11, 1 }, 'Q');
+        CHECK(read.size() >= 3 && read[1] == 0x11 && ToyOf(read) == 0);
+        CHECK(ToyOf(Ask(mixed, { 'Q', 0x10, 1 }, 'Q')) == 16); // and the real one still answers for slot 0
+        CHECK(!mixed.IsRealSlot(1));
+        // An empty slot fails as a portal's does.
+        read = Ask(mixed, { 'Q', 0x15, 1 }, 'Q');
+        CHECK(read.size() >= 2 && read[1] == 0x01);
+
+        // Spyro lifted: the game sees it go, and slot 0 is free for a virtual figure.
+        real.Remove(0);
+        status = NextStatus(mixed);
+        CHECK((status & 3) == 2 && !mixed.IsRealSlot(0));
+        CHECK(seats.Place(CreateBlankFigure(14), {}, 0) == 0);
+        NextStatus(mixed);
+        // A real toy arriving in the real slot 0 again: the game's 0 and 1 are virtual, so it gets slot 2.
+        CHECK(real.Place(CreateBlankFigure(1), {}) == 0);
+        status = NextStatus(mixed);
+        CHECK((status >> 4 & 3) == 3 && mixed.IsRealSlot(2) && mixed.RealSlotOf(2) == 0);
+        read = Ask(mixed, { 'Q', 0x12, 1 }, 'Q');
+        CHECK(read.size() >= 3 && read[1] == 0x12 && ToyOf(read) == 1); // the real toy's block, under the game's slot
+        CHECK(ToyOf(Ask(mixed, { 'Q', 0x10, 1 }, 'Q')) == 14); // slot 0 is the virtual Gill Grunt
+        // A virtual figure never takes a real toy's slot.
+        seats.Remove(1);
+        const int placed = seats.Place(CreateBlankFigure(2), {}, 2);
+        CHECK(placed >= 0 && placed != 2 && mixed.IsRealSlot(2));
+        // A block written to the real toy reaches the real portal.
+        std::vector<uint8_t> write = { 'W', 0x12, 8 };
+        write.resize(3 + FigureBlockSize, 0x5A);
+        mixed.Write(write.data(), write.size());
+        uint8_t answer[PortalReportSize];
+        CHECK(mixed.Read(answer, sizeof(answer)) > 0 && answer[0] == 'W' && answer[1] == 0x12);
+        read = Ask(real, { 'Q', 0x10, 8 }, 'Q');
+        CHECK(read.size() >= 4 && read[3] == 0x5A);
+        // A reset: the real toy the game never read by its block 0 is not held; it arrives again where it can.
+        Ask(mixed, { 'R' }, 'R');
+        CHECK(!mixed.IsRealSlot(2) && !mixed.IsHeld(2));
+        Ask(mixed, { 'A', 0x01 }, 'A');
+        status = NextStatus(mixed);
+        CHECK(mixed.RealSlotOf(2) == 0 && (status >> 4 & 1) == 1);
+    }
+
+    // A real portal that, like the hardware in issue #20, numbers its toys anew from slot 0 on each reset, each arriving again.
+    class RenumberingHardware final : public PortalBackend
+    {
+    public:
+        explicit RenumberingHardware(EmulatedPortal& portal) : m_portal(portal) {}
+        const char* Name() const override { return "test"; }
+        bool IsConnected() override { return true; }
+        bool Write(const uint8_t* command, size_t size) override
+        {
+            if (size > 0 && command[0] == 'R')
+                m_portal.Renumber();
+            return m_portal.Write(command, size);
+        }
+        size_t Read(uint8_t* report, size_t capacity) override { return m_portal.Read(report, capacity); }
+
+    private:
+        EmulatedPortal& m_portal;
+    };
+
+    // Reads until a status report, failing on any Q answer the game did not ask for (the identification is not shown).
+    uint32_t NextStatusNoStray(PortalBackend& portal, bool& stray)
+    {
+        for (int i = 0; i < 40; i++)
+        {
+            uint8_t report[PortalReportSize];
+            const size_t size = portal.Read(report, sizeof(report));
+            if (size >= 5 && report[0] == 'S')
+                return report[1] | report[2] << 8 | report[3] << 16 | uint32_t(report[4]) << 24;
+            stray = stray || (size > 0 && report[0] == 'Q');
+        }
+        return 0xFFFFFFFF;
+    }
+
+    // Giants' scan loop (issue #20): the game resets the portal while it loads; a renumbering portal must not make the toy
+    // it read arrive again.
+    void RenumberChecks()
+    {
+        EmulatedPortal real, seats;
+        MixedPortal mixed(std::make_unique<RenumberingHardware>(real), seats, std::chrono::milliseconds(200));
+        Ask(mixed, { 'R' }, 'R');
+        Ask(mixed, { 'A', 0x01 }, 'A');
+        // Camo on, then Tree Rex beside it, then Camo lifted: Tree Rex sits in the real portal's slot 1, the game's 1.
+        CHECK(real.Place(CreateBlankFigure(24), {}) == 0);
+        NextStatus(mixed);
+        const FigureData treeRex = CreateBlankFigure(112);
+        CHECK(real.Place(treeRex, {}) == 1);
+        uint32_t status = NextStatus(mixed);
+        CHECK((status >> 2 & 3) == 3 && mixed.RealSlotOf(1) == 1);
+        real.Remove(0);
+        status = NextStatus(mixed);
+        CHECK((status & 3) == 2 && !mixed.IsRealSlot(0));
+        // The game reads Tree Rex (block 0 first, as the titles do).
+        std::vector<uint8_t> block = Ask(mixed, { 'Q', 0x21, 0 }, 'Q');
+        CHECK(block.size() >= 7 && block[1] == 0x11 && memcmp(&block[3], treeRex.data(), 4) == 0);
+
+        // Resets in a burst: the real portal moves Tree Rex to its slot 0, arriving; the game's slot 1 holds it.
+        Ask(mixed, { 'R' }, 'R');
+        CHECK(mixed.IsHeld(1) && !mixed.IsRealSlot(1));
+        Ask(mixed, { 'R' }, 'R');
+        Ask(mixed, { 'A', 0x01 }, 'A');
+        // A block asked of the held slot gets no answer; a status says it is still there, unchanged.
+        uint8_t query[] = { 'Q', 0x11, 1 };
+        mixed.Write(query, sizeof(query));
+        bool stray = false;
+        for (int i = 0; i < 4; i++)
+        {
+            status = NextStatusNoStray(mixed, stray);
+            CHECK((status >> 2 & 3) == 1 && (status & 3) == 0);
+        }
+        CHECK(!stray);
+        // Identified by its serial: the game's slot 1 again, never seen to leave or arrive.
+        CHECK(!mixed.IsHeld(1) && mixed.RealSlotOf(1) == 0);
+        block = Ask(mixed, { 'Q', 0x11, 1 }, 'Q');
+        CHECK(block.size() >= 5 && block[1] == 0x11 && block[3] == 112);
+
+        // Another toy put on during a reset, the first one lifted: the new one arrives, the held one leaves.
+        Ask(mixed, { 'R' }, 'R');
+        CHECK(mixed.IsHeld(1));
+        real.Remove(0);
+        const FigureData spyro = CreateBlankFigure(16);
+        CHECK(real.Place(spyro, {}) >= 0);
+        Ask(mixed, { 'A', 0x01 }, 'A');
+        bool arrived = false;
+        for (int i = 0; i < 4 && !arrived; i++)
+        {
+            status = NextStatus(mixed);
+            for (int g = 0; g < EmulatedPortal::SlotCount; g++)
+                arrived = arrived || (g != 1 && (status >> (g * 2) & 3) == 3 && mixed.IsRealSlot(g));
+        }
+        CHECK(arrived);
+        std::this_thread::sleep_for(std::chrono::milliseconds(250));
+        bool left = false;
+        for (int i = 0; i < 3 && !left; i++)
+            left = (NextStatus(mixed) >> 2 & 3) == 2;
+        CHECK(left && !mixed.IsHeld(1) && !mixed.IsRealSlot(1));
+        // A toy the game never read by its block 0 is not held by a reset.
+        Ask(mixed, { 'R' }, 'R');
+        for (int g = 0; g < EmulatedPortal::SlotCount; g++)
+            CHECK(!mixed.IsHeld(g));
+    }
+}
+
 int main()
 {
     // CRC-16/CCITT-FALSE check value.
@@ -69,7 +281,7 @@ int main()
 
     // A dump on disk, so that writes can be checked for persistence.
     // In the system's temporary folder, never in the user's application data.
-    std::string path = (std::filesystem::temp_directory_path() / "SSAPortalTest_figure.sky").string();
+    std::string path = (std::filesystem::temp_directory_path() / "ArkeyanPortalTest_figure.sky").string();
     CHECK(SDL_SaveFile(path.c_str(), figure.data(), figure.size()));
     FigureData loaded{};
     CHECK(LoadFigure(path, loaded) && loaded == figure);
@@ -198,13 +410,21 @@ int main()
                       giants[] = { 0x01, 0x3D }, swap[] = { 0x02, 0x03 }, trap[] = { 0x02, 0x1B },
                       superChargers[] = { 0x02, 0x0A, 0x03, 0x02 }, imaginators[] = { 0x02, 0x0A, 0x05, 0x08 },
                       unknown[] = { 0x02, 0x7F }, old[] = { 0x00, 0x90 }, wiiBug[] = { 0x90, 0x00 };
-        CHECK(strcmp(FindPortalModel(wiiPs3, 2)->name, "Spyro's Adventure portal (Wii, PS3)") == 0);
-        CHECK(strcmp(FindPortalModel(pc, 2)->name, "Spyro's Adventure portal (PC, Mac)") == 0);
+        // The wired portals are named by model, not console: a Wii Trap Team portal answered 02 1B.
+        CHECK(strcmp(FindPortalModel(wiiPs3, 2)->name, "Spyro's Adventure portal") == 0);
+        CHECK(strcmp(FindPortalModel(pc, 2)->name, "Spyro's Adventure portal") == 0);
+        CHECK(strcmp(FindPortalModel(xbox360, 2)->name, "Spyro's Adventure portal (Xbox 360)") == 0);
         CHECK(strcmp(FindPortalModel(giants, 2)->name, "Giants portal") == 0);
         CHECK(strcmp(FindPortalModel(swap, 2)->name, "Swap Force portal") == 0);
-        CHECK(strcmp(FindPortalModel(trap, 2)->name, "Traptanium portal (Xbox 360)") == 0);
+        CHECK(strcmp(FindPortalModel(trap, 2)->name, "Traptanium portal") == 0);
         CHECK(strcmp(FindPortalModel(superChargers, 4)->name, "SuperChargers portal") == 0);
-        CHECK(strcmp(FindPortalModel(imaginators, 4)->name, "Imaginators portal") == 0);
+        // 02 0A 05 08 names the electronics, not the box: Imaginators portals and a Wii Swap Force one answer it.
+        CHECK(strcmp(FindPortalModel(imaginators, 4)->name, "Imaginators-era portal (Imaginators, some Swap Force)") ==
+              0);
+        // Giants plays with its own Xbox 360 portal's id and with 02 0A 05 08 (runs); under SSA's floor it is unknown.
+        CHECK(PortalVerdictFor("giants", imaginators, 4) == PortalVerdict::Works);
+        CHECK(PortalVerdictFor("giants", EmulatedPortalModel("giants").id, 2) == PortalVerdict::Works);
+        CHECK(PortalVerdictFor("giants", old, 2) == PortalVerdict::Unknown);
         CHECK(FindPortalModel(superChargers, 2) == nullptr); // a four-byte id is not its first two bytes
         CHECK(FindPortalModel(unknown, 2) == nullptr);
         for (const uint8_t* id : { wiiPs3, xbox360, pc, giants, swap, trap })
@@ -241,7 +461,7 @@ int main()
         PortalProbe probe{ "hid", 0x1430, 0x0150, "Spyro Porta" };
         const uint8_t answer[PortalReportSize] = { 'R', 0x01, 0x29 };
         NameProbe(probe, answer, sizeof(answer));
-        CHECK(probe.id == "01 29" && probe.model == "Spyro's Adventure portal (Wii, PS3)" && probe.verdict == "works");
+        CHECK(probe.id == "01 29" && probe.model == "Spyro's Adventure portal" && probe.verdict == "works");
         PortalProbe silent{ "hid", 0x1430, 0x0150, "" };
         const uint8_t status[] = { 'S', 0, 0, 0, 0 };
         NameProbe(silent, status, sizeof(status));
@@ -286,6 +506,20 @@ int main()
         CHECK(ClassifySwapForce(5, ~0u) == Prompt{}); // nobody asked
         CHECK(ClassifySwapForce(7, 0) == Prompt{}); // IdleOutro: a figure came
         CHECK(ClassifySwapForce(16, ~0u).kind == Kind::TooMany); // Error: a "too many" screen
+
+        // SuperChargers: the state, the reason (13: a vehicle is required) and the player index, as run mmC saw them.
+        CHECK(ClassifySuperChargers(0, 0, ~0u) == Prompt{}); // Inactive: in play
+        CHECK(ClassifySuperChargers(3, 13, ~0u) == Prompt{}); // TransitionIn: the zoom out to the portal
+        CHECK(ClassifySuperChargers(5, 13, ~0u) == (Prompt{ Kind::Player, 1, false, true })); // "place a LAND VEHICLE"
+        CHECK(ClassifySuperChargers(5, 12, ~0u) == (Prompt{ Kind::Player, 1, false, true })); // still up (run scP3)
+        CHECK(ClassifySuperChargers(5, 0, 0) == (Prompt{ Kind::Player, 1 })); // then a Skylander for player 1
+        CHECK(!(ClassifySuperChargers(5, 0, 0) == ClassifySuperChargers(5, 13, ~0u))); // two episodes, two seats
+        CHECK(ClassifySuperChargers(14, 0, 1) == (Prompt{ Kind::Player, 2, true })); // Dead
+        CHECK(ClassifySuperChargers(5, 0, ~0u) == Prompt{}); // nobody asked
+        CHECK(ClassifySuperChargers(7, 12, ~0u) == Prompt{}); // FirstVehicleSequence: a vehicle came
+        CHECK(ClassifySuperChargers(5, 6, ~0u) == Prompt{}); // another reason with nobody named
+        CHECK(ClassifySuperChargers(8, 12, ~0u) == Prompt{}); // IdleOutro
+        CHECK(ClassifySuperChargers(17, 11, ~0u).kind == Kind::TooMany); // Error: too many vehicles
 
         // One event per episode, after the prompt held steady for Stable polls.
         Tracker tracker;
@@ -359,6 +593,8 @@ int main()
     }
 
     SDL_RemovePath(path.c_str());
+    MixedChecks();
+    RenumberChecks();
     printf("portal test: %d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }

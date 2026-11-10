@@ -1,6 +1,6 @@
 // Checks the portable game's pack (portable_pack.h) and the game's reader of it (vfs.h, pack mode) on synthetic files, in a
 // scratch folder: a pack after a fake executable and a pack alone, damaged trailers and indexes, a cancelled write, and the
-// first-launch import of the figures (never over one that exists). No game data. usage: SSAPortablePackTest <scratch dir>
+// first-launch import of the figures (never over one that exists). No game data. usage: ArkeyanPortablePackTest <scratch dir>
 #include "portable_pack.h"
 #include "json.h"
 #include "vfs.h"

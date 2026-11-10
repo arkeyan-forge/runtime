@@ -1,6 +1,6 @@
 // Checks a trap's Villain row on the Toy Box's Figure page (host/toybox/trap_villain.h): the villains each trap's
 // element offers, the step through them, the write of a choice and the Evolved switch, a villain chosen again keeping
-// its evolution. It works in a scratch collection with dumps it makes itself; no game data. usage: SSAToyboxTrapTest
+// its evolution. It works in a scratch collection with dumps it makes itself; no game data. usage: ArkeyanToyboxTrapTest
 #include "host/toybox/trap_villain.h"
 #include <SDL3/SDL.h>
 #include <cstdio>
@@ -135,7 +135,7 @@ int main()
     const char* data = getenv("SKYLANDERS_DATA");
     std::string scratch =
         (data != nullptr && *data ? std::string(data) : std::filesystem::temp_directory_path().string()) +
-        "/SSAToyboxTrapTest";
+        "/ArkeyanToyboxTrapTest";
     std::error_code ignored;
     std::filesystem::remove_all(scratch, ignored);
     std::filesystem::create_directories(scratch, ignored);

@@ -1,13 +1,9 @@
 #pragma once
-#include <cstdint>
+#include <cstddef>
 
 namespace d3d
 {
-    // Existing [render] counters at the instant of the read, in the current guest frame.
-    // The overlay never resets them or adds work to a draw, resolve or swap.
-    struct RenderStats
-    {
-        uint32_t draws = 0, resolves = 0;
-    };
-    RenderStats ReadRenderStats();
+    // The renderer's host textures now (the debug screen); false while the game's render thread holds them, without
+    // waiting for it.
+    bool TryCountTextures(size_t& count);
 }

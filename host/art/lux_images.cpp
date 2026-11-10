@@ -207,7 +207,12 @@ namespace art::lux
         if (size < 2 || (data[0] & 0x0F) != 8 || (data[0] >> 4) > 7 || (data[1] & 0x20) != 0 ||
             ((data[0] << 8) | data[1]) % 31 != 0)
             return false;
-        BitReader in{ data + 2, size - 2 };
+        return InflateRaw(data + 2, size - 2, out, limit);
+    }
+
+    bool InflateRaw(const uint8_t* data, size_t size, std::vector<uint8_t>& out, size_t limit)
+    {
+        BitReader in{ data, size };
         bool last = false;
         while (!last)
         {
@@ -266,6 +271,44 @@ namespace art::lux
         return Inflate(file.data() + HeaderSize, file.size() - HeaderSize, out);
     }
 
+    namespace
+    {
+        // An APKF body [body, end) as a 2D texture package (lux_images.h, Package); false for anything else.
+        bool ParsePackage(const uint8_t* body, const uint8_t* end, Package& out)
+        {
+            size_t size = size_t(end - body);
+            if (size < 0x100 || memcmp(body, "APKF", 4) != 0)
+                return false;
+            const uint8_t* header = FindTag(body, std::min(end, body + 0x100), "\0XET");
+            if (header == nullptr || header + 0x30 >= end || !ReadText(header + 0x30, end, out.name))
+                return false;
+            static const uint8_t Flushes[8] = { 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00 };
+            const uint8_t* limit = std::min(end, body + 0x400);
+            const uint8_t* flushes = std::search(header, limit, Flushes, Flushes + 8);
+            const uint8_t* physical = FindTag(header, limit, "SYHP");
+            // The fetch constant and the SYHP offset and size are read past their tags: all of them must lie in the body.
+            if (physical == nullptr || physical + 20 > end || flushes == limit || flushes + 8 + 24 > end)
+                return false;
+
+            // The GPU texture fetch constant (6 words): type, pitch and tiling, format and endianness, size, dimension.
+            uint32_t fetch[6];
+            for (int i = 0; i < 6; i++)
+                fetch[i] = Be32(flushes + 8 + i * 4);
+            uint32_t dataOffset = Be32(physical + 8), dataSize = Be32(physical + 16);
+            bool texture2d = (fetch[0] & 3) == 2 && ((fetch[5] >> 9) & 3) == 1;
+            if (!texture2d || !FormatOf(fetch[1] & 0x3F, out.texture.format) || uint64_t(dataOffset) + dataSize > size)
+                return false;
+            out.texture.tiled = (fetch[0] >> 31) != 0;
+            out.texture.pitch = ((fetch[0] >> 22) & 0x1FF) << 5;
+            out.texture.endian = TextureEndian((fetch[1] >> 6) & 3);
+            out.texture.width = (fetch[2] & 0x1FFF) + 1;
+            out.texture.height = ((fetch[2] >> 13) & 0x1FFF) + 1;
+            out.data = body + dataOffset;
+            out.size = dataSize;
+            return true;
+        }
+    }
+
     void DecodeImages(const std::vector<uint8_t>& stream, const std::function<bool(const std::string&)>& wanted,
         const std::function<void(const std::string&, const Image&)>& found)
     {
@@ -276,37 +319,41 @@ namespace art::lux
             offset += 16 + size_t(size);
             if (offset > stream.size())
                 break;
-            const uint8_t* end = body + size;
-            if (size < 0x100 || memcmp(body, "APKF", 4) != 0)
+            Package package;
+            if (!ParsePackage(body, body + size, package) || !wanted(package.name))
                 continue;
-
-            const uint8_t* header = FindTag(body, std::min(end, body + 0x100), "\0XET");
-            std::string name;
-            if (header == nullptr || !ReadText(header + 0x30, end, name) || !wanted(name))
-                continue;
-            static const uint8_t Flushes[8] = { 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00 };
-            const uint8_t* flushes = std::search(header, std::min(end, body + 0x400), Flushes, Flushes + 8);
-            const uint8_t* physical = FindTag(header, std::min(end, body + 0x400), "SYHP");
-            if (physical == nullptr || flushes + 8 + 24 > end)
-                continue;
-
-            // The GPU texture fetch constant (6 words): type, pitch and tiling, format and endianness, size, dimension.
-            uint32_t fetch[6];
-            for (int i = 0; i < 6; i++)
-                fetch[i] = Be32(flushes + 8 + i * 4);
-            Texture texture;
-            uint32_t dataOffset = Be32(physical + 8), dataSize = Be32(physical + 16);
-            bool texture2d = (fetch[0] & 3) == 2 && ((fetch[5] >> 9) & 3) == 1;
-            if (!texture2d || !FormatOf(fetch[1] & 0x3F, texture.format) || uint64_t(dataOffset) + dataSize > size)
-                continue;
-            texture.tiled = (fetch[0] >> 31) != 0;
-            texture.pitch = ((fetch[0] >> 22) & 0x1FF) << 5;
-            texture.endian = TextureEndian((fetch[1] >> 6) & 3);
-            texture.width = (fetch[2] & 0x1FFF) + 1;
-            texture.height = ((fetch[2] >> 13) & 0x1FFF) + 1;
             Image image;
-            if (DecodeTexture(body + dataOffset, dataSize, texture, image))
-                found(name, image);
+            if (DecodeTexture(package.data, package.size, package.texture, image))
+                found(package.name, image);
+        }
+    }
+
+    void ForEachPackage(const std::vector<uint8_t>& stream, const std::function<void(const Package&)>& found)
+    {
+        Package package;
+        const uint8_t* begin = stream.data();
+        const uint8_t* end = begin + stream.size();
+        if (stream.size() >= 4 && memcmp(begin, "APKF", 4) == 0) // a bare package (textures/*.apk)
+        {
+            if (ParsePackage(begin, end, package))
+                found(package);
+            return;
+        }
+        // A record is BE32 type hash, BE32 name hash, BE32 0, BE32 body size, then its body.
+        static const char Magic[] = "APKF";
+        for (const uint8_t* p = begin + 16; p + 4 <= end;)
+        {
+            p = std::search(p, end, Magic, Magic + 4);
+            if (p == end)
+                break;
+            uint32_t size = Be32(p - 4);
+            if (Be32(p - 8) == 0 && size <= size_t(end - p) && ParsePackage(p, p + size, package))
+            {
+                found(package);
+                p += size; // a texture's pixels hold no record
+            }
+            else
+                p += 4;
         }
     }
 }

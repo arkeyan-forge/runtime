@@ -45,15 +45,45 @@ bool AsyncPortal::WriteSound(const uint8_t* block, size_t size)
     return true;
 }
 
+namespace
+{
+    bool IsStatus(const std::vector<uint8_t>& report) { return report.size() >= 5 && report[0] == 'S'; }
+}
+
 size_t AsyncPortal::Read(uint8_t* report, size_t capacity)
 {
     std::lock_guard lock(m_mutex);
     if (m_reports.empty())
         return 0;
-    size_t size = std::min(m_reports.front().size(), capacity);
-    memcpy(report, m_reports.front().data(), size);
-    m_reports.pop_front();
+    auto next = std::find_if(m_reports.begin(), m_reports.end(), [](const Report& r) { return !IsStatus(r); });
+    if (next == m_reports.end())
+        next = m_reports.begin();
+    size_t size = std::min(next->size(), capacity);
+    memcpy(report, next->data(), size);
+    m_reports.erase(next);
     return size;
+}
+
+void AsyncPortal::Queue(const uint8_t* report, size_t size)
+{
+    Report incoming(report, report + size);
+    if (IsStatus(incoming))
+    {
+        auto waiting = std::find_if(m_reports.begin(), m_reports.end(), IsStatus);
+        if (waiting != m_reports.end())
+        {
+            // 2 bits a slot: present (the latest says), changed (any of them said).
+            auto bits = [](const Report& r) { return uint32_t(r[1] | r[2] << 8 | r[3] << 16 | uint32_t(r[4]) << 24); };
+            const uint32_t merged = (bits(incoming) & 0x55555555u) | ((bits(incoming) | bits(*waiting)) & 0xAAAAAAAAu);
+            for (int i = 0; i < 4; i++)
+                incoming[1 + i] = uint8_t(merged >> (8 * i));
+            *waiting = std::move(incoming);
+            return;
+        }
+    }
+    m_reports.push_back(std::move(incoming));
+    if (m_reports.size() > QueueLimit)
+        m_reports.pop_front();
 }
 
 std::chrono::milliseconds AsyncPortal::RetryDelay()
@@ -148,9 +178,7 @@ void AsyncPortal::Run()
             if (size == 0)
                 break;
             std::lock_guard lock(m_mutex);
-            m_reports.emplace_back(buffer, buffer + size);
-            if (m_reports.size() > QueueLimit)
-                m_reports.pop_front();
+            Queue(buffer, size);
         }
         if (!m_device->IsOpen())
         {

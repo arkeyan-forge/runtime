@@ -1,7 +1,7 @@
 // Unit test of the collection library: JSON, the catalogue (SSA's toys exactly as the old built-in table), the
 // collection folder (create, stats, metadata, rename, locks, backups, migration) and the icons. It works in a scratch
 // folder of its own, with dumps it makes itself; never the player's folders.
-//   SSACollectionTest [--icons <folder>]   (--icons also writes a contact sheet of the generated icons)
+//   ArkeyanCollectionTest [--icons <folder>]   (--icons also writes a contact sheet of the generated icons)
 // Exit code 0 = pass.
 #include "host/collection/catalogue.h"
 #include "host/collection/collection.h"
@@ -288,6 +288,13 @@ namespace
         CHECK(!catalogue.Accepts("giants", 600) && !catalogue.Accepts("giants", 1000));
         CHECK(catalogue.Find(101)->category == Category::Giant && catalogue.Find(208)->category == Category::MagicItem);
         CHECK(catalogue.Describe(catalogue.Find(100), 0x1206).kind == VariantKind::LightCore);
+        // From SuperChargers' and Imaginators' own toy tables (tools/catalogue_tables.py): Trap Team's Dark Wildfire, a
+        // racing villain and its vehicle, which only the two games that define them take.
+        CHECK(catalogue.Describe(catalogue.Find(458), 0x3402).kind == VariantKind::Dark);
+        CHECK(catalogue.Find(3440) != nullptr && catalogue.Find(3440)->category == Category::Villain &&
+              catalogue.Find(3470) != nullptr && catalogue.Find(3470)->category == Category::Vehicle);
+        CHECK(catalogue.Accepts("superchargers", 3470) && catalogue.Accepts("imaginators", 3440) &&
+              !catalogue.Accepts("trapteam", 3470));
         auto seatIds = [&](const char* id) {
             std::string ids;
             for (const Seat& seat : catalogue.FindGame(id)->seats)
@@ -460,7 +467,7 @@ namespace
               StandardVariant(*catalogue.Find(3000)) == 0x2000 && StandardVariant(*catalogue.Find(404)) == 0x0403 &&
               StandardVariant(*catalogue.Find(9)) == 0 && VersionCount(*catalogue.Find(103)) == 2 &&
               VersionCount(*catalogue.Find(404)) == 0 && VersionCount(*catalogue.Find(3000)) == 0 &&
-              VersionCount(*catalogue.Find(9)) == 6);
+              VersionCount(*catalogue.Find(9)) == 7);
         int giantsBase = 0; // the Giants toys: Jet-Vac 0x1000, the LightCore ones 0x1206
         for (const Toy& toy : catalogue.Toys())
             giantsBase += toy.game == "giants" && StandardVariant(toy) != 0 ? 1 : 0;
@@ -513,6 +520,87 @@ namespace
         SDL_RemovePath((trap + ".lock").c_str());
         for (const std::string& path : { trap, master, mini, elite })
             CHECK(Delete(path));
+    }
+
+    // SuperChargers' and Imaginators' toys: a plain figure's year-and-flag id reads as the toy, a crystal's shape as its
+    // name, a crystal shows its battle class.
+    void TestLaterGames()
+    {
+        using namespace collection;
+        const Catalogue& catalogue = Catalogue::Get();
+        const Toy* fiesta = catalogue.Find(3400);
+        const Toy* vehicle = catalogue.Find(3227);
+        const Toy* crystal = catalogue.Find(682);
+        CHECK(fiesta != nullptr && vehicle != nullptr && vehicle->category == Category::Vehicle && crystal != nullptr &&
+              crystal->category == Category::CreationCrystal && crystal->element == Element::Air);
+        VariantInfo plain = catalogue.Describe(fiesta, 0x4100);
+        CHECK(plain.name == "Fiesta" && plain.kind == VariantKind::Base && plain.known);
+        CHECK(catalogue.Describe(vehicle, 0x4000).name == "Crypt Crusher");
+        CHECK(catalogue.Describe(catalogue.Find(601), 0x5000).name == "King Pen");
+        CHECK(catalogue.Describe(fiesta, 0x4515).name == "Frightful Fiesta");
+        CHECK(catalogue.Describe(catalogue.Find(3500), 0x4000).name == "Sky Trophy");
+        Catalogue::Reading seen = catalogue.Read("superchargers", fiesta, 0x4100);
+        CHECK(seen.works && seen.kind == VariantKind::Base);
+        VariantInfo shape = catalogue.Describe(crystal, 0x5202);
+        CHECK(shape.name == "Air Angel Crystal" && shape.kind == VariantKind::Shape);
+        CHECK(catalogue.Describe(crystal, 0x5299).kind == VariantKind::Shape); // an unlisted shape stays a shape
+        seen = catalogue.Read("imaginators", crystal, 0x5207);
+        CHECK(seen.works && seen.exact && seen.seen != nullptr && seen.seen->name == "Air Lantern Crystal");
+        CHECK(!catalogue.Read("superchargers", crystal, 0x5207).works); // SuperChargers does not read crystals
+
+        std::string made = Create(682, 0x5202);
+        Figure figure;
+        CHECK(Read(made, figure) && figure.DisplayName() == "Air Angel Crystal" && !HasProgress(figure) &&
+              figure.state == figures::AreaState::Blank && LevelText(figure, "imaginators") == "Ready to create" &&
+              LevelText(figure, "imaginators", true) == "À créer");
+        CHECK(BattleClassText(4) == "Ninja" && BattleClassText(1, true) == "Chevalier" && BattleClassText(11).empty());
+        // Its first creation, then an edit: the class and the level show on the card.
+        figures::CrystalStats creation;
+        creation.name = "ZAPPER";
+        creation.battleClass = 7;
+        creation.experience = 6000; // level 5
+        std::string why;
+        CHECK(WriteCrystal(made, creation, &why) && Read(made, figure) && figure.state == figures::AreaState::Valid &&
+              figure.level == 5 && LevelText(figure, "imaginators") == "Virtual · Sorcerer · Level 5" &&
+              figures::NicknameUtf8(figure.stats) == "ZAPPER");
+        figures::CrystalStats back;
+        CHECK(ReadCrystal(made, back) == figures::AreaState::Valid && back.hasRecipe && back.battleClass == 7);
+        back.experience = figures::CrystalLevelExperience(42);
+        CHECK(WriteCrystal(made, back) && Read(made, figure) && figure.level == 42 &&
+              LevelText(figure, "imaginators", true) == "Virtuel · Sorcier · Niveau 42");
+        CHECK(std::string(VirtualToyText("de")).rfind("Virtuell", 0) == 0 &&
+              std::string(VirtualToyText("xx")) == VirtualToyText("en"));
+        CHECK(Read(made, figure) && figure.missingSignature); // made here: no factory signature
+        FigureData other3 = figures::CreateCrystal(683, 0x5209, back);
+        CHECK(ReplaceDump(made, other3) && Read(made, figure) && figure.type == 683 && figure.level == 42);
+        std::string other = Create(3227);
+        CHECK(!WriteCrystal(other, back, &why) && why == "not a creation crystal" && Delete(other));
+        // The launcher's and the Toy Box's plain crystal: no base variant in the catalogue, so variant 0; it still gets
+        // the 2016 sector-0 trailer (access FF 07 80 69, key byte 0x51), or the game calls it corrupted.
+        const Toy* undead = catalogue.Find(683);
+        std::string plainCrystal = Create(683, StandardVariant(*undead));
+        std::string plainTag = ReadText(plainCrystal);
+        CHECK(StandardVariant(*undead) == 0 && plainTag.size() == 1024 && plainTag[0x1C] == 0 && plainTag[0x1D] == 0 &&
+              uint8_t(plainTag[0x36]) == 0xFF && uint8_t(plainTag[0x37]) == 0x07 && uint8_t(plainTag[0x38]) == 0x80 &&
+              uint8_t(plainTag[0x3F]) == 0x51 && Delete(plainCrystal));
+        CHECK(Delete(made));
+
+        // A vehicle's gearbits: only once the game used it (its first use writes the fields beside them).
+        std::string car = Create(3227), fiestaDump = Create(3400), error;
+        CHECK(!SetGearbits(car, 500, &error) && error == "never used by the game");
+        CHECK(!SetGearbits(fiestaDump, 500, &error) && error == "not a vehicle");
+        figures::FigureStats used;
+        used.platforms = 2;
+        used.giantsExperience = 9;
+        CHECK(WriteStats(car, used) && SetGearbits(car, 500) && Read(car, figure) &&
+              figures::Gearbits(figure.stats) == 500 && figure.stats.giantsExperience == 9 && !HasProgress(figure));
+        // Its garage upgrades on the card: bits 0-4 the shield's, 5-9 the weapon's (0x0023 = shield 2, weapon 1).
+        CHECK(LevelText(figure, "superchargers") == "Shield 0 · Weapon 0");
+        used.upgrades = 0x0023;
+        CHECK(WriteStats(car, used) && Read(car, figure) &&
+              LevelText(figure, "superchargers") == "Shield 2 · Weapon 1" &&
+              LevelText(figure, "superchargers", true) == "Bouclier 2 · Arme 1");
+        CHECK(Delete(car) && Delete(fiestaDump));
     }
 
     // A blank LightCore toy: the Giants toy with its own variant, as the Toy Box creates it. Last, so that the counts
@@ -1696,7 +1784,7 @@ int main(int argc, char** argv)
     // scratch one), else the temporary folder. Never under the player's application data.
     const char* data = getenv("SKYLANDERS_DATA");
     g_scratch = (data != nullptr && *data ? std::string(data) : std::filesystem::temp_directory_path().string()) +
-                "/SSACollectionTest";
+                "/ArkeyanCollectionTest";
     RemoveTree(g_scratch);
     SDL_CreateDirectory(g_scratch.c_str());
     SetVariable("SKY_COLLECTION", g_scratch + "/Collection");
@@ -1724,6 +1812,7 @@ int main(int argc, char** argv)
     TestPortalOverview();
     TestGiants();
     TestTrapTeam();
+    TestLaterGames();
     TestUpgrades();
     TestWheel();
 

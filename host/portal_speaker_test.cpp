@@ -1,4 +1,4 @@
-// The Traptanium speaker's route and the computer's stream (no game data, no audio device): ./SSAPortalSpeakerTest
+// The Traptanium speaker's route and the computer's stream (no game data, no audio device): ./ArkeyanPortalSpeakerTest
 #include "host/portal_identity.h"
 #include "host/portal_speaker.h"
 #include <algorithm>

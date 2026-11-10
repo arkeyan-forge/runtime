@@ -1,5 +1,5 @@
 // Checks the launcher's disc verification and settings file without showing any UI.
-// usage: SSALauncherTest <game disc .iso> <scratch dir> [<damaged copy of the image>...]
+// usage: ArkeyanRuntimeLauncherTest <game disc .iso> <scratch dir> [<damaged copy of the image>...]
 #include "launcher.h"
 #include "launcher_assets.h"
 #include "launcher_ui.h"
@@ -129,7 +129,8 @@ int main(int argc, char** argv)
 {
     if (argc < 3)
     {
-        fprintf(stderr, "usage: SSALauncherTest <game disc .iso> <scratch dir> [<damaged copy of the image>...]\n");
+        fprintf(stderr,
+            "usage: ArkeyanRuntimeLauncherTest <game disc .iso> <scratch dir> [<damaged copy of the image>...]\n");
         return 2;
     }
     std::filesystem::path iso = argv[1];
@@ -226,6 +227,29 @@ int main(int argc, char** argv)
     EXPECT(Check(scratch / "other_region.iso") == GameSourceStatus::WrongVersion);
     WriteDiscImage(scratch / "modified.iso", "default.xex", FakeXex(0x415608AB, 0x53CE7B97, 2));
     EXPECT(Check(scratch / "modified.iso") == GameSourceStatus::Damaged);
+
+    printf("Another edition (the player's default.xex with another media ID and version in its header):\n");
+    {
+        std::vector<uint8_t> xex = disc.ReadAll("default.xex");
+        auto be32 = [&](size_t at) {
+            return uint32_t(xex[at]) << 24 | uint32_t(xex[at + 1]) << 16 | uint32_t(xex[at + 2]) << 8 | xex[at + 3];
+        };
+        size_t info = 0;
+        for (uint32_t i = 0; i < be32(0x14); i++)
+            if (be32(0x18 + i * 8) == 0x00040006)
+                info = be32(0x18 + i * 8 + 4);
+        EXPECT(info != 0);
+        Put32BE(&xex[info], 0x1234ABCD);
+        Put32BE(&xex[info + 4], 0x0000000E);
+        WriteDiscImage(scratch / "header_only_edition.iso", "default.xex", xex);
+        EXPECT(Check(scratch / "header_only_edition.iso") == GameSourceStatus::Ok);
+        // The same header over other code: one byte of the executable's data changed.
+        xex[be32(0x08) + (xex.size() - be32(0x08)) / 2] ^= 0x5A;
+        WriteDiscImage(scratch / "other_code_edition.iso", "default.xex", xex);
+        EXPECT(Check(scratch / "other_code_edition.iso") == GameSourceStatus::WrongVersion);
+        std::filesystem::remove(scratch / "header_only_edition.iso");
+        std::filesystem::remove(scratch / "other_code_edition.iso");
+    }
 
     printf("Damaged copies of the player's image:\n");
     for (int i = 3; i < argc; i++)

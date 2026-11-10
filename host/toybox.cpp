@@ -1,5 +1,6 @@
 #include "host/toybox.h"
 #include "gpu/gpu.h"
+#include "d3d/ultrawide.h"
 #include "host/art/game_art.h"
 #include "host/gamemenu.h"
 #include "host/glyphs.h"
@@ -7,12 +8,16 @@
 #include "host/portal.h"
 #include "game.h"
 #include "host/portal_prompt.h"
+#include "host/portal_script.h"
 #include "host/toybox/draw.h"
+#include "host/toybox/in_play.h"
 #include "host/toybox/model.h"
 #include "host/toybox/keys.h"
+#include "host/toybox_remote.h"
 #include "vfs.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
+#include <utility>
 #include <cmath>
 #include <atomic>
 #include <cstdio>
@@ -117,10 +122,11 @@ namespace
         if (g_portraitsLoaded)
             return;
         g_portraitsLoaded = true;
-        // This game's portraits from the player's disc, cached in its data folder (docs/runtime/host/game_art.md).
-        art::Extraction found = art::Extract(SSA_GAME_ID, art::ReadFrom(g_disc), {}, art::Portraits);
-        fprintf(stderr, "[toybox] %d portraits in %s\n", found.portraits,
-            art::PortraitFolder(SSA_GAME_ID).string().c_str());
+        // This game's portraits (and Imaginators' part names) from the player's disc, cached in its data folder
+        // (docs/runtime/host/game_art.md).
+        art::Extraction found = art::Extract(ARKEYAN_GAME_ID, art::ReadFrom(g_disc), {}, art::Portraits | art::PartNames);
+        fprintf(stderr, "[toybox] %d portraits in %s%s\n", found.portraits,
+            art::PortraitFolder(ARKEYAN_GAME_ID).string().c_str(), found.partNames ? ", the parts' names read" : "");
     }
 
     void OpenToybox(Screen screen = Screen::Home, int seat = 0)
@@ -161,10 +167,55 @@ namespace
             M().AimWheel(PlaceOf(x, y));
     }
 
+    // F3 held in play: with G, T, C or R it is the debug screen's key (as in Minecraft); released alone, it opens the
+    // menu. The game does not see those four keys while F3 is down (ToyboxKeyboardState).
+    std::atomic<bool> g_f3Held;
+    bool g_f3Combo = false;
+
+    bool DebugCombo(toybox::Model& model, SDL_Keycode key)
+    {
+        using toybox::L;
+        switch (key)
+        {
+        case SDLK_G: return gamemenu::ToggleDebugGraphs();
+        case SDLK_T: return gamemenu::ToggleDebugThreads();
+        case SDLK_C:
+        {
+            std::string text = gamemenu::DebugScreenText();
+            if (text.empty())
+                return false;
+            bool copied = SDL_SetClipboardText(text.c_str());
+            fprintf(stderr, "[gamemenu] debug screen copied: %s (%zu bytes)\n", copied ? "yes" : "no", text.size());
+            model.Notice(copied ? L("Debug screen copied to the clipboard", "Écran de débogage copié")
+                                : L("Could not copy the debug screen", "Copie impossible"),
+                3);
+            return true;
+        }
+        case SDLK_R:
+            if (gamemenu::RecordPerfLogFor(10))
+                model.Notice(L("Recording 10 s to the logs folder", "Enregistrement de 10 s dans les journaux"), 3);
+            return true;
+        default: return false;
+        }
+    }
+
+    // The F3 menu's panel and the pages it opens beside the rail (not the Toy Box's own).
+    bool MenuScreen(const toybox::Model& model)
+    {
+        return model.screen == Screen::Menu || model.screen == Screen::Settings ||
+               model.screen == Screen::Achievements || model.screen == Screen::Commands;
+    }
+
     void HandleKey(const SDL_KeyboardEvent& key, bool down)
     {
         toybox::Model& model = M();
         uint64_t now = SDL_GetTicksNS();
+        if (!down && key.key == SDLK_F3 && g_f3Held.exchange(false))
+        {
+            if (!g_f3Combo && !model.open)
+                model.OpenMenu(); // the F3 menu (docs/runtime/host/gamemenu.md)
+            return;
+        }
         if (!down)
         {
             if (key.key == SDLK_F2)
@@ -199,8 +250,19 @@ namespace
             return;
         if (!model.open)
         {
-            if (key.key == SDLK_F3)
-                model.OpenMenu(); // the F3 menu (docs/runtime/host/gamemenu.md)
+            if (g_f3Held && key.key != SDLK_F3)
+            {
+                if (!key.repeat && DebugCombo(model, key.key))
+                    g_f3Combo = true;
+                return;
+            }
+            if (key.key == SDLK_F3 && (key.mod & SDL_KMOD_SHIFT) != 0)
+                gamemenu::CycleDebugScreen(); // Shift+F3: the debug screen off, compact, full
+            else if (key.key == SDLK_F3)
+            {
+                g_f3Held = true; // the menu opens when it is released alone
+                g_f3Combo = false;
+            }
             else if (OpenKey(key))
                 OpenToybox();
             else if (HoldKey(key))
@@ -237,8 +299,7 @@ namespace
             model.Close();
             return;
         }
-        if (key.key == SDLK_F3 &&
-            model.screen == Screen::Menu) // F3 opened it: F3 closes it (elsewhere F3 is the Toy Box's View)
+        if (key.key == SDLK_F3 && MenuScreen(model)) // F3 opened it: F3 closes it (in the Toy Box F3 is its View)
         {
             model.Close();
             return;
@@ -250,10 +311,14 @@ namespace
         case SDLK_UP: command = Command::Up; break;
         case SDLK_DOWN: command = Command::Down; break;
         case SDLK_LEFT:
-            command = shift && model.screen == Screen::Stats ? Command::PreviousSection : Command::Left;
+            command = shift && (model.screen == Screen::Stats || model.screen == Screen::Creation)
+                          ? Command::PreviousSection
+                          : Command::Left;
             break;
         case SDLK_RIGHT:
-            command = shift && model.screen == Screen::Stats ? Command::NextSection : Command::Right;
+            command = shift && (model.screen == Screen::Stats || model.screen == Screen::Creation)
+                          ? Command::NextSection
+                          : Command::Right;
             break;
         case SDLK_RETURN:
         case SDLK_KP_ENTER:
@@ -308,11 +373,11 @@ namespace
         toybox::Model& model = M();
         if (model.waiting == toybox::Model::Waiting::MouseButton)
             model.TakeMouse(up > 0 ? mouse::WheelUp : mouse::WheelDown);
-        else if (model.screen == Screen::Stats)
+        else if (model.screen == Screen::Stats || model.screen == Screen::Creation)
             model.Run(up > 0 ? Command::Right : Command::Left);
         else if (model.screen == Screen::Home || model.screen == Screen::Add || model.screen == Screen::WheelList)
             model.ScrollList(up > 0 ? -1 : 1);
-        else if (model.screen == Screen::Menu)
+        else if (MenuScreen(model))
             model.Run(up > 0 ? Command::Up : Command::Down);
     }
 
@@ -369,8 +434,9 @@ namespace
         return 0;
     }
 
-    // SKY_TOYBOX_SCRIPT's "prompt=1" / "prompt=2d": the game asks that player for a Skylander for 3 s (d: and says its Skylander
-    // died), as if ReadPortalPrompt said it, and "level": a level starts (game::LevelStarted): the out of health test.
+    // SKY_TOYBOX_SCRIPT's "prompt=1" / "prompt=2d" / "prompt=1v": the game asks that player for a Skylander for 3 s (d: and
+    // says its Skylander died; v: for a vehicle instead), as if ReadPortalPrompt said it, and "level": a level starts
+    // (game::LevelStarted): the out of health test.
     portalprompt::Prompt g_testPrompt;
     uint64_t g_testPromptUntil = 0;
     int g_testLevels = 0;
@@ -381,7 +447,8 @@ namespace
     // buttons (a b x y back start lb rb up down left right, lup ldown lleft lright for the stick) for 0.8 s (0.15 s
     // without "*"), as the Toy Box sees the pad; "click=x/y" and "rclick=x/y" click at canvas pixels, "move=x/y" moves the
     // pointer there (hover), "wheel=up" / "wheel=down" turn the wheel one tick (each logs the focus); "hold=K*0.5" holds a
-    // key (an SDL scancode name) for the game's input 0.5 s and logs the pad state the game gets from it.
+    // key (an SDL scancode name) for the game's input 0.5 s and logs the pad state the game gets from it; "place=<dump>",
+    // "remove=<slot>" and "remove=all" change the emulated portal (host/portal_script.h).
     void LoadScript()
     {
         const char* script = skyenv::Get("SKY_TOYBOX_SCRIPT");
@@ -424,10 +491,10 @@ namespace
                     : model.homeRow == toybox::Model::Row::Bar ? model.barColumn
                                                                : model.list.cursor;
         fprintf(stderr,
-            "[toybox] script: focus: screen %d, menu row %d, commands row %d column %d, card %d, home %s %d seat %d, "
-            "hover %s\n",
-            int(model.screen), model.menuRow, model.commandRow, model.commandColumn, model.list.cursor, row, place,
-            model.seat, toybox::HoverTarget().c_str());
+            "[toybox] script: focus: screen %d, menu row %d, commands row %d column %d, settings row %d, "
+            "achievement %d, card %d, home %s %d seat %d, hover %s\n",
+            int(model.screen), model.menuRow, model.commandRow, model.commandColumn, model.settingsRow,
+            model.achievementCursor, model.list.cursor, row, place, model.seat, toybox::HoverTarget().c_str());
     }
 
     // SKY_TOYBOX_CLOCK=frames: the script's times and its pad and key holds count the frames the game presented, 30 a
@@ -497,6 +564,16 @@ namespace
                 SaveShot(action.size() > 5 ? action.substr(5) : std::string());
                 continue;
             }
+            if (portalscript::Item item = portalscript::Parse(action); item.kind != portalscript::Item::Kind::None)
+            {
+                if (item.kind == portalscript::Item::Kind::Place)
+                    PortalPlaceFigure(item.path);
+                else if (item.kind == portalscript::Item::Kind::Remove)
+                    PortalRemoveFigure(item.slot);
+                else
+                    PortalRemoveAllFigures();
+                continue;
+            }
             if (action == "achievement")
             {
                 if (g_achievementPreview != nullptr)
@@ -505,7 +582,8 @@ namespace
             }
             if (action.rfind("prompt=", 0) == 0)
             {
-                g_testPrompt = { portalprompt::Kind::Player, atoi(action.c_str() + 7), action.back() == 'd' };
+                g_testPrompt = { portalprompt::Kind::Player, atoi(action.c_str() + 7), action.back() == 'd',
+                    action.back() == 'v' };
                 g_testPromptUntil = now + 3000000000ull;
                 continue;
             }
@@ -592,6 +670,8 @@ namespace
         }
     }
 
+    bool g_debugRedraw = false; // the debug screen refreshed: the next overlay drawing is its cost
+
     void Present()
     {
         toybox::Model& model = M();
@@ -608,6 +688,9 @@ namespace
         }
         if (!model.Dirty() && g_overlayShown)
             return;
+        // The debug screen's cost line counts the overlay its refresh makes drawn again (2 Hz) over the game; with a
+        // menu open the drawing is the menu's.
+        uint64_t start = std::exchange(g_debugRedraw, false) && !model.open ? SDL_GetTicksNS() : 0;
         toybox::Draw(model, g_pixels);
         model.Clean();
         if (g_texture == nullptr)
@@ -617,6 +700,8 @@ namespace
         gpu::UploadTexture(g_texture, g_pixels.data(), uint32_t(toybox::CanvasWidth * 4));
         gpu::SetOverlay(g_texture);
         g_overlayShown = true;
+        if (start != 0)
+            gamemenu::AddDebugScreenCost(SDL_GetTicksNS() - start);
     }
 }
 
@@ -639,6 +724,8 @@ void ToyboxInit(SDL_Window* window)
     M().Init(!PortalIsEmulated() || (realView != nullptr && *realView != '\0'));
     g_enabled = true;
     LoadScript();
+    // The launcher's Toy Box window talks to this game (host/toybox_remote.h).
+    toyboxremote::Start(PortalSessionFolder(), ARKEYAN_GAME_ID);
     fprintf(stderr,
         "[toybox] hold %s or View: quick swap wheel; %s or View + Y: the Toy Box; F3 or View + Start: the game menu\n",
         SDL_GetScancodeName(g_keys.tab ? SDL_SCANCODE_TAB : g_keys.open), SDL_GetScancodeName(g_keys.open));
@@ -654,7 +741,8 @@ bool ToyboxHandleEvent(const SDL_Event& event)
     case SDL_EVENT_KEY_DOWN:
     case SDL_EVENT_KEY_UP:
     {
-        bool toggle = HoldKey(event.key) || OpenKey(event.key) || event.key.key == SDLK_F3;
+        // F3 held: its combination keys are the debug screen's, not the game's.
+        bool toggle = HoldKey(event.key) || OpenKey(event.key) || event.key.key == SDLK_F3 || g_f3Held;
         bool wasOpen = model.open;
         HandleKey(event.key, event.type == SDL_EVENT_KEY_DOWN);
         return wasOpen || model.open || toggle;
@@ -822,7 +910,7 @@ void ToyboxFilterGamepad(GamepadState& state)
     // until every button is released again --------------------------------------------------------------------------
     if (model.waiting != toybox::Model::Waiting::PadButton)
         g_padArmed = false;
-    if (model.screen == Screen::Menu && (model.waiting == toybox::Model::Waiting::PadButton || model.settle))
+    if (model.screen == Screen::Commands && (model.waiting == toybox::Model::Waiting::PadButton || model.settle))
     {
         constexpr uint8_t TriggerPressed = 30;
         bool any = buttons != 0 || state.leftTrigger > TriggerPressed || state.rightTrigger > TriggerPressed;
@@ -849,8 +937,7 @@ void ToyboxFilterGamepad(GamepadState& state)
     }
 
     // --- The Toy Box ---------------------------------------------------------------------------------------------------
-    if ((buttons & Button::Back) &&
-        ((pressed & Button::Y) || (model.screen == Screen::Menu && (pressed & Button::Start))))
+    if ((buttons & Button::Back) && ((pressed & Button::Y) || (MenuScreen(model) && (pressed & Button::Start))))
     {
         model.Close();
         g_swallow = true;
@@ -911,34 +998,67 @@ void ToyboxFilterGamepad(GamepadState& state)
 
 void ToyboxSetAutoOpen(bool enabled) { g_autoOpen = enabled; }
 
+static toybox::InPlay g_inPlay;
+static uint64_t g_portalResets = 0;
+
 // Opens the Toy Box on the seat the game asks for, and closes it once the prompt is gone. A figure the game gave up on
 // (it asks for the seat again while that figure, which it had taken, is still on it, or says the Skylander died) is out of
-// health until the next level: the Toy Box marks it, whether or not it opens by itself.
+// health until the next level: the Toy Box marks it, whether or not it opens by itself, once the figure has played in
+// this level (toybox::InPlay: the asks of a level's start are not deaths).
 static void FollowPrompt(toybox::Model& model)
 {
     if (model.realPortal)
         return;
     portalprompt::Prompt prompt =
         game::Current().ReadPortalPrompt != nullptr ? game::Current().ReadPortalPrompt() : portalprompt::Prompt{};
-    if (g_testPromptUntil > SDL_GetTicksNS())
+    const uint64_t now = SDL_GetTicksNS();
+    if (g_testPromptUntil > now)
         prompt = g_testPrompt;
     portalprompt::Prompt appeared;
-    switch (g_promptTracker.Update(prompt, appeared))
+    const portalprompt::Tracker::Event event = g_promptTracker.Update(prompt, appeared);
+    if (const uint64_t resets = PortalResets(); resets != g_portalResets)
+    {
+        g_portalResets = resets;
+        g_inPlay.StartOver();
+    }
+    // The seat asked for now, as the catalogue names it ("p1", "vehicle1"); no allocation, this runs every frame.
+    const portalprompt::Prompt& asked = g_promptTracker.Current();
+    char askedId[24] = "";
+    if (asked.kind == portalprompt::Kind::Player)
+        snprintf(askedId, sizeof(askedId), "%s%d", asked.vehicle ? "vehicle" : "p", asked.player);
+    const bool playing = !game::InMenuLevel() && !ultrawide::MoviePlaying();
+    for (size_t i = 0; i < model.seats.size(); i++)
+    {
+        const toybox::SeatState& s = model.seats[i];
+        g_inPlay.Update(i, { s.path, s.placedAt, !s.waiting && !s.physical, s.seat.id == askedId, playing }, now);
+    }
+    switch (event)
     {
     case portalprompt::Tracker::Event::Appeared:
     {
-        std::string id = "p" + std::to_string(appeared.player);
+        // The seat asked for: "p1", or "vehicle1" for a vehicle (the catalogue's seat ids).
+        std::string id = (appeared.vehicle ? "vehicle" : "p") + std::to_string(appeared.player);
+        // Said at the top over the game while it lasts (the Toy Box may be closed, or not open by itself).
+        model.prompt =
+            std::string(appeared.vehicle
+                            ? toybox::L("Put a vehicle for Player ", "Posez un véhicule pour le joueur ")
+                            : toybox::L("Put a Skylander for Player ", "Posez un Skylander pour le joueur ")) +
+            std::to_string(appeared.player);
+        model.Touch();
         for (size_t i = 0; i < model.seats.size(); i++)
         {
             if (model.seats[i].seat.id != id)
                 continue;
-            if (model.MarkOutOfHealth(int(i), appeared.defeated))
+            if (!model.seats[i].path.empty() && !g_inPlay.Played(i))
+                fprintf(stderr, "[toybox] player %d's figure has not played in this level yet: not out of health\n",
+                    appeared.player);
+            else if (model.MarkOutOfHealth(int(i), appeared.defeated))
                 fprintf(stderr, "[toybox] player %d's figure is out of health (%s)\n", appeared.player,
                     appeared.defeated ? "the game says its Skylander died"
                                       : "the game asks for the seat again while it is on it");
             if (!g_autoOpen)
                 break;
-            fprintf(stderr, "[toybox] prompt for player %d\n", appeared.player);
+            fprintf(stderr, "[toybox] prompt for player %d%s\n", appeared.player, appeared.vehicle ? "'s vehicle" : "");
             // Left alone when the player has it open already.
             if (!model.open)
             {
@@ -950,6 +1070,8 @@ static void FollowPrompt(toybox::Model& model)
         break;
     }
     case portalprompt::Tracker::Event::Gone:
+        model.prompt.clear();
+        model.Touch();
         if (!g_autoOpen)
             break;
         fprintf(stderr, "[toybox] the prompt is gone\n");
@@ -983,6 +1105,15 @@ void ToyboxAchievement(const std::string& name, uint32_t points, std::vector<uin
 
 void ToyboxSetAchievementPreview(void (*preview)()) { g_achievementPreview = preview; }
 
+static std::vector<ToyboxAchievementRow> (*g_achievementList)();
+
+void ToyboxSetAchievementList(std::vector<ToyboxAchievementRow> (*list)()) { g_achievementList = list; }
+
+std::vector<ToyboxAchievementRow> ToyboxAchievements()
+{
+    return g_achievementList != nullptr ? g_achievementList() : std::vector<ToyboxAchievementRow>();
+}
+
 namespace
 {
     collection::Image DecodePng(const std::vector<uint8_t>& png)
@@ -1008,6 +1139,57 @@ namespace
     }
 }
 
+namespace
+{
+    // The launcher's Toy Box window (host/toybox_remote.h): its commands, run as the seats here run them, then the seats
+    // whenever they change (looked at 5 times a second, only while a window is connected).
+    void ServeWindow(toybox::Model& model, uint64_t now)
+    {
+        static uint64_t nextLook = 0;
+        static std::vector<toyboxlink::Seat> sent;
+        if (!toyboxremote::Connected())
+            return;
+        bool changed = toyboxremote::TakeHello();
+        std::vector<toyboxlink::Message> replies;
+        toyboxlink::Message command;
+        while (toyboxremote::Next(command))
+        {
+            const std::vector<std::string>& f = command.fields;
+            int seat = f.empty() ? -1 : atoi(f[0].c_str());
+            std::string result;
+            if (command.verb == "put")
+                result = model.RemotePut(seat, f.size() > 1 ? f[1] : std::string());
+            else if (command.verb == "off")
+                result = model.RemoteOff(seat);
+            else if (command.verb == "swap")
+                result = model.RemoteSwap();
+            else
+                result = model.RemoteClear();
+            const bool known = seat >= 0 && seat < int(model.seats.size()); // a seat number from outside: checked
+            fprintf(stderr, "[toybox-link] %s %s: %s\n", command.verb.c_str(), known ? model.SeatTag(seat).c_str() : "",
+                result.empty() ? "done" : result.c_str());
+            replies.push_back({ "done", { command.verb, std::to_string(seat), result.empty() ? "ok" : result } });
+            model.Touch();
+            changed = true;
+        }
+        if (!changed && now < nextLook)
+            return;
+        nextLook = now + 200'000'000;
+        std::vector<toyboxlink::Seat> seats = model.RemoteSeats();
+        std::vector<toyboxlink::Message> messages;
+        if (changed || seats != sent)
+        {
+            for (size_t i = 0; i < seats.size(); i++)
+                messages.push_back(toyboxlink::SeatMessage(int(i), seats[i]));
+            messages.push_back({ "sync", { std::to_string(seats.size()) } });
+            sent = std::move(seats);
+        }
+        messages.insert(messages.end(), replies.begin(), replies.end());
+        if (!messages.empty())
+            toyboxremote::Send(messages);
+    }
+}
+
 void ToyboxUpdate()
 {
     if (!g_enabled)
@@ -1028,10 +1210,19 @@ void ToyboxUpdate()
         }
     }
     if (g_levelStarted.exchange(false))
+    {
         model.ClearOutOfHealth();
+        g_inPlay.StartOver();
+    }
     FollowPrompt(model);
     if (gamemenu::UpdateDebugScreen())
+    {
         model.Touch();
+        g_debugRedraw = true;
+    }
+    if (std::string name = gamemenu::FinishedPerfLog(); !name.empty())
+        model.Notice(
+            std::string(toybox::L("Performance log saved: ", "Journal de performances enregistré : ")) + name, 5);
     if (std::string fps = gamemenu::FpsText(); fps != model.fps)
     {
         model.fps = fps;
@@ -1060,19 +1251,21 @@ void ToyboxUpdate()
         shownStyle = glyphs::Current();
         model.Touch();
     }
+    ServeWindow(model, now);
     model.Tick(now);
     Present();
 }
 
 bool ToyboxWaitsForPadButton()
 {
-    return g_enabled && M().open && M().screen == Screen::Menu && M().waiting == toybox::Model::Waiting::PadButton;
+    return g_enabled && M().open && M().screen == Screen::Commands && M().waiting == toybox::Model::Waiting::PadButton;
 }
 
 const bool* ToyboxKeyboardState()
 {
     const bool* keys = SDL_GetKeyboardState(nullptr);
-    if (g_keyHolds.empty())
+    bool f3 = g_f3Held.load(std::memory_order_relaxed);
+    if (g_keyHolds.empty() && !f3)
         return keys;
     static bool merged[SDL_SCANCODE_COUNT];
     std::copy(keys, keys + SDL_SCANCODE_COUNT, merged);
@@ -1080,6 +1273,9 @@ const bool* ToyboxKeyboardState()
     for (const KeyHold& hold : g_keyHolds)
         if (now >= hold.from && now < hold.to)
             merged[hold.scancode] = true;
+    if (f3) // the debug screen's keys (F3+G, T, C, R)
+        for (SDL_Scancode taken : { SDL_SCANCODE_G, SDL_SCANCODE_T, SDL_SCANCODE_C, SDL_SCANCODE_R })
+            merged[taken] = false;
     return merged;
 }
 

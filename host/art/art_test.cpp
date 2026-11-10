@@ -1,8 +1,8 @@
-// SSAArtTest: the disc picture readers (docs/runtime/host/game_art.md). Without arguments it needs no game data: every
+// ArkeyanArtTest: the disc picture readers (docs/runtime/host/game_art.md). Without arguments it needs no game data: every
 // format is checked on synthetic fixtures built here. With SSA_ISO, GIANTS_ISO and/or SWAPFORCE_ISO set (read only) it
 // also reads each game's pictures into a scratch data folder (SKYLANDERS_DATA, set it to a scratch folder) and checks
 // what it got.
-//   ./SSAArtTest [--keep]            --keep: leave the scratch pictures to look at
+//   ./ArkeyanArtTest [--keep]            --keep: leave the scratch pictures to look at
 #include "host/art/alchemy_archive.h"
 #include "host/art/disc_languages.h"
 #include "host/art/game_art.h"
@@ -210,12 +210,11 @@ namespace
     // up it is blue on top), named "levels/test/portraits/eruptor.png", format hash `format`; tiled, or `linear` (rows 32
     // blocks apart). v6: Giants' layout [V]; v7: Swap Force's [V] (sections at 0x14, tags stored byte-swapped, TMHN
     // handles with a kind, the name a string index, a dependency); v8: Trap Team's [V], the same with every name in the
-    // types and strings padded to 2 bytes; 9: the later games' as the reader's table describes them (tagged records
-    // with a 16-byte header, sections { id, offset, size, alignment }) [?].
+    // types and strings padded to 2 bytes; v9: SuperChargers' [V], v8's layout.
     std::vector<uint8_t> MakeIgz(uint32_t format, uint32_t version = 6, bool linear = false)
     {
-        const bool tagged = version >= 7, v7 = version == 7 || version == 8,
-                   swapped = v7; // v8 as v7, names padded to 2 bytes
+        const bool tagged = version >= 7, v7 = version >= 7,
+                   swapped = v7; // v8 and v9 as v7, names padded to 2 bytes
         std::vector<uint8_t> igz(0x800, 0);
         memcpy(igz.data(), "IGZ\x01", 4);
         PutBe32(igz, 4, version);
@@ -238,14 +237,16 @@ namespace
             fixups.insert(fixups.end(), payload.begin(), payload.end());
         };
         std::string types =
-            version == 8 ? std::string("igObject\0\0igImage2\0\0", 20) : std::string("igObject\0igImage2\0", 18);
+            version >= 8 ? std::string("igObject\0\0igImage2\0\0", 20) : std::string("igObject\0igImage2\0", 18);
         std::vector<uint8_t> typeBytes(types.begin(), types.end());
         typeBytes.resize(20, 0);
         record(0, "TMET", 2, typeBytes);
         std::vector<uint8_t> ids;
         PutBe32(ids, 0, format), PutBe32(ids, 4, 0);
         record(2, "EXID", 1, ids);
-        record(5, "RVTB", 1, { 0x03, 0x00, 0x00, 0x00 }); // one object, at pool 0 + 3 * 4 + 4 = 0x10
+        // One object at pool 0 + 0x10: 3 * 4 + 4 (v6-v8 store the distance minus 4), v9 4 * 4.
+        const bool v9 = version == 9;
+        record(5, "RVTB", 1, { uint8_t(v9 ? 0x04 : 0x03), 0x00, 0x00, 0x00 });
         const char* name = "levels/test/portraits/eruptor.png";
         const uint32_t pixels =
             linear ? 2 * 32 * 16 : 0x200; // two rows of 32 blocks, or a tiled 32x32-block tile's first part
@@ -257,16 +258,19 @@ namespace
         {
             std::string strings = std::string(name) + '\0';
             record(0, "TSTR", 1, std::vector<uint8_t>(strings.begin(), strings.end()));
-            const char dependencies[] = "JuiceStandard_Test_10\0textures:/JuiceStandard_Test_10.igz"; // { name, path }
-            record(0, "TDEP", 1, std::vector<uint8_t>(dependencies, dependencies + sizeof(dependencies)));
+            // { name, path }; v9's name has an odd length: its dependencies' strings are not padded (SuperChargers).
+            std::string dependencies = std::string(v9 ? "Shader" : "JuiceStandard_Test_10") + '\0' +
+                                       "textures:/JuiceStandard_Test_10.igz" + '\0';
+            record(0, "TDEP", 1, std::vector<uint8_t>(dependencies.begin(), dependencies.end()));
         }
 
         std::vector<uint8_t> pool(0x100 + pixels, 0);
         PutBe32(pool, 0x10, 1); // class igImage2
         PutBe32(pool, 0x10 + 0x08, v7 ? 0 : 0x80); // the name: v7 string 0, else at pool 0 + 0x80
-        PutBe32(pool, 0x10 + 0x30, 8 << 16 | 8); // 8 x 8
-        PutBe32(pool, 0x10 + 0x3C, 0x80000000); // external id 0
-        PutBe32(pool, 0x10 + 0x48, 0); // handle 0
+        const uint32_t later = v9 ? 4 : 0; // v9: igImage2's size, format and handle 4 bytes later
+        PutBe32(pool, 0x10 + 0x30 + later, 8 << 16 | 8); // 8 x 8
+        PutBe32(pool, 0x10 + 0x3C + later, 0x80000000); // external id 0
+        PutBe32(pool, 0x10 + 0x48 + later, 0); // handle 0
         if (!v7)
             memcpy(&pool[0x80], name, strlen(name));
         for (uint32_t by = 0; by < 2; by++)
@@ -417,6 +421,9 @@ namespace
         CHECK(std::string(packed.begin(), packed.end()) == text);
         CHECK(first.size() == 10 && std::string(first.begin(), first.end()) == text.substr(0, 10));
         CHECK(archive->Find("ui_levelfullscreen/mainmenu.png") == size_t(2) && !archive->Find("nothing"));
+        // Either separator finds the entry: a '\\' lookup (game_art.cpp's "textures\\<name>") finds SuperChargers' '/' names.
+        CHECK(archive->Find("UI_LEVELFULLSCREEN\\MainMenu.png") == size_t(2) &&
+              archive->Find("tfb\\levels") == size_t(2));
         CHECK(!art::alchemy::IgaArchive::Open(reader, 0x20));
 
         auto file = art::alchemy::IgzFile::Parse(archive->Read(2));
@@ -443,7 +450,7 @@ namespace
         CHECK(archive->Version() == 8 && archive->Verified() && file->Version() == 6 && file->Verified());
 
         // Every version of the reader's tables reads its own fixture: IGA v8 [V], v10 [V], v11 [V] in both byte orders;
-        // IGZ v6 [V], v7, v8, v9.
+        // IGZ v6 [V], v7 [V], v8 [V], v9 [V].
         // The [?] versions only check that the reader follows its table: the table itself is from public descriptions.
         auto versions = art::alchemy::IgaVersions();
         CHECK(versions.size() == 4 && versions[0].version == 8 && versions[0].verified && versions[1].version == 10 &&
@@ -493,6 +500,10 @@ namespace
             CHECK(art::alchemy::DecodePicture(*v7, v7->Pictures()[0], decoded) && decoded.rgba[0] == 0xFFFF0000 &&
                   decoded.rgba[63] == 0xFF0000FF);
             CHECK(v7->Dependencies() == std::vector<std::string>{ "textures:/JuiceStandard_Test_10.igz" });
+        }
+        {
+            auto v9 = art::alchemy::IgzFile::Parse(MakeIgz(0xB9BCDC57, 9));
+            CHECK(v9 && v9->Dependencies() == std::vector<std::string>{ "textures:/JuiceStandard_Test_10.igz" });
         }
 
         // The games' manifests (games/<id>/art.json, built in): a game whose manifest exists is known.
@@ -583,6 +594,43 @@ namespace
         art::lux::DecodeImages(
             stream, [](const std::string&) { return false; }, [&](const std::string&, const art::Image&) { found++; });
         CHECK(found == 1);
+        // A package whose SYHP chunk is cut by the end of its body (offset and size would read past it): skipped. The bytes after the record are what an old reader
+        // took for the chunk's fields.
+        {
+            std::vector<uint8_t> shortBody(0x100, 0);
+            memcpy(shortBody.data(), "APKF", 4);
+            memcpy(&shortBody[0x20], "\0XET", 4);
+            memcpy(&shortBody[0x20 + 0x30], "toy_short_hud", 13);
+            memcpy(&shortBody[0x60], Flushes, 8);
+            PutBe32(shortBody, 0x68, 0x80000002);
+            PutBe32(shortBody, 0x6C, 20 | 1 << 6);
+            PutBe32(shortBody, 0x70, (8 - 1) | (4 - 1) << 13);
+            PutBe32(shortBody, 0x7C, 1 << 9);
+            memcpy(&shortBody[0xF0], "SYHP", 4);
+            std::vector<uint8_t> cut(8, 0);
+            std::vector<uint8_t> cutHead(16, 0);
+            PutBe32(cutHead, 12, uint32_t(shortBody.size()));
+            cut.insert(cut.end(), cutHead.begin(), cutHead.end());
+            cut.insert(cut.end(), shortBody.begin(), shortBody.end());
+            PutBe32(cut, cut.size(), 0x80); // where the size field of the chunk would be
+            int cutFound = 0;
+            art::lux::DecodeImages(
+                cut, [](const std::string&) { return true; },
+                [&](const std::string&, const art::Image&) { cutFound++; });
+            CHECK(cutFound == 0);
+            // The same package with the chunk whole is read: the test is about the cut, not the package.
+            std::vector<uint8_t> whole = shortBody;
+            whole.resize(0x110, 0);
+            PutBe32(whole, 0xF0 + 8, 0), PutBe32(whole, 0xF0 + 16, 0x80);
+            std::vector<uint8_t> full(8, 0);
+            PutBe32(cutHead, 12, uint32_t(whole.size()));
+            full.insert(full.end(), cutHead.begin(), cutHead.end());
+            full.insert(full.end(), whole.begin(), whole.end());
+            art::lux::DecodeImages(
+                full, [](const std::string&) { return true; },
+                [&](const std::string&, const art::Image&) { cutFound++; });
+            CHECK(cutFound == 1);
+        }
         // A strm file around a stored zlib block of the same stream.
         std::vector<uint8_t> strm = { 's', 't', 'r', 'm' };
         strm.resize(0x14, 0);
@@ -745,13 +793,16 @@ namespace
         int w, h;
         size(art::CachedPath(game, art::Role::Logo), w, h);
         printf("  logo %dx%d", w, h);
-        CHECK(w >= 512 && h >= 200 && w > h);
+        // [Imaginators] no clean logo on the disc: the dashboard's 420x320 tile (games/imaginators/docs/art.md).
+        const bool tile = strcmp(game, "imaginators") == 0;
+        CHECK(tile ? (w == 420 && h == 320) : (w >= 512 && h >= 200 && w > h));
         // [SwapForce] No picture of the logo on the disc is larger than 872x400: the title screen's lossless 32-bit one
         // (juicestandard_title_00) is the sharpest, the DXT5 copy of it (title_10) the same size.
         CHECK(strcmp(game, "swapforce") != 0 || (w == 872 && h == 400));
         size(art::CachedPath(game, art::Role::Background), w, h);
         printf(", background %dx%d\n", w, h);
-        CHECK(w >= 512 && h >= 512);
+        // [Imaginators, SuperChargers] the dashboard's 1920x1080 backdrop (nxeart) or a menu picture.
+        CHECK(w >= 512 && h >= 512 && (strcmp(game, "imaginators") != 0 || (w == 1920 && h == 1080)));
         if (strcmp(game, "giants") == 0)
             TestGiantsLogo(art::CachedPath(game, art::Role::Logo));
         // Every toy the game accepts that the catalogue gives a picture has one now.
@@ -778,7 +829,12 @@ namespace
         // [TrapTeam] 28 toys have only a drawn icon from this disc: the 8 Giants and 2 items whose only picture here is a
         // later repose, the 16 swappers' bottoms (the collection shows tops), Fiery Forge and Arkeyan Crossbow (one
         // alternate each): their own game's disc gives them a picture (docs/runtime/host/game_art.md).
-        CHECK(drawn == (strcmp(game, "trapteam") == 0 ? 28 : 0));
+        // [SuperChargers] 2: the UFO Hat (only its variant's) and Threat Rocket (a racing villain's vehicle, no badge);
+        // [Imaginators] Threat Rocket and its Mystery Chest (no badge); its UFO Hat has one (tools/catalogue_tables.py).
+        CHECK(drawn == (strcmp(game, "trapteam") == 0           ? 28
+                           : strcmp(game, "superchargers") == 0 ? 2
+                           : strcmp(game, "imaginators") == 0   ? 2
+                                                                : 0));
 
         // Every picture of a variant the catalogue maps (portraits, artworks) is on the disc; the best picture of each
         // toy and variant is its own artwork when the game has one (Giants: 99, about 1000x960).
@@ -868,6 +924,39 @@ namespace
             for (const collection::Villain& villain : catalogue.FindGame(game)->villains)
                 CHECK(!collection::VillainPicturePath(game, villain).empty() &&
                       !collection::VillainPicturePath(game, villain, false).empty());
+            return; // no upgrades in the manifest
+        }
+        if (strcmp(game, "imaginators") == 0)
+        {
+            // [Imaginators] 565 badges, 172 px: a Sensei's, a variant's, a crystal's (one per element).
+            for (uint16_t type : { 601, 627, 682, 3227 })
+            {
+                size(collection::PortraitPath(game, *catalogue.Find(type), 0), w, h);
+                CHECK(w == 172 && h == 172);
+            }
+            CHECK(collection::GamePortraitPath(game, *catalogue.Find(602), 0x5403)
+                    .ends_with("collection_macetriceratops_legendary.png"));
+            // The creation parts' names (game_text.cpp), in the disc's French and Dutch: a head, a weapon, a primary power;
+            // English, which this disc does not have, gets its first language.
+            CHECK(got.partNames && again.partNames);
+            CHECK(collection::PartName(game, 6, "fr") == "Tête d'oiseau" &&
+                  collection::PartName(game, 6, "nl") == "Veertastisch" &&
+                  collection::PartName(game, 6, "en") == "Tête d'oiseau");
+            CHECK(collection::PartName(game, 30100, "fr") == "Arc elfique" &&
+                  collection::PartName(game, 22001, "nl") == "Multischot");
+            CHECK(collection::PartName(game, 999, "fr").empty()); // no such part
+            return; // no upgrades in the manifest
+        }
+        if (strcmp(game, "superchargers") == 0)
+        {
+            // [SuperChargers] 469 round badges (88 px) of every toy of the five games; a vehicle's and a trophy's own.
+            for (uint16_t type : { 3227, 3224, 3500, 3400 })
+            {
+                size(collection::PortraitPath(game, *catalogue.Find(type), 0), w, h);
+                CHECK(w == 88 && h == 88);
+            }
+            CHECK(collection::GamePortraitPath(game, *catalogue.Find(3224), 0x441E)
+                    .ends_with("collection_vehiclefirecar_gold.png"));
             return; // no upgrades in the manifest
         }
         // The upgrades (game_text.cpp): every Skylander's list, read once; Spyro's as both games show it [V] (runs of
@@ -1042,7 +1131,7 @@ int main(int argc, char** argv)
     else
     {
         temporary = true;
-        scratch = std::filesystem::temp_directory_path() / "SSAArtTest";
+        scratch = std::filesystem::temp_directory_path() / "ArkeyanArtTest";
         SetVariable("SKYLANDERS_DATA", datadir::Text(scratch));
     }
     std::filesystem::create_directories(scratch);
@@ -1065,6 +1154,10 @@ int main(int argc, char** argv)
         TestDisc("swapforce", iso, 208);
     if (const char* iso = getenv("TRAPTEAM_ISO"); iso != nullptr && *iso)
         TestDisc("trapteam", iso, 347);
+    if (const char* iso = getenv("SUPERCHARGERS_ISO"); iso != nullptr && *iso)
+        TestDisc("superchargers", iso, 469);
+    if (const char* iso = getenv("IMAGINATORS_ISO"); iso != nullptr && *iso)
+        TestDisc("imaginators", iso, 565);
     if (keep)
         printf("kept in %s\n", datadir::Text(scratch).c_str());
     else if (temporary)

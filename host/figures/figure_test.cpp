@@ -1,23 +1,28 @@
 // Unit test of the figure library: crypto test vectors, tag encryption and progress round trips, the catalog, and the
 // cross-game round trips (a figure written by Spyro's Adventure, then Giants, then Spyro's Adventure again). No game data
-// is needed; optional arguments add checks against the player's own files (the portraits are SSAArtTest's):
-//   SSAFigureTest [<figure dump>...]          each dump must decrypt to a valid or blank tag
-//   SSAFigureTest --make <dump> <type>[:<variant hex>] [xp=<total>] [gold=] [hat=] [ssahat=] [sfxp=] [upgrades=<hex>] [wowpow=]
+// is needed; optional arguments add checks against the player's own files (the portraits are ArkeyanArtTest's):
+//   ArkeyanFigureTest [<figure dump>...]          each dump must decrypt to a valid or blank tag
+//   ArkeyanFigureTest --make <dump> <type>[:<variant hex>] [xp=<total>] [gold=] [hat=] [ssahat=] [sfxp=] [upgrades=<hex>] [wowpow=]
 //                                              writes a figure for a test run (docs/runtime/host/figures.md)
-//   SSAFigureTest --edit <dump> - [the same fields]
+//   ArkeyanFigureTest --edit <dump> - [the same fields]
 //                                              changes those fields of a dump (a game's write), keeping the rest
-//   SSAFigureTest --same-extra <before> <after>
+//   ArkeyanFigureTest --same-extra <before> <after>
 //                                              a game wrote the first pair in between, and the extra areas stayed the
 //                                              same (byte for byte, decrypted) and valid, with the same levels and hat
-//   SSAFigureTest --roundtrip <before> <after>
+//   ArkeyanFigureTest --roundtrip <before> <after>
 //                                              a game ran with the figure: what it wrote and what it must not have touched
 //                                              (every block outside the first pair, byte for byte; both pairs' checksums)
-//   SSAFigureTest --roundtrip-later <before> <after>
+//   ArkeyanFigureTest --roundtrip-later <before> <after>
 //                                              the same after Giants or Swap Force, which may write the extra areas:
 //                                              the identity stays, both pairs' checksums stay valid, and a written
 //                                              figure gets its extra area
-//   SSAFigureTest --make-trap-pair .scratch/<folder>
+//   ArkeyanFigureTest --make-crystal <out> <type>:<variant hex>|<blank crystal dump> [<made crystal dump>]
+//                                              a crystal our tools make (no signature), or on a blank crystal's identity
+//                                              and signature: blank, or with that one's creation
+//   ArkeyanFigureTest --make-trap-pair .scratch/<folder>
 //                                              two Water/Gulper dumps, normal and evolved; no game is started
+//   ArkeyanFigureTest --make-trap <out> <type>:<shape hex> [villain=<id>] [evolved]
+//                                              a trap, empty or holding that villain (1001-1046 or 1-46)
 // Exit code 0 = pass.
 #include "host/collection/catalogue.h"
 #include "host/figures/figure_catalog.h"
@@ -442,6 +447,223 @@ namespace
         packed[14] = 5;
         packed[15] = 0;
         crc(14, 0, 16);
+    }
+
+    // A crystal's copy as the dumps hold it, coded apart from the library: the trap's checksums, 0x0A over 16 blocks.
+    void SealTestCrystal(FigureData& plain, int copy)
+    {
+        std::array<uint8_t, 336> packed{};
+        for (size_t i = 0; i < packed.size(); i++)
+            packed[i] = TrapByte(plain, copy, i);
+        auto put = [&](size_t at, uint16_t value) {
+            TrapByte(plain, copy, at) = uint8_t(value);
+            TrapByte(plain, copy, at + 1) = uint8_t(value >> 8);
+            packed[at] = uint8_t(value);
+            packed[at + 1] = uint8_t(value >> 8);
+        };
+        put(10, FigureChecksum(packed.data() + 64, 256));
+        put(12, FigureChecksum(packed.data() + 16, 48));
+        packed[14] = 5;
+        packed[15] = 0;
+        put(14, FigureChecksum(packed.data(), 16));
+    }
+
+    // Imaginators' creation crystals: a made crystal read, edited and written back; the creation and signature stay.
+    void TestCrystal()
+    {
+        using figures::AreaState;
+        figures::CrystalStats read;
+        FigureData blank = figures::CreateFigure(685, 0x520F);
+        CHECK(figures::ReadCrystalStats(blank, read) == AreaState::Blank);
+        CHECK(!figures::WriteCrystalStats(blank, read));
+        figures::FigureStats shared;
+        CHECK(figures::ReadStats(blank, shared) == AreaState::Blank);
+        CHECK(figures::ReadCrystalStats(figures::CreateFigure(14), read) == AreaState::Damaged);
+
+        // A made crystal: what the game's creator leaves (two copies, sequences 4 and 5), a signature in each 21st block.
+        FigureData plain = figures::Decrypt(blank);
+        for (int copy = 0; copy < 2; copy++)
+        {
+            for (size_t i = 0x60; i < 0xC0; i++)
+                TrapByte(plain, copy, i) = uint8_t(i * 7 + 1);
+            TrapByte(plain, copy, 0xC0) = 0x01; // the creation's last bit (547 bits from 0x7C)
+            // The recipe format's hash, then the "Class" parameter at bit 472 of the creation (packed 0xB7): Ninja (4).
+            TrapByte(plain, copy, 0x78) = 0x6A;
+            TrapByte(plain, copy, 0x79) = 0x18;
+            TrapByte(plain, copy, 0x7A) = 0x8D;
+            TrapByte(plain, copy, 0x7B) = 0x45;
+            TrapByte(plain, copy, 0xB7) = uint8_t((TrapByte(plain, copy, 0xB7) & 0x80) | 4);
+            for (size_t i = 0; i < 16; i++)
+                TrapByte(plain, copy, 0x140 + i) = uint8_t(0x30 + i + copy);
+            TrapByte(plain, copy, 0) = 0x10; // 0x2710 = 10000 XP
+            TrapByte(plain, copy, 1) = 0x27;
+            TrapByte(plain, copy, 3) = 0xE8; // 1000 gold
+            TrapByte(plain, copy, 4) = 0x03;
+            TrapByte(plain, copy, 9) = uint8_t(4 + copy);
+            const char name[] = "SIR TEST";
+            for (size_t i = 0; i < sizeof(name) - 1; i++)
+                TrapByte(plain, copy, 0x20 + i) = uint8_t(name[i]);
+            SealTestCrystal(plain, copy);
+        }
+        FigureData tag = figures::Encrypt(plain);
+        CHECK(figures::ReadCrystalStats(tag, read) == AreaState::Valid);
+        CHECK(read.experience == 10000 && read.gold == 1000 && read.name == "SIR TEST" && read.battleClass == 4 &&
+              read.sequence == 5 && std::string(figures::BattleClassName(read.battleClass)) == "Ninja");
+        CHECK(figures::ReadStats(tag, shared) == AreaState::Valid && figures::NicknameUtf8(shared) == "SIR TEST" &&
+              shared.gold == 1000);
+
+        // Edit: a longer name (past 16 characters), gold, experience; a control character is dropped.
+        figures::CrystalStats edit = read;
+        edit.name = "FIRE KNIGHT OF THE\x01 NORTH";
+        edit.gold = 65535; // clamped to the games' 65000
+        edit.experience = 0x1234567; // clamped to 24 bits
+        FigureData written = tag;
+        CHECK(figures::WriteCrystalStats(written, edit));
+        CHECK(figures::ReadCrystalStats(written, read) == AreaState::Valid);
+        CHECK(read.name == "FIRE KNIGHT OF THE NORTH" && read.gold == figures::MaxGold &&
+              read.experience == figures::MaxCrystalExperience && read.battleClass == 4 && read.sequence == 7);
+        FigureData after = figures::Decrypt(written);
+        for (int copy = 0; copy < 2; copy++)
+        {
+            for (size_t i = 0x60; i < 0xC0; i++)
+                CHECK(TrapByte(after, copy, i) == TrapByte(plain, copy, i));
+            for (size_t i = 0x140; i < 0x150; i++)
+                CHECK(TrapByte(after, copy, i) == TrapByte(plain, copy, i));
+            FigureData resealed = after;
+            SealTestCrystal(resealed, copy);
+            CHECK(resealed == after);
+        }
+        // The inactive copy (A, sequence 4) is written first: A 6, B 7.
+        CHECK(TrapByte(after, 0, 9) == 6 && TrapByte(after, 1, 9) == 7);
+
+        // Through the character fields (the collection's Edit): gold changes, the long name stays.
+        CHECK(figures::ReadStats(written, shared) == AreaState::Valid);
+        shared.gold = 42;
+        figures::WriteStats(written, shared);
+        CHECK(figures::ReadCrystalStats(written, read) == AreaState::Valid && read.gold == 42 &&
+              read.name == "FIRE KNIGHT OF THE NORTH" && read.battleClass == 4);
+
+        // A damaged copy: the other one is read; both damaged: Damaged, and writing refuses.
+        FigureData one = figures::Decrypt(written);
+        TrapByte(one, 1, 0x70) ^= 1;
+        FigureData broken = figures::Encrypt(one);
+        CHECK(figures::ReadCrystalStats(broken, read) == AreaState::Valid && read.sequence == 8); // A, after the edits
+        TrapByte(one, 0, 0x70) ^= 1;
+        broken = figures::Encrypt(one);
+        CHECK(figures::ReadCrystalStats(broken, read) == AreaState::Damaged);
+        CHECK(!figures::WriteCrystalStats(broken, edit));
+    }
+
+    // SuperChargers' vehicles: the gearbits in the extra area's +0x08; a vehicle the game wrote keeps every other byte.
+    void TestVehicle()
+    {
+        CHECK(figures::IsVehicleType(3227) && !figures::IsVehicleType(3400) && !figures::IsVehicleType(14));
+        FigureData tag = figures::CreateFigure(3227);
+        figures::FigureStats stats;
+        stats.platforms = 2;
+        stats.ssaHat = 1; // as the game leaves a vehicle after its first use
+        stats.giantsExperience = 9;
+        stats.wowPow = 1;
+        figures::WriteStats(tag, stats);
+        // The game's byte at 0x4E of the first area (past the nickname's place), sealed as the game would.
+        FigureData plain = figures::Decrypt(tag);
+        for (size_t copy = 0; copy < 2; copy++)
+        {
+            plain[(12 + 28 * copy) * 16 + 14] = 0x33;
+            uint8_t data[0x30];
+            memcpy(data, &plain[(9 + 28 * copy) * 16], 0x20);
+            memcpy(data + 0x20, &plain[(12 + 28 * copy) * 16], 0x10);
+            uint16_t crc = FigureChecksum(data, sizeof(data));
+            plain[(8 + 28 * copy) * 16 + 0x0C] = uint8_t(crc);
+            plain[(8 + 28 * copy) * 16 + 0x0D] = uint8_t(crc >> 8);
+            uint8_t header[16];
+            memcpy(header, &plain[(8 + 28 * copy) * 16], 16);
+            header[14] = 5;
+            header[15] = 0;
+            crc = FigureChecksum(header, 16);
+            plain[(8 + 28 * copy) * 16 + 0x0E] = uint8_t(crc);
+            plain[(8 + 28 * copy) * 16 + 0x0F] = uint8_t(crc >> 8);
+        }
+        tag = figures::Encrypt(plain);
+        CHECK(figures::ReadStats(tag, stats) == figures::AreaState::Valid && figures::Gearbits(stats) == 0);
+        figures::SetGearbits(stats, 500);
+        figures::WriteStats(tag, stats);
+        figures::FigureStats again;
+        CHECK(figures::ReadStats(tag, again) == figures::AreaState::Valid && figures::Gearbits(again) == 500 &&
+              again.giantsExperience == 9 && again.wowPow == 1 && again.ssaHat == 1);
+        FigureData after = figures::Decrypt(tag);
+        CHECK(after[(12 + 28) * 16 + 14] == 0x33 && after[12 * 16 + 14] == 0x33);
+        CHECK(after[17 * 16 + 6] == 1 && after[17 * 16 + 3] == 9);
+        figures::SetGearbits(stats, 1000000);
+        CHECK(figures::Gearbits(stats) == figures::MaxGearbits);
+        // A new nickname still rewrites its place.
+        figures::SetNicknameUtf8(again, "Racer");
+        figures::WriteStats(tag, again);
+        CHECK(figures::ReadStats(tag, stats) == figures::AreaState::Valid && figures::NicknameUtf8(stats) == "Racer");
+    }
+
+    // A creation's parameters (the disc's recipe format) and the 80 levels; a crystal made from them reads back.
+    void TestCrystalRecipe()
+    {
+        const auto& params = figures::CrystalParams();
+        size_t bits = 0;
+        for (const figures::CrystalParam& p : params)
+            bits += p.bits;
+        CHECK(bits == 547 && params.size() == 74 && figures::CrystalParamIndex("Class") == 64 &&
+              figures::CrystalParamIndex("head") == 14 && figures::CrystalParamIndex("nothing") == -1);
+        CHECK(std::string(params[0].name) == "weaponR" && params[0].min == 30000 && params[0].bits == 10);
+        CHECK(figures::CrystalLevelExperience(20) == 197500 && figures::CrystalLevelExperience(21) == 220000 &&
+              figures::CrystalLevelExperience(80) == 1400000 && figures::CrystalLevel(0) == 1 &&
+              figures::CrystalLevel(219999) == 20 && figures::CrystalLevel(220000) == 21 &&
+              figures::CrystalLevel(1427923) == 80);
+
+        FigureData sensei = figures::CreateFigure(601, 0x5000);
+        CHECK(sensei[3 * 16 + 6] == 0xFF && sensei[3 * 16 + 7] == 0x07 && sensei[3 * 16 + 8] == 0x80 &&
+              sensei[3 * 16 + 15] == 0x51 && figures::CreateFigure(14)[3 * 16 + 15] == 0);
+        CHECK(figures::NeedsFactorySignature(682) && figures::NeedsFactorySignature(601) &&
+              !figures::NeedsFactorySignature(3227) && !figures::HasFactorySignature(figures::CreateFigure(682)));
+        // A crystal made with variant 0 (the catalogue has no plain crystal: the launcher's and the Toy Box's "Create")
+        // gets the 2016 trailer too; one an older build wrote without it is mended, a signed or older toy never.
+        FigureData plainCrystal = figures::CreateFigure(683);
+        CHECK(
+            plainCrystal[3 * 16 + 6] == 0xFF && plainCrystal[3 * 16 + 8] == 0x80 && plainCrystal[3 * 16 + 15] == 0x51);
+        FigureData older = plainCrystal;
+        const uint8_t readOnly[4] = { 0x0F, 0x0F, 0x0F, 0x69 };
+        memcpy(&older[3 * 16 + 6], readOnly, 4);
+        older[3 * 16 + 15] = 0;
+        CHECK(figures::MendVirtualToy(older) && older == plainCrystal && !figures::MendVirtualToy(older));
+        FigureData signedCrystal = older;
+        memcpy(&signedCrystal[3 * 16 + 6], readOnly, 4);
+        signedCrystal[2 * 16] = signedCrystal[4 * 16] = 0x5A;
+        FigureData eruptor = figures::CreateFigure(9);
+        CHECK(!figures::MendVirtualToy(signedCrystal) && !figures::MendVirtualToy(eruptor));
+        figures::CrystalStats made;
+        made.name = "TEST BREW";
+        made.experience = 6000;
+        made.battleClass = 7; // Sorcerer
+        for (size_t i = 0; i < params.size(); i++)
+            made.creation[i] = uint16_t((i * 37) & ((1u << params[i].bits) - 1));
+        made.creation[size_t(figures::CrystalParamIndex("tail"))] = 0x7F; // none: all ones
+        FigureData tag = figures::CreateCrystal(687, 0x5210, made);
+        figures::CrystalStats read;
+        CHECK(figures::ReadCrystalStats(tag, read) == figures::AreaState::Valid && read.hasRecipe &&
+              read.battleClass == 7 && read.name == "TEST BREW" && read.experience == 6000);
+        made.creation[size_t(figures::CrystalParamIndex("Class"))] = 7;
+        CHECK(read.creation == made.creation);
+        FigureData plain = figures::Decrypt(tag);
+        for (int copy = 0; copy < 2; copy++)
+        {
+            FigureData resealed = plain;
+            SealTestCrystal(resealed, copy);
+            CHECK(resealed == plain && TrapByte(plain, copy, 0x70) == 0x30 && TrapByte(plain, copy, 0x78) == 0x6A);
+        }
+        // An edit of the creation (a new head) keeps the other parameters.
+        read.creation[size_t(figures::CrystalParamIndex("head"))] = 99;
+        CHECK(figures::WriteCrystalStats(tag, read));
+        figures::CrystalStats again;
+        CHECK(figures::ReadCrystalStats(tag, again) == figures::AreaState::Valid &&
+              again.creation[size_t(figures::CrystalParamIndex("head"))] == 99 && again.battleClass == 7 &&
+              again.creation[size_t(figures::CrystalParamIndex("tail"))] == 0x7F);
     }
 
     // Choosing the villain a trap plays: the records of the others stay, the evolved flag moves with its villain.
@@ -913,6 +1135,56 @@ namespace
     {
         FigureData tag;
         CHECK(LoadFigure(path, tag));
+        // Every tag: decrypting and encrypting again gives the dump's own bytes (a signature block included).
+        CHECK(figures::Encrypt(figures::Decrypt(tag)) == tag);
+        if (figures::NeedsFactorySignature(figures::ToyType(tag)) && !figures::HasFactorySignature(tag))
+            printf("%s: no factory signature (made here: virtual)\n", path); // every retail toy of the owner's has one
+        if (figures::IsCrystalType(figures::ToyType(tag)))
+        {
+            figures::CrystalStats crystal;
+            figures::AreaState state = figures::ReadCrystalStats(tag, crystal);
+            CHECK(state != figures::AreaState::Damaged);
+            if (crystal.hasRecipe)
+                printf("  creation: level %d, head %u, torso %u, class %u, head colour %u\n",
+                    figures::CrystalLevel(crystal.experience), crystal.creation[14], crystal.creation[15],
+                    crystal.creation[64], crystal.creation[19]);
+            printf("%s: crystal %u:%04X, %s, %s, \"%s\", %u XP, %u gold, %u s, seq %u\n", path, figures::ToyType(tag),
+                figures::Variant(tag),
+                state == figures::AreaState::Valid   ? "valid"
+                : state == figures::AreaState::Blank ? "blank"
+                                                     : "DAMAGED",
+                figures::BattleClassName(crystal.battleClass), crystal.name.c_str(), crystal.experience, crystal.gold,
+                crystal.playSeconds, crystal.sequence);
+            if (state == figures::AreaState::Valid)
+            {
+                // Rewritten as read: both copies become the newest one, with the next sequences and fresh checksums;
+                // the signature, identity and trailers stay byte for byte.
+                FigureData written = tag;
+                CHECK(figures::WriteCrystalStats(written, crystal));
+                FigureData before = figures::Decrypt(tag), after = figures::Decrypt(written);
+                int newest = TrapByte(before, 1, 9) == crystal.sequence ? 1 : 0;
+                for (size_t block = 0; block < FigureBlockCount; block++)
+                {
+                    bool area = (block >= 8 && block < 34) || (block >= 36 && block < 62);
+                    if (!area || block % 4 == 3)
+                        CHECK(memcmp(tag.data() + block * 16, written.data() + block * 16, 16) == 0);
+                }
+                for (int copy = 0; copy < 2; copy++)
+                {
+                    for (size_t i = 0; i < 0x140; i++)
+                    {
+                        if (i < 9 || i >= 0x10)
+                            CHECK(TrapByte(after, copy, i) == TrapByte(before, newest, i));
+                    }
+                }
+                figures::CrystalStats again;
+                CHECK(figures::ReadCrystalStats(written, again) == figures::AreaState::Valid &&
+                      again.name == crystal.name && again.experience == crystal.experience &&
+                      again.creation == crystal.creation && again.hasRecipe == crystal.hasRecipe &&
+                      again.battleClass == crystal.battleClass && again.sequence == uint8_t(crystal.sequence + 2));
+            }
+            return;
+        }
         if (figures::ToyType(tag) >= 210 && figures::ToyType(tag) <= 220)
         {
             figures::TrapStats trap;
@@ -952,18 +1224,68 @@ namespace
             stats.extraSequence);
 
         // Rewriting what was read gives back a valid tag with the same values.
+        // Every byte of the newer copies stays but the sequences and checksums (a SuperChargers vehicle's own bytes too).
         if (state == figures::AreaState::Valid)
         {
+            FigureData before = figures::Decrypt(tag);
+            int newest = before[(36 * 16) + 9] == stats.sequence ? 1 : 0;
             figures::WriteStats(tag, stats);
             figures::FigureStats again;
             CHECK(figures::ReadStats(tag, again) == figures::AreaState::Valid && again.gold == stats.gold &&
-                  again.experience == stats.experience && again.owner == stats.owner);
+                  again.experience == stats.experience && again.owner == stats.owner &&
+                  figures::Gearbits(again) == figures::Gearbits(stats));
+            FigureData after = figures::Decrypt(tag);
+            for (size_t block : { 8, 9, 10, 12, 13, 14, 16 })
+                for (size_t i = 0; i < 16; i++)
+                    if (block != 8 || i < 9)
+                        CHECK(after[(block + 28) * 16 + i] == before[(block + 28 * newest) * 16 + i]);
+            if (figures::IsVehicleType(figures::ToyType(tag)))
+                printf("  vehicle: %u gearbits, extra +3 %u\n", figures::Gearbits(again), again.giantsExperience);
         }
     }
 }
 
 namespace
 {
+    // --make-crystal <out> <type>:<variant hex> [<made crystal dump>]: a crystal our tools make (no factory signature),
+    // blank, or with the creation, name, experience and gold of a made crystal. Never overwrites a file.
+    int MakeCrystal(const char* outPath, const char* toy, const char* from)
+    {
+        unsigned type = 0, variant = 0;
+        FigureData probe;
+        if (!LoadFigure(toy, probe) &&
+            (sscanf(toy, "%u:%x", &type, &variant) < 1 || !figures::IsCrystalType(uint16_t(type))))
+            return fprintf(stderr, "not a crystal type\n"), 2;
+        FigureData tag = figures::CreateFigure(uint16_t(type), uint16_t(variant));
+        // <type> may also be a blank crystal's dump: its identity and factory signature are kept.
+        FigureData signedBlank;
+        bool onBlank = LoadFigure(toy, signedBlank);
+        if (onBlank)
+        {
+            type = figures::ToyType(signedBlank), variant = figures::Variant(signedBlank);
+            tag = signedBlank;
+        }
+        if (from != nullptr)
+        {
+            FigureData source;
+            figures::CrystalStats stats;
+            if (!LoadFigure(from, source) || figures::ReadCrystalStats(source, stats) != figures::AreaState::Valid)
+                return fprintf(stderr, "not a made crystal: %s\n", from), 2;
+            stats.sequence = 0;
+            FigureData made = figures::CreateCrystal(uint16_t(type), uint16_t(variant), stats);
+            FigureData plain = figures::Decrypt(tag), area = figures::Decrypt(made);
+            for (size_t block = 8; block < FigureBlockCount; block++)
+                if (block % 4 != 3 && block != 34 && block != 62)
+                    memcpy(&plain[block * 16], &area[block * 16], 16);
+            tag = figures::Encrypt(plain);
+        }
+        FILE* out = fopen(outPath, "wbx");
+        if (out == nullptr)
+            return fprintf(stderr, "cannot create %s (exists or not writable)\n", outPath), 1;
+        bool ok = fwrite(tag.data(), 1, tag.size(), out) == tag.size();
+        return fclose(out) == 0 && ok ? 0 : 1;
+    }
+
     int MakeTrapPair(const char* folder)
     {
         namespace fs = std::filesystem;
@@ -1003,6 +1325,45 @@ namespace
         return g_failures == 0 ? 0 : 1;
     }
 
+    // --make-trap <dump> <type>:<shape hex> [villain=<1001-1046, or the stored 1-46>] [evolved]: a trap for a test run,
+    // empty or holding that villain (figures::CreateTrap).
+    int MakeTrap(int argc, char** argv)
+    {
+        char* end = nullptr;
+        uint16_t type = uint16_t(strtoul(argv[3], &end, 10)),
+                 variant = end != nullptr && *end == ':' ? uint16_t(strtoul(end + 1, nullptr, 16)) : 0;
+        uint16_t villain = 0;
+        bool evolved = false;
+        for (int i = 4; i < argc; i++)
+        {
+            if (strncmp(argv[i], "villain=", 8) == 0)
+            {
+                villain = uint16_t(strtoul(argv[i] + 8, nullptr, 10));
+                if (villain > figures::VillainResourceBase)
+                    villain = uint16_t(villain - figures::VillainResourceBase);
+            }
+            else if (strcmp(argv[i], "evolved") == 0)
+                evolved = true;
+            else
+                return fprintf(stderr, "unknown field %s\n", argv[i]), 2;
+        }
+        FigureData tag;
+        try
+        {
+            tag = figures::CreateTrap(type, variant, villain, evolved);
+        }
+        catch (const std::invalid_argument& error)
+        {
+            return fprintf(stderr, "cannot make the trap: %s\n", error.what()), 2;
+        }
+        FILE* out = fopen(argv[2], "wb");
+        bool written = out != nullptr && fwrite(tag.data(), 1, tag.size(), out) == tag.size();
+        if (out == nullptr || fclose(out) != 0 || !written)
+            return fprintf(stderr, "cannot write %s\n", argv[2]), 1;
+        TestDump(argv[2]);
+        return g_failures == 0 ? 0 : 1;
+    }
+
     // --make <dump> <type>[:<variant hex>] [xp=<total>] [gold=] [hat=] [ssahat=] [sfxp=] [upgrades=<hex>] [wowpow=]: a figure for a test run.
     int Make(int argc, char** argv)
     {
@@ -1023,7 +1384,7 @@ namespace
         else
             tag = figures::CreateFigure(type, variant);
         if (figures::ToyType(tag) >= 210 && figures::ToyType(tag) <= 220)
-            return fprintf(stderr, "use --make-trap-pair for trap candidates\n"), 2;
+            return fprintf(stderr, "use --make-trap for a trap\n"), 2;
         for (int i = 4; i < argc; i++)
         {
             std::string arg = argv[i];
@@ -1055,6 +1416,25 @@ namespace
             return fprintf(stderr, "cannot write %s\n", argv[2]), 1;
         TestDump(argv[2]);
         return g_failures == 0 ? 0 : 1;
+    }
+
+    // --diff <before> <after>: every byte that differs between the two tags, decrypted ("block 0x08 +0x0A: 00 -> 05"),
+    // trailers left out: what a game wrote (the research behind docs/runtime/host/figures.md).
+    int Diff(const char* before, const char* after)
+    {
+        FigureData a, b;
+        if (!LoadFigure(before, a) || !LoadFigure(after, b))
+            return fprintf(stderr, "cannot read both tags\n"), 1;
+        FigureData x = figures::Decrypt(a), y = figures::Decrypt(b);
+        int changed = 0;
+        for (size_t i = 0; i < x.size(); i++)
+            if (i % (4 * FigureBlockSize) != 3 * FigureBlockSize + i % FigureBlockSize && x[i] != y[i])
+            {
+                printf("block 0x%02zX +0x%02zX: %02X -> %02X\n", i / FigureBlockSize, i % FigureBlockSize, x[i], y[i]);
+                changed++;
+            }
+        printf("%d bytes changed\n", changed);
+        return 0;
     }
 
     // --same-extra <before> <after>: the extra areas are byte-identical (decrypted) and valid in both.
@@ -1175,10 +1555,16 @@ namespace
 
 int main(int argc, char** argv)
 {
+    if ((argc == 4 || argc == 5) && strcmp(argv[1], "--make-crystal") == 0)
+        return MakeCrystal(argv[2], argv[3], argc == 5 ? argv[4] : nullptr);
+    if (argc >= 4 && strcmp(argv[1], "--make-trap") == 0)
+        return MakeTrap(argc, argv);
     if (argc == 3 && strcmp(argv[1], "--make-trap-pair") == 0)
         return MakeTrapPair(argv[2]);
     if (argc > 1 && (strcmp(argv[1], "--make") == 0 || strcmp(argv[1], "--edit") == 0))
         return Make(argc, argv);
+    if (argc == 4 && strcmp(argv[1], "--diff") == 0)
+        return Diff(argv[2], argv[3]);
     if (argc == 4 && strcmp(argv[1], "--same-extra") == 0)
         return SameExtra(argv[2], argv[3]);
     if (argc == 4 && strcmp(argv[1], "--roundtrip") == 0)
@@ -1191,6 +1577,9 @@ int main(int argc, char** argv)
     TestTrapCodec();
     TestTrapCapture();
     TestTrapSelect();
+    TestCrystal();
+    TestCrystalRecipe();
+    TestVehicle();
     TestCatalog();
     TestGiants();
     TestRoundTrips();

@@ -1,11 +1,14 @@
 #include "kernel/files.h"
+#include "kernel/level_redirect.h"
 #include "game.h"
 #include "gpu/draw.h"
+#include "gpu/frame_stats.h"
 #include "host/collection/save_backup.h"
 #include "kernel/objects.h"
 #include "kernel/overlapped.h"
 #include "thread.h"
 #include "vfs.h"
+#include "write_watch.h"
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -119,7 +122,7 @@ namespace
                 return;
             stream.flush();
             stream.close();
-            savebackup::Commit commit = savebackup::CommitFile(tempPath, hostPath, savebackup::Root(SSA_GAME_ID));
+            savebackup::Commit commit = savebackup::CommitFile(tempPath, hostPath, savebackup::Root(ARKEYAN_GAME_ID));
             if (!commit.ok)
             {
                 fprintf(stderr, "[saves] %s: %s\n", path.c_str(), commit.error.c_str());
@@ -215,26 +218,20 @@ namespace
     // redirected instead (engines/alchemy/zone.cpp).
     std::string RedirectLevel(std::string path)
     {
-        static const std::string level = [] {
-            const char* value = skyenv::Get("SKY_LEVEL");
-            std::string name = value != nullptr ? value : "";
-            for (char& c : name)
+        static const auto lower = [](const char* name) {
+            std::string value = (name != nullptr) ? name : "";
+            for (char& c : value)
                 c = char(tolower(c));
-            return name;
-        }();
+            return value;
+        };
+        static const std::string level = lower(skyenv::Get("SKY_LEVEL"));
         if (level.empty())
             return path;
         const auto [first, follows] = ::game::Current().firstLevel;
-        if (first.empty())
-            return path;
-        const size_t nameAt = first.rfind('\\') + 1; // where the level's name starts in `first`
-        for (size_t at = path.find(first); at != std::string::npos; at = path.find(first, at + 1))
-        {
-            char next = at + first.size() < path.size() ? path[at + first.size()] : '\0';
-            if (follows.find(next) != std::string_view::npos)
-                path.replace(at + nameAt, first.size() - nameAt, level);
-        }
-        return path;
+        // SKY_LEVEL_FROM=<level>: that level's files are redirected instead of the first level's (a Battle Mode arena
+        // the menus start: the game's own battle, in the arena SKY_LEVEL names).
+        static const std::string redirected = levelredirect::FirstWithName(first, lower(skyenv::Get("SKY_LEVEL_FROM")));
+        return levelredirect::Apply(std::move(path), redirected, follows, level);
     }
 
     // SKY_MOVIE_SWAP=<from>:<to>[,<from>:<to>...] (test aid, scripts only; tools/pipelines/ssa_ending.sh): a movie the
@@ -609,6 +606,8 @@ PPC_FUNC(__imp__NtOpenFile)
 
 PPC_FUNC(__imp__NtReadFile)
 {
+    if (gpu::framestats::Enabled())
+        gpu::framestats::NoteFileRead(); // a hitch's "loading" cause
     auto file = LookupHandleAs<File>(ctx.r3.u32);
     uint32_t buffer = ctx.r8.u32;
     uint32_t length = ctx.r9.u32;
@@ -621,6 +620,8 @@ PPC_FUNC(__imp__NtReadFile)
 
     uint64_t position = TransferPosition(*file, ctx.r10.u32);
     uint32_t read = 0;
+    // A system call writes the buffer: watched pages would make it fail instead of faulting.
+    writewatch::WillWrite(g_memory.Translate(buffer), length);
     if (!file->OnHost())
     {
         read = g_disc.Read(*file->entry, position, g_memory.Translate(buffer), length);

@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <vector>
 
-// An .ico holding one PNG as it is (Windows Vista and later read PNG entries, at any size): SSABuild embeds the game's
+// An .ico holding one PNG as it is (Windows Vista and later read PNG entries, at any size): Arkeyan-Builder embeds the game's
 // title icon in the Windows executable with it (docs/runtime/host/game_art.md, "The app icon"). Empty when `png` is not a
 // PNG with a square size of 1 to 256 pixels (the IHDR is read, nothing is decoded).
 inline std::vector<uint8_t> MakeIco(const std::vector<uint8_t>& png)

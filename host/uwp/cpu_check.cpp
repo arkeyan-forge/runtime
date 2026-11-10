@@ -1,8 +1,8 @@
-// The Xbox Series package (SSA_UWP_MARCH=x86-64-v3) uses AVX2, FMA and BMI2, which the Xbox One's Jaguar CPU lacks.
+// The Xbox Series package (ARKEYAN_UWP_MARCH=x86-64-v3) uses AVX2, FMA and BMI2, which the Xbox One's Jaguar CPU lacks.
 // This file is compiled for the baseline (-march=btver2, CMakeLists.txt) and its check runs as the first static
 // constructor, before any code built for the newer CPU: on a CPU without them it writes LocalState\Arkeyan.log and
 // exits, instead of crashing on an illegal instruction. Raw WinRT calls only (no templates shared with other files).
-#if defined(SSA_REQUIRE_X86_64_V3)
+#if defined(ARKEYAN_REQUIRE_X86_64_V3)
 #define ____FIReference_1_boolean_INTERFACE_DEFINED__
 #include <windows.h>
 #include <roapi.h>

@@ -5,18 +5,21 @@
 #include "alchemy_archive.h"
 #include "game_text.h"
 #include "lux_images.h"
+#include "stfs.h"
 #include "../dir_list.h"
 #include "../collection/catalogue.h"
 #include "../collection/datadir.h"
 #include "../collection/json.h"
 #include "../collection/upgrades.h"
 #include <SDL3/SDL.h>
+#include <stb_image.h>
 #include <algorithm>
 #include <atomic>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
 #include <fstream>
 #include <map>
@@ -33,7 +36,8 @@ namespace art
     {
         // Bump when a picture is read or composed differently: the cached pictures (not the portraits) are made again.
         constexpr int CacheVersion =
-            5; // 5: the scenes (<cache>/scenes/); 4: Swap Force's logo from its lossless 32-bit picture
+            6; // 6: Imaginators' logo made transparent; 5: the scenes (<cache>/scenes/); 4: Swap Force's logo from its
+               // lossless 32-bit picture
 
         std::string Lower(std::string text)
         {
@@ -333,6 +337,7 @@ namespace art
             std::string
                 picture; // the picture: its name [Lux], the end of its source path [Alchemy]; empty: the entry's first
             std::string compose, plate; // a composition step ("sprite_sheet_logo") and the second picture it uses
+            std::string package, file; // ...or a JPEG or PNG file of an STFS package on the disc (stfs.h: `nxeart`)
         };
 
         // [Alchemy] A folder of material instances in an archive, each naming its texture, an entry of the same archive
@@ -349,6 +354,7 @@ namespace art
         {
             std::string stream, archive;
             std::vector<std::string> names;
+            std::string package; // ...or the files of an STFS package (stfs.h: the dashboard's backdrop)
         };
 
         struct Manifest
@@ -373,6 +379,10 @@ namespace art
             std::vector<Materials> artworkMaterials;
             // The toys' upgrades (game_text.cpp): the manifest's "upgrades" part as it is.
             collection::Json upgrades;
+            // Imaginators' creation parts' names (game_text.cpp): the manifest's "parts" part as it is.
+            collection::Json parts;
+            // A cleaner logo than the disc's, downloaded by the launcher once the disc is verified (LogoDownload).
+            std::string logoUrl;
         };
 
         std::vector<Materials> ReadMaterials(const collection::Json& json)
@@ -386,7 +396,8 @@ namespace art
         Source ReadSource(const collection::Json& json)
         {
             return { json["stream"].AsString(), json["archive"].AsString(), json["entry"].AsString(),
-                json["picture"].AsString(), json["compose"].AsString(), json["plate"].AsString() };
+                json["picture"].AsString(), json["compose"].AsString(), json["plate"].AsString(),
+                json["package"].AsString(), json["file"].AsString() };
         }
 
         const std::vector<Manifest>& Manifests()
@@ -407,10 +418,12 @@ namespace art
                     Manifest m;
                     m.game = json["game"].AsString();
                     m.logo = ReadSource(json["logo"]);
+                    m.logoUrl = json["logo_download"]["url"].AsString();
                     m.background = ReadSource(json["background"]);
                     for (const collection::Json& group : json["scenes"].Items())
                     {
-                        SceneGroup scenes{ group["stream"].AsString(), group["archive"].AsString(), {} };
+                        SceneGroup scenes{ group["stream"].AsString(), group["archive"].AsString(), {},
+                            group["package"].AsString() };
                         for (const collection::Json& name : group["names"].Items())
                             scenes.names.push_back(name.AsString());
                         m.scenes.push_back(std::move(scenes));
@@ -426,6 +439,7 @@ namespace art
                     m.artworksFolder = json["artworks"]["folder"].AsString();
                     m.artworkMaterials = ReadMaterials(json["artworks"]["materials"]);
                     m.upgrades = json["upgrades"];
+                    m.parts = json["parts"];
                     if (!m.game.empty())
                         out.push_back(std::move(m));
                 }
@@ -481,6 +495,24 @@ namespace art
             return name;
         }
 
+        // A picture file (JPEG, PNG) of an STFS package on the disc: the dashboard's backdrop of the game (stfs.h).
+        bool PackagePicture(const Disc& disc, const std::string& package, const std::string& file, Image& out)
+        {
+            const std::vector<uint8_t> bytes = StfsFile(disc, package, file);
+            int width = 0, height = 0, channels = 0;
+            stbi_uc* pixels = bytes.empty() || bytes.size() > size_t(INT32_MAX)
+                ? nullptr
+                : stbi_load_from_memory(bytes.data(), int(bytes.size()), &width, &height, &channels, 4);
+            if (pixels == nullptr)
+                return false;
+            out.width = uint32_t(width);
+            out.height = uint32_t(height);
+            out.rgba.resize(size_t(width) * size_t(height));
+            memcpy(out.rgba.data(), pixels, out.rgba.size() * 4); // R, G, B, A in memory: R in the low byte
+            stbi_image_free(pixels);
+            return true;
+        }
+
         // Reads the scenes of `m` into `folder`, one by one (a disc that lacks one skips it); false when `stop` was raised
         // before the end.
         bool ReadScenes(
@@ -500,7 +532,9 @@ namespace art
                     if (stop != nullptr && *stop)
                         return false;
                     Image picture;
-                    if (auto found = streamed.find(entry); found != streamed.end())
+                    if (!group.package.empty())
+                        PackagePicture(disc, group.package, entry, picture);
+                    else if (auto found = streamed.find(entry); found != streamed.end())
                         picture = found->second;
                     else if (archive)
                         if (std::optional<alchemy::IgzFile> scene = OpenScene(*archive, entry))
@@ -534,10 +568,13 @@ namespace art
                         out = it->second;
                     return;
                 }
-                if (source.archive.empty())
-                    return;
                 Image picture;
-                if (!AlchemyPicture(disc, source, source.picture, picture))
+                if (!source.package.empty())
+                {
+                    if (!PackagePicture(disc, source.package, source.file, picture))
+                        return;
+                }
+                else if (source.archive.empty() || !AlchemyPicture(disc, source, source.picture, picture))
                     return;
                 if (source.compose == "sprite_sheet_logo")
                 {
@@ -545,6 +582,10 @@ namespace art
                     bool haveFlat = !source.plate.empty() && AlchemyPicture(disc, source, source.plate, flat);
                     ComposeSpriteSheetLogo(picture, haveFlat ? &flat : nullptr, out);
                 }
+                else if (source.compose == "light_on_black")
+                    out = LightOnBlack(picture);
+                else if (source.compose == "feather")
+                    out = Feather(picture);
                 else if (source.compose.empty())
                     out = std::move(picture);
                 else
@@ -869,6 +910,12 @@ namespace art
         return 0;
     }
 
+    std::string LogoDownload(std::string_view game)
+    {
+        const Manifest* where = FindManifest(game);
+        return where != nullptr && where->logoUrl.starts_with("https://") ? where->logoUrl : std::string();
+    }
+
     std::string PickScene(const std::vector<std::string>& names, std::string_view last, uint32_t random)
     {
         std::vector<const std::string*> choices;
@@ -876,6 +923,62 @@ namespace art
             if (name != last || names.size() < 2)
                 choices.push_back(&name);
         return choices.empty() ? std::string() : *choices[random % choices.size()];
+    }
+
+    Image Feather(const Image& picture)
+    {
+        // Opaque inside an ellipse of 0.6 of the half sizes, transparent past 1, smoothly between.
+        constexpr float Inner = 0.6f, Outer = 1.0f;
+        Image soft = picture;
+        const float cx = float(picture.width) / 2, cy = float(picture.height) / 2;
+        for (uint32_t y = 0; y < picture.height; y++)
+            for (uint32_t x = 0; x < picture.width; x++)
+            {
+                const float dx = (float(x) + 0.5f - cx) / cx, dy = (float(y) + 0.5f - cy) / cy;
+                const float t = std::clamp((std::sqrt(dx * dx + dy * dy) - Inner) / (Outer - Inner), 0.0f, 1.0f);
+                const float keep = 1 - t * t * (3 - 2 * t);
+                uint32_t& texel = soft.rgba[size_t(y) * picture.width + x];
+                const uint32_t alpha = uint32_t(float(texel >> 24) * keep + 0.5f);
+                texel = (texel & 0x00FFFFFF) | alpha << 24;
+            }
+        return soft;
+    }
+
+    Image LightOnBlack(const Image& picture)
+    {
+        // The burst's faint haze (up to Haze) goes with the black, so the title is cut closer and shows larger; the
+        // faint edge left (below Visible) is cut away.
+        constexpr uint32_t Haze = 48, Visible = 16;
+        Image light = picture;
+        uint32_t left = picture.width, right = 0, top = picture.height, bottom = 0;
+        for (uint32_t y = 0; y < picture.height; y++)
+            for (uint32_t x = 0; x < picture.width; x++)
+            {
+                uint32_t& texel = light.rgba[size_t(y) * picture.width + x];
+                const uint32_t r = texel & 0xFF, g = texel >> 8 & 0xFF, b = texel >> 16 & 0xFF;
+                const uint32_t a = std::max({ r, g, b });
+                if (a == 0)
+                {
+                    texel = 0;
+                    continue;
+                }
+                auto straight = [a](uint32_t c) { return (c * 255 + a / 2) / a; };
+                const uint32_t alpha = a <= Haze ? 0 : (a - Haze) * 255 / (255 - Haze);
+                texel = alpha << 24 | straight(b) << 16 | straight(g) << 8 | straight(r);
+                if (alpha >= Visible)
+                    left = std::min(left, x), right = std::max(right, x + 1), top = std::min(top, y),
+                    bottom = std::max(bottom, y + 1);
+            }
+        if (left >= right || top >= bottom)
+            return {};
+        Image cut;
+        cut.width = right - left;
+        cut.height = bottom - top;
+        cut.rgba.resize(size_t(cut.width) * cut.height);
+        for (uint32_t y = 0; y < cut.height; y++)
+            std::copy_n(light.rgba.begin() + ptrdiff_t(size_t(top + y) * picture.width + left), cut.width,
+                cut.rgba.begin() + ptrdiff_t(size_t(y) * cut.width));
+        return cut;
     }
 
     bool ReadLogo(std::string_view game, const Disc& disc, Image& logo)
@@ -962,6 +1065,18 @@ namespace art
                 ExtractUpgrades(game, where->upgrades, disc, file);
             }
             result.upgrades = std::filesystem::is_regular_file(file, exists);
+        }
+        if ((parts & PartNames) && where != nullptr && where->parts.IsObject())
+        {
+            // Read once, as the upgrades.
+            std::filesystem::path file = collection::PartFile(game);
+            std::error_code exists;
+            if (!file.empty() && !std::filesystem::is_regular_file(file, exists))
+            {
+                std::filesystem::create_directories(file.parent_path(), error);
+                ExtractPartNames(game, where->parts, disc, file);
+            }
+            result.partNames = std::filesystem::is_regular_file(file, exists);
         }
         return result;
     }

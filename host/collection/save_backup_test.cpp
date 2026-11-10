@@ -1,6 +1,6 @@
 // Unit test of the save backup library (save_backup.h): atomic writes, the backup rotation, restoring, the running
 // game's marker. Every path is in a scratch folder of its own; the player's folders are never touched.
-//   SSASavesTest          Exit code 0 = pass.
+//   ArkeyanSavesTest          Exit code 0 = pass.
 #include "host/collection/save_backup.h"
 #include <algorithm>
 #include <cstdio>
@@ -213,7 +213,7 @@ namespace
 
 int main()
 {
-    g_scratch = fs::temp_directory_path() / ("SSASavesTest-" + std::to_string(getpid()));
+    g_scratch = fs::temp_directory_path() / ("ArkeyanSavesTest-" + std::to_string(getpid()));
     fs::remove_all(g_scratch);
     fs::create_directories(g_scratch);
 

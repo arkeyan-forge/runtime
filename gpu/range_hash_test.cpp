@@ -1,6 +1,6 @@
 // Checks the buffer cache's range hash: it follows every byte of the range across frames, ignores the bytes around it,
 // hashes a chunk shared by overlapping ranges once a frame, and drops its table where ranges do not overlap.
-// usage: SSARangeHashTest
+// usage: ArkeyanRangeHashTest
 #define XXH_INLINE_ALL
 #include <xxhash.h>
 #include "gpu/range_hash.h"

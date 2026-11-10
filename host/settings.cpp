@@ -70,6 +70,14 @@ namespace
             return true;
         }
 
+        bool DebugScreen(const std::string& source, const std::string& value)
+        {
+            if (value != "0" && value != "1" && value != "2")
+                return Warn(source, "debug_screen", value, "0 (off), 1 (compact) or 2 (full)");
+            s.debugScreen = uint32_t(value[0] - '0');
+            return true;
+        }
+
         bool Aspect(const std::string& source, const std::string& value)
         {
             if (value != "auto" && value != "16:9")
@@ -85,6 +93,36 @@ namespace
             return true;
         }
 
+        bool Upscaler(const std::string& source, const std::string& value, bool internal)
+        {
+            if (!upscalemode::ParseUpscaler(value, s.upscaler, internal))
+                return Warn(source, "upscaler", value, "off or fsr3");
+            return true;
+        }
+
+        bool FsrQuality(const std::string& source, const std::string& value)
+        {
+            if (!upscalemode::ParseQuality(value, s.fsrQuality))
+                return Warn(
+                    source, "fsr_quality", value, "native, quality, balanced, performance or ultra_performance");
+            return true;
+        }
+
+        bool FrameGeneration(const std::string& source, const std::string& value)
+        {
+            if (value != "off" && value != "on" && value != "0" && value != "1")
+                return Warn(source, "fsr_frame_generation", value, "off or on");
+            s.fsrFrameGeneration = value == "on" || value == "1";
+            return true;
+        }
+
+        bool GpuBackend(const std::string& source, const std::string& value)
+        {
+            if (!gpubackend::Parse(value, s.gpuBackend))
+                return Warn(source, "gpu_backend", value, "d3d12 or vulkan");
+            return true;
+        }
+
         bool Anisotropy(const std::string& source, const std::string& value)
         {
             uint32_t n;
@@ -96,28 +134,20 @@ namespace
 
         bool FpsLimit(const std::string& source, const std::string& value)
         {
-            if (value == "display") // the launcher's default: the display's refresh rate, up to 60 until 120 is proven
+            if (value == "display") // an older launcher's default: the display's refresh rate, up to 60
             {
                 s.fpsLimit = 60;
                 return true;
             }
             uint32_t n;
             if (!ParseNumber(value, n))
-                return Warn(source, "fps_limit", value, "a number (0: none)");
-            // 30 and 60 are the game's own pacing; above 60 the host paces the frames. 0: no limit. Another number is
-            // lowered to the rate below it.
-            constexpr uint32_t Rates[] = { 240, 144, 120, 60 };
-            uint32_t fps = n == 0 ? 0 : 30;
-            for (uint32_t rate : Rates)
-                if (n != 0 && n >= rate)
-                {
-                    fps = rate;
-                    break;
-                }
+                return Warn(source, "fps_limit", value, "30 or 60");
+            // 30 and 60, the game's own pacing. A limit above 60 and no limit (0), which older versions offered, are 60;
+            // another number below 60 is 30.
+            const uint32_t fps = n == 0 || n >= 60 ? 60 : 30;
             if (n != fps)
                 warnings.push_back(
-                    fmt::format("{}: fps_limit={}: the frame rate is 30, 60, 120, 144, 240 or 0 (no limit), using {}",
-                        source, value, fps));
+                    fmt::format("{}: fps_limit={}: the frame rate is 30 or 60, using {}", source, value, fps));
             s.fpsLimit = fps;
             return true;
         }
@@ -128,6 +158,13 @@ namespace
             if (!ParseNumber(value, n) || n > 100)
                 return Warn(source, "volume", value, "a number from 0 to 100");
             s.volume = n;
+            return true;
+        }
+
+        bool Speakers(const std::string& source, const std::string& value)
+        {
+            if (!speakers::Parse(value, s.speakers))
+                return Warn(source, "speakers", value, "auto, stereo or 5.1");
             return true;
         }
 
@@ -257,7 +294,7 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
         else if (key == "skip_intro_movies")
             set.Bool(file, "skip_intro_movies", value, s.skipIntroMovies);
         else if (key == "debug_screen")
-            set.Bool(file, "debug_screen", value, s.debugScreen);
+            set.DebugScreen(file, value);
         else if (key == "show_fps")
             set.Bool(file, "show_fps", value, s.showFps);
         else if (key == "reduce_motion")
@@ -270,6 +307,14 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
             set.Bool(file, "original_resolution", value, s.originalResolution);
         else if (key == "edge_smoothing")
             set.EdgeSmoothing(file, value);
+        else if (key == "upscaler")
+            set.Upscaler(file, value, false);
+        else if (key == "fsr_quality")
+            set.FsrQuality(file, value);
+        else if (key == "fsr_frame_generation")
+            set.FrameGeneration(file, value);
+        else if (key == "gpu_backend")
+            set.GpuBackend(file, value);
     };
     for (const auto& [key, value] : section("video"))
         video(key, value);
@@ -277,13 +322,15 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
     // so a game started without PLAY (its own icon, a shortcut to the runtime) still gets what its page shows.
     for (const auto& [key, value] : section((gameSection + ".video").c_str()))
         video(key, value);
-    // The master volume and the portal's sound: [audio], then the game's own [<game>.audio].
+    // The master volume, the portal's sound and the speakers: [audio], then the game's own [<game>.audio].
     for (const std::string& name : { std::string("audio"), gameSection + ".audio" })
         for (const auto& [key, value] : section(name.c_str()))
             if (key == "volume")
                 set.Volume(file, value);
             else if (key == "portal_sound")
                 set.Bool(file, "portal_sound", value, s.portalSound);
+            else if (key == "speakers")
+                set.Speakers(file, value);
     for (const auto& [key, value] : section("input"))
     {
         if (key == "device")
@@ -332,6 +379,8 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
         s.voiceLanguage = it->second;
     if (auto it = game.find("nightmare_from_start"); it != game.end())
         set.Bool(file, "nightmare_from_start", it->second, s.nightmareFromStart);
+    if (auto it = game.find("hd_textures"); it != game.end())
+        set.Bool(file, "hd_textures", it->second, s.hdTextures);
 
     // Environment
     if (const char* value = skyenv::Get("SKY_LANGUAGE", getEnv))
@@ -342,10 +391,20 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
         set.Bool("SKY_NIGHTMARE_FROM_START", "nightmare_from_start", value, s.nightmareFromStart);
     if (const char* value = skyenv::Get("SKY_TOYBOX_AUTO_OPEN", getEnv))
         set.Bool("SKY_TOYBOX_AUTO_OPEN", "toybox_auto_open", value, s.toyboxAutoOpen);
+    if (const char* value = skyenv::Get("SKY_SPEAKERS", getEnv))
+        set.Speakers("SKY_SPEAKERS", value);
+    if (const char* value = skyenv::Get("SKY_UPSCALER", getEnv))
+        set.Upscaler("SKY_UPSCALER", value, true);
+    if (const char* value = skyenv::Get("SKY_FSR_QUALITY", getEnv))
+        set.FsrQuality("SKY_FSR_QUALITY", value);
+    if (const char* value = skyenv::Get("SKY_FSR_FRAME_GENERATION", getEnv))
+        set.FrameGeneration("SKY_FSR_FRAME_GENERATION", value);
     if (const char* value = skyenv::Get("SKY_TEXTURE_DUMP", getEnv))
         set.Bool("SKY_TEXTURE_DUMP", "SKY_TEXTURE_DUMP", value, s.textureDump);
     if (const char* value = skyenv::Get("SKY_TEXTURE_PACKS", getEnv))
         set.Bool("SKY_TEXTURE_PACKS", "SKY_TEXTURE_PACKS", value, s.texturePacks);
+    if (const char* value = skyenv::Get("SKY_HD_TEXTURES", getEnv))
+        set.Bool("SKY_HD_TEXTURES", "SKY_HD_TEXTURES", value, s.hdTextures);
 
     // Command line: "--option value" or "--option=value".
     const char* cli = "command line";
@@ -560,7 +619,7 @@ std::string SettingsHelp(const char* program)
         "  --language <code>           text language: en fr de es it nl sv no da fi\n"
         "  --voice-language <code>     voice language, same codes\n"
         "  --nightmare-from-start <0|1>\n"
-        "                              Swap Force: the Nightmare difficulty offered before the story is beaten\n"
+        "                              Swap Force, Imaginators: Nightmare offered before the story is beaten\n"
         "  --select-iso                choose the disc image again\n"
         "  --launcher                  open the launcher window\n"
         "  --list-gamepads             print the connected gamepads and their GUID, then quit\n"
@@ -605,11 +664,20 @@ std::string DescribeSettings(const RuntimeSettings& s)
                padDescription) +
            fmt::format(", fps auto fallback {}", s.fpsAutoFallback ? "on" : "off") +
            (s.aspectAuto ? "" : ", aspect 16:9") + (s.textureDump ? ", texture dump" : "") +
-           (s.texturePacks ? "" : ", texture packs off") + (s.originalResolution ? ", original resolution" : "") +
+           (s.texturePacks ? "" : ", texture packs off") + (s.hdTextures ? "" : ", HD textures off") +
+           (s.originalResolution ? ", original resolution" : "") +
            (s.edgeSmoothing != edgesmoothing::Auto
                    ? fmt::format(", edge smoothing {}", edgesmoothing::Name(s.edgeSmoothing))
                    : "") +
            (s.nightmareFromStart ? ", nightmare from the start" : "") + (s.showFps ? ", fps counter" : "") +
-           (s.debugScreen ? ", debug screen" : "") + (s.reduceMotion ? ", reduced motion" : "") +
-           (s.volume != 100 ? fmt::format(", volume {}", s.volume) : "") + (s.portalSound ? "" : ", portal sound off");
+           (s.debugScreen == 1      ? ", debug screen"
+               : s.debugScreen == 2 ? ", debug screen full"
+                                    : "") +
+           (s.reduceMotion ? ", reduced motion" : "") + (s.volume != 100 ? fmt::format(", volume {}", s.volume) : "") +
+           (s.portalSound ? "" : ", portal sound off") +
+           (s.upscaler != upscalemode::Upscaler::Off
+                   ? fmt::format(", upscaler {} {}", upscalemode::Name(s.upscaler), upscalemode::Name(s.fsrQuality))
+                   : "") +
+           (s.fsrFrameGeneration ? ", frame generation" : "") +
+           (s.speakers != speakers::Auto ? fmt::format(", speakers {}", speakers::Name(s.speakers)) : "");
 }

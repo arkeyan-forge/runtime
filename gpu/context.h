@@ -2,6 +2,7 @@
 
 // State shared by the gpu/ sources (not part of the gpu API).
 #include "gpu/gpu.h"
+#include "gpu/swapchain_recovery.h"
 #include <plume_render_interface.h>
 #include <SDL3/SDL_metal.h>
 #include <atomic>
@@ -21,7 +22,7 @@ struct gpu::Texture
     mutable plume::RenderTextureLayout layout = plume::RenderTextureLayout::UNKNOWN;
     uint32_t heapIndex = 0; // slot in the bindless heap of its kind (sampled textures only; 0 = none)
 
-    // Swizzled views of it and their heap slots.
+    // Its own views (a swizzle, a cube map, an array: gpu/heap_view.h) and their heap slots.
     struct SwizzledView
     {
         uint32_t mapping;
@@ -51,6 +52,12 @@ namespace gpu::detail
         {
             std::unique_ptr<plume::RenderCommandList> commandList;
             std::unique_ptr<plume::RenderCommandFence> fence;
+            // Its GPU time, only while frame_stats.h measures: the producer frame it belongs to (0: not timed), whether
+            // it carries the present pass, and Metal's command buffer (kept until its times are read) or two timestamps.
+            uint64_t timedFrame = 0;
+            bool timedPresent = false, timestamped = false;
+            void* metalBuffer = nullptr;
+            std::unique_ptr<plume::RenderQueryPool> timestamps;
         };
         std::vector<Submission> submissions;
         uint32_t submitted = 0; // parts of the frame sent so far; submissions[submitted] records the next one
@@ -74,6 +81,8 @@ namespace gpu::detail
         // Upload memory of the frame being recorded (texture data, vertices, indices, constants); reused once the GPU
         // has finished the frame.
         std::unique_ptr<plume::RenderBuffer> staging;
+        // `staging` mapped once for its lifetime: a map and an unmap per upload were ~8 % of the GPU thread's draw time.
+        uint8_t* stagingMemory = nullptr;
         uint64_t stagingCapacity = 0;
         uint64_t stagingUsed = 0;
         std::vector<std::unique_ptr<plume::RenderBuffer>> retiredStaging;
@@ -85,6 +94,7 @@ namespace gpu::detail
             std::vector<Submission> submissions;
             uint32_t submitted = 0;
             std::unique_ptr<plume::RenderBuffer> staging;
+            uint8_t* stagingMemory = nullptr;
             uint64_t stagingCapacity = 0;
             std::vector<std::unique_ptr<plume::RenderBuffer>> retiredStaging;
             std::unique_ptr<plume::RenderDescriptorSet> presentSet;
@@ -140,15 +150,24 @@ namespace gpu::detail
         std::unique_ptr<plume::RenderPipeline> resolveDepthPipeline;
 
         SDL_MetalView metalView = nullptr;
+        plume::RenderWindow renderWindow{}; // what the swap chain presents to, kept to rebuild it with a new surface
         std::unique_ptr<plume::RenderSwapChain> swapChain;
+        bool swapChainNoSurface =
+            false; // the backend could not make the window's surface (Vulkan): nothing to present to
+        gpu::swapchain::Recovery recovery; // what a failed acquire or present leads to
         std::vector<std::unique_ptr<plume::RenderFramebuffer>> swapChainFramebuffers;
         std::unique_ptr<plume::RenderCommandSemaphore> acquireSemaphore;
         std::vector<std::unique_ptr<plume::RenderCommandSemaphore>> releaseSemaphores;
+        // Frame generation (gpu/fsr/framegen.h): the generated frame is presented before the real one in the same frame,
+        // with its own present sets and acquire semaphore, one of each per frame in flight.
+        std::unique_ptr<plume::RenderDescriptorSet> generatedSets[2], generatedOverlaySets[2];
+        std::unique_ptr<plume::RenderCommandSemaphore> generatedAcquire[2];
 
         // The device was removed (D3D12): from then on the gpu functions do nothing (CheckDeviceLost). Atomic: the
         // pipeline precompile threads check it too.
         std::atomic<bool> lost = false;
         bool presented = false; // a frame reached the output
+        uint64_t targetSwitches = 0; // framebuffer changes since the start (frame_stats.h)
 
         // The frame's costs for the perf log (LogPerf in gpu.cpp), reset at every Present.
         struct Perf
@@ -169,6 +188,8 @@ namespace gpu::detail
 
     // Read-only draw-cache portion of ReadDebugSnapshot; caller holds g_mutex.
     void ReadDebugDrawSnapshot(gpu::DebugSnapshot& snapshot);
+    // Pipelines built at draw time since the start (GPU thread).
+    uint32_t DrawTimeBuilds();
 
     // Every public gpu function takes it: the game's render thread draws while the main thread may still present
     // movie frames.
@@ -210,6 +231,8 @@ namespace gpu::detail
         plume::RenderBarrierStages stages);
     // Upload memory for this frame, `alignment`-aligned; usable as vertex, index and constant data and by address.
     uint64_t AllocateStaging(uint64_t size, plume::RenderBuffer*& buffer, uint64_t alignment = 512);
+    // The mapped memory of the buffer the last AllocateStaging returned (nullptr if it could not be mapped).
+    uint8_t* StagingMemory();
 
     // Called at the end of every frame: destroys the textures released during the frame (the GPU has finished it when
     // there are some, EndFrame) and forgets the frame's constant uploads.
@@ -281,6 +304,8 @@ namespace gpu::detail
     const void* FrameCopy(const void* data, size_t bytes);
     // Producer frames: the one being recorded, and the last one the GPU has finished.
     uint64_t ProducerFrame();
+    // The producer frame whose commands the GPU thread runs now (frame_stats.h tags its command lists with it).
+    uint64_t ConsumerFrame();
     uint64_t CompletedFrame();
     // The GPU thread waited for the GPU: the frame before the one it records is finished, and that one if `finished`.
     void ConsumerFrameDone(bool finished);
@@ -303,8 +328,8 @@ namespace gpu::detail
     void WaitTextureJob(const std::atomic<bool>& done);
     // What the public functions queue (gpu.cpp, draw.cpp).
     void PresentNow(const gpu::Texture* image);
-    bool ReadbackNow(
-        const gpu::Texture* texture, std::vector<uint32_t>& rgba, uint32_t& width, uint32_t& height, bool raw = false);
+    bool ReadbackNow(const gpu::Texture* texture, std::vector<uint32_t>& rgba, uint32_t& width, uint32_t& height,
+        bool raw = false, uint32_t channel = 0);
     void DrawNow(const gpu::DrawDesc& draw);
     void ClearColorNow(gpu::Texture* target, const float rgba[4], const plume::RenderRect* rect);
     void ClearDepthStencilNow(
@@ -313,4 +338,7 @@ namespace gpu::detail
         const plume::RenderRect& region, uint32_t slice);
     void ResolveDepthNow(
         gpu::Texture* destination, uint32_t x, uint32_t y, gpu::Texture* source, const plume::RenderRect& region);
+    // Records the deferred resolve copies (draw.cpp, CopyTextureNow) that read or write `texture`, every one for nullptr:
+    // before anything else on the GPU thread reads or writes it. Under g_mutex.
+    void SettleCopies(const gpu::Texture* texture);
 }

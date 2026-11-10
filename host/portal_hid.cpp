@@ -1,6 +1,7 @@
 // Portals that are USB HID devices (Wii, Wii U, PS3, PS4, PC): 32-byte input reports on the interrupt IN endpoint,
-// commands as 32-byte output reports (SET_REPORT on the control endpoint). Reached through SDL's hidapi, and on
-// Windows through hid.dll's HidD_SetOutputReport for the commands (WriteMethod below).
+// commands as 32-byte output reports (SET_REPORT on the control endpoint). Reached through SDL's hidapi; the commands go
+// on Windows through hid.dll's HidD_SetOutputReport, on macOS as a USB control request to the device, on Linux through
+// hidapi's write or, when the portal refuses it, a USB control request through libusb (WriteMethod below).
 //
 // The portal's reports are on a vendor-defined usage page (FF00), and SDL's hidapi by default enumerates game
 // controllers only (SDL_HINT_HIDAPI_ENUMERATE_ONLY_CONTROLLERS: it drops every device whose usage page is known and is
@@ -8,6 +9,7 @@
 // lifted for the portal's own enumeration. Every step is logged ("[portal] hid: ...") so a log shows where it stops.
 #include "host/portal_adpcm.h"
 #include "host/portal_backend.h"
+#include "host/portal_hid_report.h"
 #include <SDL3/SDL_hidapi.h>
 #include <SDL3/SDL_hints.h>
 #include <SDL3/SDL_stdinc.h>
@@ -21,11 +23,21 @@
 #include <windows.h>
 #include <hidsdi.h>
 #endif
+#ifdef __linux__
+#include "host/portal_hid_control.h"
+#endif
+#ifdef __APPLE__
+#include <CoreFoundation/CoreFoundation.h>
+#include <IOKit/IOCFPlugIn.h>
+#include <IOKit/IOKitLib.h>
+#include <IOKit/usb/IOUSBLib.h>
+#endif
 
 namespace
 {
-    constexpr uint16_t PortalVendor = 0x1430;  // Activision
+    constexpr uint16_t PortalVendor = 0x1430; // Activision
     constexpr uint16_t PortalProduct = 0x0150; // every HID portal model, Spyro's Adventure to Imaginators
+    static_assert(portal_hid::CommandSize == PortalReportSize);
 
     // Every HID interface of the portal, whatever its usage page (see the top of this file).
     SDL_hid_device_info* EnumeratePortals()
@@ -59,20 +71,16 @@ namespace
     // How a command reaches the portal. The portal has an interrupt OUT endpoint but takes its commands as output
     // reports over the control pipe (SET_REPORT): on Windows, WriteFile (hidapi's write) goes to the OUT endpoint and
     // fails or times out, HidD_SetOutputReport sends SET_REPORT (public reports of the PC portal, and the logs of the
-    // first Windows PC). Elsewhere hidapi's write is the only method, as before.
-    enum class WriteMethod
-    {
-        OutputReport, // HidD_SetOutputReport (Windows)
-        HidWrite,     // SDL_hid_write
-    };
-
-    const char* MethodName(WriteMethod method)
-    {
-        return method == WriteMethod::OutputReport ? "output-report" : "hid-write";
-    }
+    // first Windows PC). On macOS the HID driver's output report (hidapi's write, IOHIDDeviceSetReport) fails too
+    // ("device not responding", 0xE00002ED, on a Spyro's Adventure Wii portal), and the same 32 bytes as a USB control
+    // SET_REPORT to the device are answered. Linux: hidapi's write (hidraw) works on a Wii Swap Force portal and fails
+    // on the original Wii portal ("Protocol error"); the control request through libusb is tried next
+    // (host/portal_hid_control.h).
+    using portal_hid::MethodName;
+    using portal_hid::WriteMethod;
 
 #ifdef _WIN32
-    constexpr WriteMethod Methods[] = { WriteMethod::OutputReport, WriteMethod::HidWrite };
+    constexpr auto& Methods = portal_hid::WindowsMethods;
 
     std::string LastError(const char* what)
     {
@@ -155,6 +163,129 @@ namespace
             handle = INVALID_HANDLE_VALUE;
         }
     };
+#elif defined(__APPLE__)
+    constexpr auto& Methods = portal_hid::MacMethods;
+
+    std::string IoError(const char* what, int32_t result)
+    {
+        char text[64];
+        snprintf(text, sizeof(text), "%s: 0x%08X", what, static_cast<unsigned>(result));
+        return text;
+    }
+
+    // The portal's USB device, for the control SET_REPORT: the HID service SDL opened (its path holds the service's
+    // registry id), then up through its USB interface (the request's index) to the device. Not opened with
+    // USBDeviceOpen: the default pipe takes class requests without it, so another program holding the portal is no bar.
+    struct OutputHandle
+    {
+        IOUSBDeviceInterface182** device = nullptr;
+        int interface = 0;
+        size_t length = 1 + PortalReportSize;
+        std::string error; // why there is no device
+
+        void Open(const char* path)
+        {
+            error.clear(); // a portal plugged in again
+            interface = 0;
+            uint64_t id = portal_hid::MacRegistryEntryId(path);
+            if (id == 0)
+            {
+                error = std::string("not a macOS HID path: ") + path;
+                return;
+            }
+            io_registry_entry_t entry = IOServiceGetMatchingService(MACH_PORT_NULL, IORegistryEntryIDMatching(id));
+            while (entry != 0 && !IOObjectConformsTo(entry, kIOUSBDeviceClassName))
+            {
+                if (IOObjectConformsTo(entry, "IOUSBHostInterface"))
+                    if (CFTypeRef number =
+                            IORegistryEntryCreateCFProperty(entry, CFSTR(kUSBInterfaceNumber), nullptr, 0))
+                    {
+                        if (CFGetTypeID(number) == CFNumberGetTypeID())
+                            CFNumberGetValue(static_cast<CFNumberRef>(number), kCFNumberIntType, &interface);
+                        CFRelease(number);
+                    }
+                io_registry_entry_t parent = 0;
+                if (IORegistryEntryGetParentEntry(entry, kIOServicePlane, &parent) != KERN_SUCCESS)
+                    parent = 0;
+                IOObjectRelease(entry);
+                entry = parent;
+            }
+            if (entry == 0)
+            {
+                error = "no USB device above the HID service";
+                return;
+            }
+            IOCFPlugInInterface** plugin = nullptr;
+            SInt32 score = 0;
+            kern_return_t result = IOCreatePlugInInterfaceForService(
+                entry, kIOUSBDeviceUserClientTypeID, kIOCFPlugInInterfaceID, &plugin, &score);
+            IOObjectRelease(entry);
+            if (result != KERN_SUCCESS || plugin == nullptr)
+            {
+                error = IoError("IOCreatePlugInInterfaceForService", result);
+                return;
+            }
+            HRESULT query = (*plugin)->QueryInterface(
+                plugin, CFUUIDGetUUIDBytes(kIOUSBDeviceInterfaceID182), reinterpret_cast<LPVOID*>(&device));
+            IODestroyPlugInInterface(plugin);
+            if (query != S_OK || device == nullptr)
+            {
+                device = nullptr;
+                error = IoError("QueryInterface", query);
+            }
+        }
+
+        void Close()
+        {
+            if (device != nullptr)
+                (*device)->Release(device);
+            device = nullptr;
+        }
+    };
+#elif defined(__linux__)
+    constexpr auto& Methods = portal_hid::LinuxMethods;
+
+    // libusb, loaded once, the first time a portal needs the control request.
+    const portal_usb::Api* Libusb()
+    {
+        static portal_usb::Api usb{};
+        static const bool loaded = portal_usb::LoadLibusb(usb);
+        return loaded ? &usb : nullptr;
+    }
+
+    // The hidraw node SDL opened, to find its USB device, and the control link once a command needed it.
+    struct OutputHandle
+    {
+        size_t length = 1 + PortalReportSize;
+        std::string error;
+        std::string path;
+        portal_hid::ControlLink link;
+
+        void Open(const char* hidraw)
+        {
+            error.clear();
+            path = hidraw != nullptr ? hidraw : "";
+        }
+        void Close() { link.Release(); }
+
+        // The first usb-control command claims the portal's interface: its hidraw node goes away until Close.
+        bool Claim(std::string& why)
+        {
+            if (link.Claimed())
+                return true;
+            const portal_usb::Api* usb = Libusb();
+            if (usb == nullptr)
+                return why = "libusb-1.0 not found (set SKY_LIBUSB to its path)", false;
+            why = link.Claim(*usb, portal_hid::LinuxUsbAddress("/sys", path), PortalVendor, PortalProduct);
+            if (!why.empty())
+                return false;
+            fprintf(stderr,
+                "[portal] hid: usb-control: interface %d claimed through libusb (the kernel's HID driver is detached "
+                "from it while the portal is open; reports from endpoint %02X)\n",
+                link.Interface(), link.In());
+            return true;
+        }
+    };
 #else
     constexpr WriteMethod Methods[] = { WriteMethod::HidWrite };
 
@@ -172,11 +303,11 @@ namespace
         size_t size, std::string& error)
     {
         uint8_t report[1 + 64]{};
-        size_t length = std::clamp(output.length, size_t(1 + PortalReportSize), sizeof(report));
         memcpy(report + 1, command, std::min(size, PortalReportSize));
 #ifdef _WIN32
         if (method == WriteMethod::OutputReport)
         {
+            size_t length = std::clamp(output.length, size_t(1 + PortalReportSize), sizeof(report));
             if (output.handle == INVALID_HANDLE_VALUE)
                 return error = output.error, false;
             if (!HidDll::Get().SetOutputReport(output.handle, report, ULONG(length)))
@@ -184,9 +315,65 @@ namespace
             return true;
         }
 #endif
+#ifdef __linux__
+        if (method == WriteMethod::ControlReport)
+        {
+            if (!output.Claim(error))
+                return false;
+            error = output.link.Send(command, size);
+            return error.empty();
+        }
+#endif
+#ifdef __APPLE__
+        if (method == WriteMethod::ControlReport)
+        {
+            if (output.device == nullptr)
+                return error = output.error, false;
+            portal_hid::SetReport setReport = portal_hid::MakeSetReport(command, size, output.interface);
+            IOUSBDevRequestTO request{};
+            request.bmRequestType = setReport.requestType;
+            request.bRequest = setReport.request;
+            request.wValue = setReport.value;
+            request.wIndex = setReport.index;
+            request.wLength = sizeof(setReport.data);
+            request.pData = setReport.data;
+            request.noDataTimeout = request.completionTimeout = 500; // ms; a gone portal does not hold the thread
+            IOReturn result = (*output.device)->DeviceRequestTO(output.device, &request);
+            if (result != kIOReturnSuccess)
+                return error = IoError("DeviceRequest", result), false;
+            return true;
+        }
+#endif
         if (SDL_hid_write(device, report, 1 + PortalReportSize) < 0)
             return error = SDL_GetError(), false;
         return true;
+    }
+
+    // Whether the control link holds the portal's interface (Linux): SDL's handle on the hidraw node is then gone.
+    bool Linked(const OutputHandle& output)
+    {
+#ifdef __linux__
+        return output.link.Claimed();
+#else
+        (void)output;
+        return false;
+#endif
+    }
+
+    // One report, waiting up to `timeoutMs`: from the control link while it holds the interface, else from SDL's hidapi.
+    // Its size, 0 for none, -1 on an error (`error` says which).
+    int ReadReport(SDL_hid_device* device, OutputHandle& output, uint8_t* buffer, size_t capacity, int timeoutMs,
+        std::string& error)
+    {
+#ifdef __linux__
+        if (output.link.Claimed())
+            return output.link.Read(buffer, int(capacity), unsigned(std::max(timeoutMs, 1)), error);
+#endif
+        (void)output;
+        int size = SDL_hid_read_timeout(device, buffer, capacity, timeoutMs);
+        if (size < 0)
+            error = SDL_GetError();
+        return size;
     }
 
     class HidPortal final : public PortalBackend
@@ -219,11 +406,7 @@ namespace
                 m_samples = 0;
             }
             std::string errors;
-            std::vector<WriteMethod> order{ m_method };
-            for (WriteMethod method : Methods)
-                if (method != m_method)
-                    order.push_back(method);
-            for (WriteMethod method : order)
+            for (WriteMethod method : portal_hid::TryOrder(Methods, m_method))
             {
                 std::string error;
                 if (SendCommand(method, m_device, m_output, command, size, error))
@@ -246,7 +429,7 @@ namespace
         // HID portals take the speaker's sound as 16-bit PCM at 8 kHz, 32 samples (64 bytes, little-endian) per write on the
         // interrupt OUT endpoint, where the console's ADPCM is decoded first. A portal that refuses it (Windows sends only
         // reports of the descriptor's 33 bytes) leaves the sound to the computer.
-        bool TakesSound() override { return m_device != nullptr && !m_soundRefused; }
+        bool TakesSound() override { return m_device != nullptr && !m_soundRefused && !Linked(m_output); }
 
         bool WriteSound(const uint8_t* block, size_t size) override
         {
@@ -280,10 +463,11 @@ namespace
                 return 0;
 
             uint8_t buffer[64];
-            int size = SDL_hid_read_timeout(m_device, buffer, sizeof(buffer), 0);
+            std::string error;
+            int size = ReadReport(m_device, m_output, buffer, sizeof(buffer), 0, error);
             if (size < 0)
             {
-                Say(std::string("[portal] hid: read failed (") + SDL_GetError() + ")");
+                Say("[portal] hid: read failed (" + error + ")");
                 Close();
                 return 0;
             }
@@ -393,18 +577,19 @@ namespace
         std::vector<uint8_t>* answer = nullptr)
     {
         uint8_t report[64];
-        while (SDL_hid_read_timeout(device, report, sizeof(report), 0) > 0)
-        {}
-        const uint8_t command[] = { uint8_t(letter) };
         std::string error;
+        while (ReadReport(device, output, report, sizeof(report), 0, error) > 0)
+        {}
+        error.clear();
+        const uint8_t command[] = { uint8_t(letter) };
         uint64_t start = SDL_GetTicks();
         if (!SendCommand(method, device, output, command, sizeof(command), error))
             return "error: write failed (" + error + ")";
         while (SDL_GetTicks() < start + 1000)
         {
-            int size = SDL_hid_read_timeout(device, report, sizeof(report), 50);
+            int size = ReadReport(device, output, report, sizeof(report), 50, error);
             if (size < 0)
-                return std::string("error: read failed (") + SDL_GetError() + ")";
+                return "error: read failed (" + error + ")";
             if (size > 0 && report[0] == uint8_t(letter))
             {
                 if (answer != nullptr)

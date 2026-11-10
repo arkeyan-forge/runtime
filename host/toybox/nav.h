@@ -1,7 +1,7 @@
 #pragma once
 
 // The Toy Box's focus moves, Xbox style (docs/runtime/host/toybox_ux.md, "Navigation"): pure logic, no drawing, no
-// collection, so that SSAToyboxLookTest checks it. The model keeps the state; the drawing records where things are.
+// collection, so that ArkeyanToyboxLookTest checks it. The model keeps the state; the drawing records where things are.
 #include <algorithm>
 #include <cmath>
 #include <vector>

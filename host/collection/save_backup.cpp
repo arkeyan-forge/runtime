@@ -97,7 +97,7 @@ namespace savebackup
         if (const char* directory = skyenv::Get("SKY_SAVE_DIR"); directory != nullptr && *directory != '\0')
             return datadir::FromText(directory);
 
-        fs::path path = datadir::Game(game);
+        fs::path path = datadir::PlayerGame(game);
         return path.empty() ? path : path / "saves";
     }
 

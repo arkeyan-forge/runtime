@@ -26,16 +26,20 @@ namespace
 {
     std::mutex g_mutex;
     PortalBackend* g_backend;   // chosen once by PortalInit, kept until exit
-    EmulatedPortal* g_emulated; // g_backend when the portal is emulated
+    EmulatedPortal* g_emulated; // g_backend when the portal is emulated; the virtual seats of a mixed portal
+    MixedPortal* g_mixed;       // g_backend when a real portal is plugged in: its toys and the virtual seats
+    // A real portal is there (alone, or mixed with the virtual seats).
+    bool Real() { return g_emulated == nullptr || g_mixed != nullptr; }
     const bool g_log = skyenv::Get("SKY_PORTAL_LOG") != nullptr;
 
     // The traffic as the title sees it (PortalSeen). Under g_mutex.
     PortalSlotSeen g_seen[PortalSlotCount];
 
     // The game this runtime is for (the portal identity table, the Toy Box's seats, the collection's locks).
-    constexpr const char* GameId = SSA_GAME_ID;
+    constexpr const char* GameId = ARKEYAN_GAME_ID;
 
     PortalLightState g_light; // under g_mutex
+    uint64_t g_resets = 0;    // the title's `R` commands, under g_mutex
 
     // A real portal's id, from its answer to 'R' (the speaker's route). Under g_mutex.
     uint8_t g_realId[4];
@@ -69,7 +73,7 @@ namespace
     void ObserveReport(const uint8_t* report, size_t size)
     {
         uint64_t now = SDL_GetTicksNS();
-        if (g_emulated == nullptr && report[0] == 'R')
+        if (Real() && report[0] == 'R')
             ObserveReset(report, size);
         if (size >= 5 && report[0] == 'S')
         {
@@ -105,10 +109,12 @@ namespace
         }
     }
 
-    // Blocks the title writes keep the copy current; `C r g b` is the portal's light.
+    // Blocks the title writes keep the copy current; `C r g b` is the portal's light; `R` a reset (PortalResets).
     void ObserveCommand(const uint8_t* command, size_t size)
     {
-        if (size >= 1 && command[0] == 'C')
+        if (size >= 1 && command[0] == 'R')
+            g_resets++;
+        else if (size >= 1 && command[0] == 'C')
         {
             // Missing bytes are zero: the title sends the whole 32-byte report, the log trims trailing zeros.
             uint8_t colour[3] = {};
@@ -186,17 +192,13 @@ namespace
 
     std::string StatePath()
     {
-        std::string folder;
-        if (const char* saves = skyenv::Get("SKY_SAVE_DIR"))
-            folder = std::string(saves) + "/";
-        else if (std::filesystem::path game = datadir::Game(SSA_GAME_ID); !game.empty())
-            folder = datadir::Text(game) + "/";
-        return folder + "portal.txt";
+        std::string folder = PortalSessionFolder();
+        return folder.empty() ? std::string("portal.txt") : folder + "/portal.txt";
     }
 
     void SaveState()
     {
-        if (g_emulated == nullptr || g_restoring)
+        if (g_emulated == nullptr || g_restoring || g_mixed != nullptr) // mixed: the virtual seats last one session
             return;
         std::string text;
         for (int slot = 0; slot < EmulatedPortal::SlotCount; slot++)
@@ -312,6 +314,9 @@ namespace
             fprintf(stderr, "[portal] %s is not a figure dump (1 KB tag image)\n", path.c_str());
             return -1;
         }
+        // A toy made by an older build: the game sees it mended, and the file is when the game first writes it.
+        if (figures::MendVirtualToy(data))
+            fprintf(stderr, "[portal] %s: the 2016 sector keys of a virtual toy set\n", path.c_str());
 
         bool locked = InCollection(path);
         if (locked && !collection::Lock(path, GameId))
@@ -331,6 +336,15 @@ namespace
     }
 }
 
+std::string PortalSessionFolder()
+{
+    if (const char* saves = skyenv::Get("SKY_SAVE_DIR"))
+        return saves;
+    if (std::filesystem::path game = datadir::PlayerGame(ARKEYAN_GAME_ID); !game.empty()) // the player profile's seats
+        return datadir::Text(game);
+    return {};
+}
+
 void PortalInit()
 {
     const char* modeVariable = skyenv::Get("SKY_PORTAL");
@@ -347,6 +361,9 @@ void PortalInit()
     std::unique_ptr<PortalBackend> backend, waiting;
     if (mode == "stall")
         backend = std::make_unique<StallingPortal>();
+    if (mode == "fake-real") // tests: a fake real portal (portal_backend.h)
+        backend = CreateFakeRealPortal(
+            skyenv::Get("SKY_PORTAL_FAKE_REAL") != nullptr ? skyenv::Get("SKY_PORTAL_FAKE_REAL") : "");
     if (mode == "auto" || mode == "real" || mode == "hid")
     {
         backend = CreateHidPortal();
@@ -407,6 +424,13 @@ void PortalInit()
         // Real portals: the device's I/O never runs on the title's threads (host/portal_async.h).
         bool connected = backend->IsOpen();
         backend = std::make_unique<AsyncPortal>(std::move(backend), connected);
+        // With the Toy Box's virtual seats beside its toys (MixedPortal), unless SKY_PORTAL_VIRTUAL=0.
+        if (const char* seats = skyenv::Get("SKY_PORTAL_VIRTUAL"); seats == nullptr || std::string(seats) != "0")
+        {
+            g_emulated = new EmulatedPortal;
+            g_mixed = new MixedPortal(std::move(backend), *g_emulated);
+            backend.reset(g_mixed);
+        }
     }
     g_backend = backend.release();
     fprintf(stderr, "[portal] %s portal\n", g_backend->Name());
@@ -414,8 +438,11 @@ void PortalInit()
     if (g_emulated == nullptr)
         return;
 
-    fprintf(stderr, "[portal] model: %s (emulated)\n",
-        DescribePortal(GameId, g_emulated->Model().id, g_emulated->Model().idLength).c_str());
+    if (g_mixed != nullptr)
+        fprintf(stderr, "[portal] mixed: the real portal's toys and the Toy Box's virtual seats in one portal\n");
+    else
+        fprintf(stderr, "[portal] model: %s (emulated)\n",
+            DescribePortal(GameId, g_emulated->Model().id, g_emulated->Model().idLength).c_str());
     fprintf(stderr, "[portal] figure folder: %s (F7: next figure, F8: remove all)\n", FigureFolder().c_str());
     if (int cleared = collection::ClearStaleLocks())
         fprintf(stderr, "[portal] %d lock(s) left by programs that are gone removed\n", cleared);
@@ -438,7 +465,8 @@ void PortalInit()
             begin = end + 1;
         }
     }
-    else
+    else if (g_mixed ==
+             nullptr) // with a real portal the virtual seats start empty (portal.txt is the virtual portal's)
         RestoreState();
     SDL_AddEventWatch(OnHostEvent, nullptr);
 }
@@ -447,6 +475,12 @@ PortalLightState PortalLight()
 {
     std::lock_guard lock(g_mutex);
     return g_light;
+}
+
+uint64_t PortalResets()
+{
+    std::lock_guard lock(g_mutex);
+    return g_resets;
 }
 
 bool PortalIsConnected()
@@ -463,7 +497,7 @@ bool PortalWrite(const uint8_t* command, size_t size)
     ObserveCommand(command, size);
     // A real portal without a speaker (any but the Traptanium) may never answer `M`, and Trap Team reads no figure until
     // it is answered: the runtime answers as the speaker would, and the portal is not sent the command.
-    if (size >= 2 && command[0] == 'M' && g_emulated == nullptr && g_realIdLength != 0 &&
+    if (size >= 2 && command[0] == 'M' && Real() && g_realIdLength != 0 &&
         !PortalModelHasSpeaker(g_realId, g_realIdLength))
     {
         std::array<uint8_t, 32> answer{};
@@ -481,8 +515,8 @@ void PortalSpeakerSound(const uint8_t* block, size_t size)
     std::lock_guard lock(g_mutex);
     if (g_backend == nullptr)
         return;
-    SpeakerRoute route = ChooseSpeakerRoute(
-        g_sound, g_emulated == nullptr, g_realId, g_realIdLength, g_emulated == nullptr && g_backend->TakesSound());
+    SpeakerRoute route =
+        ChooseSpeakerRoute(g_sound, Real(), g_realId, g_realIdLength, Real() && g_backend->TakesSound());
     if (!g_speakerRouted || route != g_speakerRoute)
     {
         fprintf(stderr, "[portal] speaker: %s\n",
@@ -563,6 +597,10 @@ void PortalRemoveAllFigures()
 
 bool PortalIsEmulated() { return g_emulated != nullptr; }
 
+bool PortalIsMixed() { return g_mixed != nullptr; }
+
+bool PortalSlotIsReal(int slot) { return g_mixed != nullptr && g_mixed->IsRealSlot(slot); }
+
 std::string PortalSlotFigure(int slot) { return g_emulated != nullptr ? g_emulated->SlotPath(slot) : std::string(); }
 
 std::string PortalFigureFolder() { return FigureFolder(); }
@@ -602,8 +640,13 @@ int PortalProbeMain()
             printf("{\"transport\":\"%s\",\"available\":false,\"status\":%s}\n", kind,
                 JsonString("error: " + error).c_str());
     }
+    const std::vector<std::string> notes = ProbeNotes();
+    for (const std::string& note : notes)
+        printf("{\"note\":%s}\n", JsonString(note).c_str());
     // For a person: one block on stderr. For the launcher: the JSON lines on stdout.
     fprintf(stderr, "portal probe: %zu portal(s) found\n", portals.size());
+    for (const std::string& note : notes)
+        fprintf(stderr, "  %s\n", note.c_str());
     for (const auto& [kind, error] : transports)
     {
         if (!error.empty())
@@ -634,6 +677,8 @@ int PortalProbeMain()
                     (i > 0 ? "," : "") + JsonString(probe.methods[i].first) + ":" + JsonString(probe.methods[i].second);
             extra += "}";
         }
+        if (!probe.details.empty())
+            extra += ",\"details\":" + JsonString(probe.details);
         if (!probe.id.empty())
             extra += ",\"id\":" + JsonString(probe.id) + ",\"model\":" + JsonString(probe.model) +
                      ",\"verdict\":" + JsonString(probe.verdict) +

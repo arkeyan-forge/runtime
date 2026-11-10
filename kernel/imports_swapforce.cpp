@@ -1,6 +1,6 @@
 // Kernel and XAM imports that Skylanders: Swap Force links against and the earlier games do not, and that have no
 // family file of their own: Xbox Live UI (gamer card, player review, marketplace), XAM tasks, Live tokens and XAuth,
-// gamer pictures, and the console key's signatures. The console here is offline with one local profile: Live calls
+// and the console key's signatures (the gamer picture is kernel/xam_user.cpp's). The console here is offline: Live calls
 // fail as if it were not signed in to Live, UI calls show nothing and report success. Signatures follow Xenia (BSD)
 // where it has them; calls whose arguments are not documented log their first use.
 #include "kernel/objects.h"
@@ -19,7 +19,6 @@ namespace
 {
     constexpr uint32_t ErrorSuccess = 0;
     constexpr uint32_t ErrorInvalidParameter = 87;
-    constexpr uint32_t ErrorNotFound = 0x490;
     constexpr uint32_t ErrorNotLoggedOn = 0x4DD;
 
     // Logs the first call of each import, with its first argument registers.
@@ -155,17 +154,6 @@ PPC_FUNC(__imp__XamParseGamerTileKey)
             g_memory.Write<uint32_t>(out, 0);
     }
     ctx.r3.u64 = ErrorInvalidParameter;
-}
-
-// XamReadTileToTexture(tile type, title id, tile id (64-bit), user index, buffer, stride, height, overlapped),
-// signature as in Xenia (BSD): the texture is cleared (transparent) and the call fails with ERROR_NOT_FOUND.
-PPC_FUNC(__imp__XamReadTileToTexture)
-{
-    LOG_FIRST_CALL("XamReadTileToTexture");
-    uint32_t buffer = ctx.r7.u32;
-    if (buffer != 0)
-        memset(g_memory.Translate(buffer), 0, size_t(ctx.r8.u32) * ctx.r9.u32);
-    ctx.r3.u64 = FinishXamCall(ctx.r10.u32, ErrorNotFound, 0, ctx.r13.u32);
 }
 
 // The console's private key. XAPI signs and checks a small file with it (sub_82F42CB0 verifies, sub_82F42D30 signs a

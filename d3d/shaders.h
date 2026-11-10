@@ -17,6 +17,8 @@ namespace d3d
             samplers; // vertex shaders: the vertex texture samplers (registers 0-3, fetch constants 16-19) its constant table lists, one bit each
         uint32_t
             paramGen; // pixel shaders: gpu::DrawDesc::paramGen, from the header (bit 31 = param_gen enabled, bits 0-7 = register)
+        uint32_t
+            colorOutputs; // pixel shaders: the render targets it writes (bit i: oC<i>), from the header's outputs (+0x1C)
     };
 
     // XenosRecomp's vertex input location for a declaration usage and index (its USAGE_LOCATIONS table, plus PSIZE),

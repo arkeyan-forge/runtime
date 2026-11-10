@@ -1,4 +1,6 @@
 // XAM input for the controllers of users 0 and 1 (Player 1 and 2). Other user slots, and user 1 without a device, report none.
+#include "game.h"
+#include "gpu/frame_stats.h"
 #include "host/env.h"
 #include "host/input.h"
 #include "memory.h"
@@ -49,6 +51,8 @@ PPC_FUNC(__imp__XamInputGetCapabilities)
 // XamInputGetState(user, flags, X_INPUT_STATE*): packet number, gamepad.
 PPC_FUNC(__imp__XamInputGetState)
 {
+    if (gpu::framestats::Enabled())
+        gpu::framestats::NoteInputRead(); // the debug screen's latency starts at the game's input read
     if (!GamepadConnected(int(ctx.r3.u32)))
     {
         ctx.r3.u64 = ErrorDeviceNotConnected;
@@ -66,6 +70,8 @@ PPC_FUNC(__imp__XamInputGetState)
         fprintf(stderr, "[input] user %u: the title reads buttons 0x%04X, triggers %u/%u\n", ctx.r3.u32, state.buttons,
             state.leftTrigger, state.rightTrigger);
     }
+    if (ctx.r3.u32 == 0)
+        game::StoryMovieButtons(state.buttons);
     g_memory.Write<uint32_t>(ctx.r5.u32, packetNumber);
     WriteGamepad(ctx.r5.u32 + 4, state);
     ctx.r3.u64 = ErrorSuccess;

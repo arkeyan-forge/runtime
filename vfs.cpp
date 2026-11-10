@@ -126,22 +126,39 @@ bool DiscFileSystem::Open(const char* isoPath)
             uint32_t root[2]; // sector, size (little-endian on disc)
             PlatformReadFile(m_file, root, sizeof(root), offset + 32 * SectorSize + 20);
             m_partition = offset;
+            m_imageSize = 0;
+            std::error_code sizeError;
+            if (uintmax_t length = fs::file_size(FromUtf8(isoPath), sizeError); !sizeError)
+                m_imageSize = length;
+            m_directories.clear();
             m_entries[""] = { offset + uint64_t(root[0]) * SectorSize, root[1], true, "", "" };
-            IndexDirectory(root[0], root[1], "");
+            if (!IndexDirectory(root[0], root[1], ""))
+            {
+                // A looping or oversized directory tree is a bad image: refuse it whole, with nothing half-listed.
+                PlatformCloseFile(m_file);
+                m_file = InvalidPlatformFile;
+                m_entries.clear();
+                return false;
+            }
             return true;
         }
     }
     return false;
 }
 
-void DiscFileSystem::IndexDirectory(uint32_t sector, uint32_t size, const std::string& prefix, int depth)
+bool DiscFileSystem::IndexDirectory(uint32_t sector, uint32_t size, const std::string& prefix, int depth)
 {
-    // A damaged or crafted image: a directory far larger than any disc's, or one that leads back into itself.
-    if (size > MaxDirectorySize || depth > MaxDirectoryDepth)
-        return;
+    // A damaged or crafted image: a directory far larger than any disc's or than the image, one that leads back into
+    // itself (each extent is walked once), a tree too deep, or too many entries. A directory past the end of a truncated
+    // image is skipped; the others refuse the image.
+    if (depth > MaxDirectoryDepth || !m_directories.insert(sector).second)
+        return false;
+    const uint64_t start = m_partition + uint64_t(sector) * SectorSize;
+    if (size > MaxDirectorySize || (m_imageSize != 0 && start + size > m_imageSize))
+        return true;
     std::vector<uint8_t> data(size);
-    if (PlatformReadFile(m_file, data.data(), size, m_partition + uint64_t(sector) * SectorSize) != size)
-        return; // past the end of a truncated image
+    if (PlatformReadFile(m_file, data.data(), size, start) != size)
+        return true; // past the end of a truncated image
 
     // Entries form a binary tree: left/right subtree offsets in dwords, 0xFFFF marks unused space.
     std::vector<uint32_t> pending{ 0 };
@@ -171,14 +188,17 @@ void DiscFileSystem::IndexDirectory(uint32_t sector, uint32_t size, const std::s
         std::string path = Normalize(prefix + name);
         bool directory = attributes & DirectoryAttribute;
         m_entries[path] = { m_partition + uint64_t(entrySector) * SectorSize, entrySize, directory, name, "" };
-        if (directory && entrySize != 0)
-            IndexDirectory(entrySector, entrySize, path + "/", depth + 1);
+        if (m_entries.size() > MaxEntries)
+            return false;
+        if (directory && entrySize != 0 && !IndexDirectory(entrySector, entrySize, path + "/", depth + 1))
+            return false;
 
         if (left != 0)
             pending.push_back(left * 4u);
         if (right != 0)
             pending.push_back(right * 4u);
     }
+    return true;
 }
 
 const DiscFileSystem::Entry* DiscFileSystem::Find(const std::string& path) const

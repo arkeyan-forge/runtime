@@ -1,4 +1,4 @@
-// Checks the remembered "scale auto" step-down's file line (gpu/auto_scale.h). usage: SSAAutoScaleTest
+// Checks the remembered "scale auto" step-down's file line (gpu/auto_scale.h). usage: ArkeyanAutoScaleTest
 #include "gpu/auto_scale.h"
 #include <cstdio>
 

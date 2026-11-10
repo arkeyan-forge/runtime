@@ -61,5 +61,18 @@ void ToyboxAchievement(const std::string& name, uint32_t points, std::vector<uin
 // announces the title's first achievement as if unlocked, without saving it.
 void ToyboxSetAchievementPreview(void (*preview)());
 
+// One achievement as the overlay's Achievements page lists it: the title's own texts in its text language.
+struct ToyboxAchievementRow
+{
+    std::string name, description; // the description unlocked, or the one the title shows while locked
+    uint32_t points = 0;
+    int64_t unlocked = 0; // unix time of the unlock; 0: locked
+    bool secret = false;  // locked and hidden by the title until unlocked: no name or description is shown
+};
+// The achievements' side (kernel/xam_achievements.cpp) gives the page the title's list and the player's unlocks;
+// main thread, when the page opens (and when the F3 menu shows the count).
+void ToyboxSetAchievementList(std::vector<ToyboxAchievementRow> (*list)());
+std::vector<ToyboxAchievementRow> ToyboxAchievements(); // empty when there is no list (no source, or none in the title)
+
 // A level started (game.cpp NoteLevel): the figures that ran out of health can play again.
 void ToyboxLevelStarted();

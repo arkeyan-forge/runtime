@@ -49,15 +49,16 @@ int EmulatedPortal::Place(const FigureData& data, const std::string& path, int w
     std::lock_guard lock(m_mutex);
 
     // Prefer a slot whose last change was already reported, so that a swap shows up as a removal and an arrival.
-    int slot = wanted >= 0 && wanted < SlotCount && !m_slots[wanted].data ? wanted : -1;
+    auto free = [this](int i) { return !m_slots[i].data && (m_reserved >> i & 1) == 0; };
+    int slot = wanted >= 0 && wanted < SlotCount && free(wanted) ? wanted : -1;
     for (int i = 0; i < SlotCount && slot < 0; i++)
     {
-        if (!m_slots[i].data && !m_slots[i].changed)
+        if (free(i) && !m_slots[i].changed)
             slot = i;
     }
     for (int i = 0; i < SlotCount && slot < 0; i++)
     {
-        if (!m_slots[i].data)
+        if (free(i))
             slot = i;
     }
     if (slot < 0)
@@ -80,10 +81,48 @@ void EmulatedPortal::Remove(int slot)
     m_slots[slot].changed = true;
 }
 
+void EmulatedPortal::Renumber()
+{
+    std::lock_guard lock(m_mutex);
+    int next = 0;
+    for (int i = 0; i < SlotCount; i++)
+    {
+        Slot toy = std::move(m_slots[i]);
+        m_slots[i] = {};
+        if (!toy.data)
+            continue;
+        toy.changed = true;
+        m_slots[next++] = std::move(toy);
+    }
+}
+
+int EmulatedPortal::SlotOfSerial(const uint8_t* serial)
+{
+    std::lock_guard lock(m_mutex);
+    for (int i = 0; i < SlotCount; i++)
+    {
+        if (m_slots[i].data && memcmp(m_slots[i].data->data(), serial, 4) == 0)
+            return i;
+    }
+    return -1;
+}
+
 std::string EmulatedPortal::SlotPath(int slot)
 {
     std::lock_guard lock(m_mutex);
     return slot >= 0 && slot < SlotCount && m_slots[slot].data ? m_slots[slot].path : std::string();
+}
+
+bool EmulatedPortal::Holds(int slot)
+{
+    std::lock_guard lock(m_mutex);
+    return slot >= 0 && slot < SlotCount && m_slots[slot].data.has_value();
+}
+
+uint32_t EmulatedPortal::TakeStatus()
+{
+    std::lock_guard lock(m_mutex);
+    return StatusBits();
 }
 
 bool EmulatedPortal::IsActive()
@@ -93,7 +132,7 @@ bool EmulatedPortal::IsActive()
 }
 
 // 'S' <LE32: 2 bits per slot, bit 0 = present, bit 1 = changed since the last report> <counter> <active>
-EmulatedPortal::Report EmulatedPortal::StatusReport()
+uint32_t EmulatedPortal::StatusBits()
 {
     uint32_t status = 0;
     for (int i = 0; i < SlotCount; i++)
@@ -102,6 +141,12 @@ EmulatedPortal::Report EmulatedPortal::StatusReport()
         m_slots[i].changed = false;
         status |= bits << (i * 2);
     }
+    return status;
+}
+
+EmulatedPortal::Report EmulatedPortal::StatusReport()
+{
+    uint32_t status = StatusBits();
 
     Report report{};
     report[0] = 'S';

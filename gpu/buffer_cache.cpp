@@ -9,6 +9,8 @@
 #include <unordered_map>
 #include <vector>
 #include "../host/env.h"
+#include "../write_watch.h"
+#include "d3d/vertex_pairs.h"
 
 #define XXH_INLINE_ALL
 #include <xxhash.h>
@@ -125,10 +127,13 @@ namespace
         uint32_t address;
         uint32_t bytes;
         uint32_t wordSize; // 2: 8-in-32 (vertices), 1: 8-in-16 (indices)
+        uint32_t stride;   // vertices with pairWords: the vertex size
+        uint64_t pairWords; // the vertex words swapped 8-in-16 (gpu::CacheVertices)
 
         bool operator==(const Key& other) const
         {
-            return address == other.address && bytes == other.bytes && wordSize == other.wordSize;
+            return address == other.address && bytes == other.bytes && wordSize == other.wordSize &&
+                   stride == other.stride && pairWords == other.pairWords;
         }
     };
 
@@ -139,6 +144,7 @@ namespace
             uint64_t value = uint64_t(key.address) * 0x9E3779B97F4A7C15ull;
             value ^= uint64_t(key.bytes) * 0xC2B2AE3D27D4EB4Full;
             value ^= uint64_t(key.wordSize) * 0x165667B19E3779F9ull;
+            value ^= (key.pairWords ^ key.stride) * 0x27D4EB2F165667C5ull;
             value ^= value >> 29;
             return size_t(value);
         }
@@ -152,6 +158,7 @@ namespace
         uint64_t usedFrame = 0;
         uint64_t validatedFrame = 0;
         uint64_t contentHash = 0;
+        uint64_t watchStamp = 0; // writewatch::Watch before the last hash: unchanged since, the hash still holds
         uint32_t minIndex = 0, maxIndex = 0;
     };
 
@@ -163,7 +170,8 @@ namespace
     // SKY_BUFFER_STATS: cache activity every 60 submissions.
     struct Stats
     {
-        uint64_t acquire, staged, stagedBytes, promoted, hashed, hashedBytes, hashedDistinctBytes, rewritten, evicted;
+        uint64_t acquire, staged, stagedBytes, promoted, hashed, hashedBytes, hashedDistinctBytes, rewritten, evicted,
+            unwritten, watchMissed;
     } g_stats;
     const bool g_statsOn = skyenv::Get("SKY_BUFFER_STATS") != nullptr;
     // The ranges hashed this frame, when g_statsOn: how much of the hashing overlaps (the same bytes in several keys).
@@ -193,11 +201,14 @@ namespace
 #endif
     }
 
-    // Byte-swaps `bytes` guest bytes into `destination`; for indices (`wordSize` 1) also records the smallest and
+    // Byte-swaps the key's guest bytes into `destination`; for indices (`wordSize` 1) also records the smallest and
     // largest index in `entry`.
-    void Convert(const uint8_t* source, uint8_t* destination, uint32_t bytes, uint32_t wordSize, Entry& entry)
+    void Convert(const uint8_t* source, uint8_t* destination, const Key& key, Entry& entry)
     {
-        if (wordSize == 2)
+        const uint32_t bytes = key.bytes;
+        if (key.wordSize == 2 && key.pairWords != 0)
+            d3d::SwapVertexWords(source, destination, bytes, key.stride, key.pairWords);
+        else if (key.wordSize == 2)
         {
             uint32_t i = 0;
             for (; i + 4 <= bytes; i += 4)
@@ -234,22 +245,20 @@ namespace
         Allocation allocation = Allocate(key.bytes);
         if (allocation.block == nullptr)
             return false;
-        Convert(static_cast<const uint8_t*>(data), allocation.block->memory + allocation.offset, key.bytes,
-            key.wordSize, entry);
+        Convert(static_cast<const uint8_t*>(data), allocation.block->memory + allocation.offset, key, entry);
         if (entry.resident.block != nullptr)
             g_pendingFrees.push_back({ entry.resident, entry.usedFrame });
         entry.resident = allocation;
         return true;
     }
 
-    BufferRange Acquire(const void* data, uint32_t guestAddress, uint32_t bytes, uint32_t wordSize, uint32_t* minIndex,
-        uint32_t* maxIndex)
+    BufferRange Acquire(const void* data, const Key& key, uint32_t* minIndex, uint32_t* maxIndex)
     {
+        const uint32_t guestAddress = key.address, bytes = key.bytes;
         if (data == nullptr || bytes == 0 || g_context == nullptr)
             return {};
         g_stats.acquire++;
 
-        Key key{ guestAddress, bytes, wordSize };
         auto [it, inserted] = g_entries.try_emplace(key);
         Entry& entry = it->second;
         if (inserted)
@@ -270,7 +279,7 @@ namespace
                     gpu::detail::CheckDeviceLost();
                     return {};
                 }
-                Convert(static_cast<const uint8_t*>(data), mapped + offset, bytes, wordSize, entry);
+                Convert(static_cast<const uint8_t*>(data), mapped + offset, key, entry);
                 buffer->unmap();
                 entry.staged = { buffer, offset };
                 g_stagedCurrent.push_back(key);
@@ -284,20 +293,35 @@ namespace
             // Drawn from in an earlier frame too: keep it resident, converted again only when the guest data changed.
             if (entry.validatedFrame != g_frame)
             {
-                uint64_t hash = g_chunkedHash
-                                    ? g_hasher.Hash(static_cast<const uint8_t*>(data), guestAddress, bytes, g_frame)
-                                    : XXH3_64bits(data, bytes);
-                g_stats.hashed++;
-                g_stats.hashedBytes += bytes;
-                if (g_statsOn)
-                    g_hashedRanges.emplace_back(guestAddress, guestAddress + bytes);
-                if (entry.resident.block == nullptr || hash != entry.contentHash)
+                // Nothing wrote its pages since the last hash (the write watch): that hash still holds.
+                const bool unwritten =
+                    entry.resident.block != nullptr && writewatch::Unchanged(data, bytes, entry.watchStamp);
+                g_stats.unwritten += unwritten;
+                if (!unwritten || writewatch::Checking())
                 {
-                    g_stats.promoted += entry.resident.block == nullptr;
-                    g_stats.rewritten += entry.resident.block != nullptr;
-                    if (!WriteResident(entry, key, data))
-                        return {};
-                    entry.contentHash = hash;
+                    const uint64_t stamp = writewatch::Watch(data, bytes);
+                    uint64_t hash = g_chunkedHash
+                                        ? g_hasher.Hash(static_cast<const uint8_t*>(data), guestAddress, bytes, g_frame)
+                                        : XXH3_64bits(data, bytes);
+                    g_stats.hashed++;
+                    g_stats.hashedBytes += bytes;
+                    if (g_statsOn)
+                        g_hashedRanges.emplace_back(guestAddress, guestAddress + bytes);
+                    if (unwritten && hash != entry.contentHash)
+                    {
+                        g_stats.watchMissed++;
+                        fprintf(
+                            stderr, "[buffers] the write watch missed a change: %08X, %u bytes\n", guestAddress, bytes);
+                    }
+                    if (entry.resident.block == nullptr || hash != entry.contentHash)
+                    {
+                        g_stats.promoted += entry.resident.block == nullptr;
+                        g_stats.rewritten += entry.resident.block != nullptr;
+                        if (!WriteResident(entry, key, data))
+                            return {};
+                        entry.contentHash = hash;
+                    }
+                    entry.watchStamp = stamp;
                 }
                 entry.validatedFrame = g_frame;
             }
@@ -316,12 +340,13 @@ namespace
 // Both take the producer lock, as every producer call: the cache and the upload memory belong to the producer frame,
 // and until the game presents its first frame the main thread presents too (PresentDisplayFrame), ending frames
 // (BufferCacheFrameDone) while the game's render thread draws.
-BufferRange gpu::CacheVertices(const void* data, uint32_t guestAddress, uint32_t bytes)
+BufferRange gpu::CacheVertices(
+    const void* data, uint32_t guestAddress, uint32_t bytes, uint32_t stride, uint64_t pairWords)
 {
     ProducerLock producer;
     if (gpu::detail::DeviceLost())
         return {};
-    return Acquire(data, guestAddress, bytes, 2, nullptr, nullptr);
+    return Acquire(data, { guestAddress, bytes, 2, pairWords != 0 ? stride : 0, pairWords }, nullptr, nullptr);
 }
 
 BufferRange gpu::CacheIndices(
@@ -330,7 +355,7 @@ BufferRange gpu::CacheIndices(
     ProducerLock producer;
     if (gpu::detail::DeviceLost())
         return {};
-    return Acquire(data, guestAddress, bytes, 1, &minIndex, &maxIndex);
+    return Acquire(data, { guestAddress, bytes, 1, 0, 0 }, &minIndex, &maxIndex);
 }
 
 void gpu::BufferCacheFrameDone(uint64_t completed)
@@ -338,6 +363,7 @@ void gpu::BufferCacheFrameDone(uint64_t completed)
     // g_frame follows the producer frames (gpu::Present): the GPU has finished every one up to `completed`.
     uint64_t recorded = g_frame;
     g_frame++;
+    writewatch::FrameDone();
 
     for (size_t i = 0; i < g_pendingFrees.size();)
     {
@@ -395,15 +421,17 @@ void gpu::BufferCacheFrameDone(uint64_t completed)
     }
     if (g_statsOn && g_frame % 60 == 0)
     {
+        const writewatch::Stats watch = writewatch::TakeStats();
         fprintf(stderr,
             "[buffers] frame %llu, per frame: acquire %.0f staged %.1f (%.2f MB) promoted %.1f hashed %.0f (%.2f MB, "
             "%.2f MB distinct, %.2f MB read) rewritten %.1f evicted %.1f; entries %zu, resident %.1f MB in %zu "
-            "blocks\n",
+            "blocks; write watch: %.0f unwritten, %.1f faults, %.1f pages protected, %llu missed\n",
             (unsigned long long)g_frame, g_stats.acquire / 60.0, g_stats.staged / 60.0,
             g_stats.stagedBytes / 60.0 / 1048576.0, g_stats.promoted / 60.0, g_stats.hashed / 60.0,
             g_stats.hashedBytes / 60.0 / 1048576.0, g_stats.hashedDistinctBytes / 60.0 / 1048576.0,
             g_hasher.hashedBytes / 60.0 / 1048576.0, g_stats.rewritten / 60.0, g_stats.evicted / 60.0, g_entries.size(),
-            g_residentBytes / 1048576.0, g_blocks.size());
+            g_residentBytes / 1048576.0, g_blocks.size(), g_stats.unwritten / 60.0, watch.faults / 60.0,
+            watch.protectedPages / 60.0, (unsigned long long)g_stats.watchMissed);
         g_stats = {};
         g_hasher.hashedBytes = 0;
     }

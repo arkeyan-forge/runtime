@@ -52,12 +52,15 @@ void QueueUserApc(GuestThread& thread, const UserApc& apc);
 void DeliverUserApcs(PPCContext& ctx, GuestThread& thread);
 
 // True for a word-aligned address inside the recompiled code: the indirect-call guard's test
-// (SSARecompLib/indirect_call_guard.h). The function table read at any other address gives a garbage host pointer.
+// (ArkeyanRecompLib/indirect_call_guard.h). The function table read at any other address gives a garbage host pointer.
 bool GuestCodeAddress(uint32_t target);
 
 // Calls the guest function at `target` from host code (a thread's start, an APC, an interrupt or audio callback). A target
 // outside the code is logged once and not called: r3 = 0, and the result is false.
 bool CallGuest(PPCContext& ctx, uint32_t target);
+
+// The guest threads running now (started, not exited): the debug screen.
+uint32_t GuestThreadsRunning();
 
 // Runs host code that calls into the guest (interrupts, timers) on its own thread with a guest context.
 void StartHostDrivenThread(std::function<void(PPCContext&)> body, uint8_t cpu);

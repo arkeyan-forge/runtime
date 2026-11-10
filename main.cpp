@@ -20,16 +20,22 @@
 #include "host/toybox.h"
 #include "gpu/gpu.h"
 #include "d3d/ultrawide.h"
+#include "d3d/upscale.h"
 #include "kernel/video.h"
 #include "game.h"
 #include "language.h"
 #include "loader.h"
 #include "memory.h"
 #include "platform/platform.h"
+#include "gpu/frame_stats.h"
+#include "gpu/fsr/framegen.h"
+#include "gpu/fsr/framegen_rules.h"
 #include "thread.h"
 #include "vfs.h"
+#include "write_watch.h"
 #include <SDL3/SDL.h>
 #include <stb_image.h>
+#include <stb_image_write.h>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -223,7 +229,7 @@ static void ListGamepads()
 int main(int argc, char** argv)
 {
     datadir::MigrateOnce(); // the older folders into <data root> (datadir.h), before any path is used
-    const GameInfo& game = *FindGame(SSA_GAME_ID); // the game this runtime was built for (-DSSA_GAME)
+    const GameInfo& game = *FindGame(ARKEYAN_GAME_ID); // the game this runtime was built for (-DARKEYAN_GAME)
     // A portable's figures and keys, before the settings are read.
     const std::string firstLaunch = portable::FirstLaunch(game, collection::Folder());
     RuntimeSettings settings;
@@ -254,7 +260,7 @@ int main(int argc, char** argv)
     }
     if (settings.version)
     {
-        printf("ArkeyanRuntime %s\n", SSA_VERSION);
+        printf("ArkeyanRuntime %s\n", ARKEYAN_VERSION);
         return 0;
     }
     if (settings.listGamepads)
@@ -329,6 +335,7 @@ int main(int argc, char** argv)
     }
 
     g_memory.Reserve();
+    writewatch::Init(g_memory.base, 0x100000000ull);
     g_module = LoadXex(g_disc.ReadAll("default.xex"));
 
     if (const char* script = skyenv::Get("SKY_PRESS"))
@@ -338,21 +345,26 @@ int main(int argc, char** argv)
 
     // The host's main thread owns the window and input (macOS requires it); the title runs on its own threads.
     bool headless = skyenv::Get("SKY_HEADLESS") != nullptr;
-    // The 3D at the frame's size where the game renders it smaller (Swap Force), unless original_resolution.
-    if (::game::Current().fullScene.width != 0 && !settings.originalResolution)
-        ultrawide::SetScene16x9(::game::Current().fullScene.width, ::game::Current().fullScene.height, false);
+    // The 3D at the frame's size where the game renders it smaller (Swap Force), unless original_resolution or FSR: FSR
+    // needs the scene apart from the frame (a smaller target), and upscales the game's own scene to the frame itself.
+    const bool fullScene = ::game::Current().fullScene.width != 0 && !settings.originalResolution &&
+                           settings.upscaler == upscalemode::Upscaler::Off;
+    if (fullScene)
+        ultrawide::SetScene16x9(::game::Current().fullScene.width, ::game::Current().fullScene.height, false,
+            ::game::Current().maxSceneWidth);
     SDL_Window* window = nullptr;
     if (!headless)
     {
         SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO);
-        HostAudioInit();
+        HostAudioInit(settings.speakers);
         gpu::g_settings = { .resolutionScale = settings.resolutionScale,
             .anisotropy = settings.anisotropy,
             .vsync = settings.vsync,
             .fpsLimit = settings.fpsLimit,
-            .edgeSmoothing = settings.edgeSmoothing };
+            .edgeSmoothing = settings.edgeSmoothing,
+            .backend = settings.gpuBackend };
         // The game's name and its version (games/<id>/game.txt): "Skylanders: Spyro's Adventure v0.9.1".
-        const std::string title = std::string(g_gameInfo.name) + " v" + SSA_GAME_VERSION;
+        const std::string title = std::string(g_gameInfo.name) + " v" + ARKEYAN_GAME_VERSION;
         window = CreateDisplayWindow(title.c_str(), 1280, 720, settings.fullscreen);
 #ifndef __APPLE__ // macOS: the bundle's icon (Arkeyan-Builder's BundleIcon)
         if (window !=
@@ -387,14 +399,35 @@ int main(int argc, char** argv)
             SDL_GetWindowSizeInPixels(window, &windowWidth, &windowHeight);
             if (::game::Current().ultrawide) // else the game keeps its 16:9 (game.h)
                 ultrawide::Configure(settings.aspectAuto, uint32_t(windowWidth), uint32_t(windowHeight));
+            upscale::Configure(uint32_t(windowHeight), settings.upscaler, settings.fsrQuality, fullScene);
+            const ::framegen::Hold hold = ::framegen::HeldBack(gpu::framegen::Preview(),
+                ::game::Current().frameGeneration, skyenv::Get("SKY_FSR_FRAME_GENERATION_ANY_GAME") != nullptr);
+            gpu::framegen::SetBlocked(hold != ::framegen::Hold::None);
+            const bool frameGeneration = settings.fsrFrameGeneration && gpu::framegen::Available();
+            if (settings.fsrFrameGeneration && !frameGeneration)
+                fprintf(stderr, "[framegen] asked, but this GPU backend cannot run it: off\n");
+            else if (frameGeneration && hold == ::framegen::Hold::Later)
+                fprintf(stderr,
+                    "[framegen] asked, but it is coming later (SKY_FSR_FRAME_GENERATION_PREVIEW=1 runs it): off\n");
+            else if (frameGeneration && hold == ::framegen::Hold::Game)
+                fprintf(stderr, "[framegen] asked, but not available in this game yet: off\n");
+            gpu::framegen::SetEnabled(frameGeneration);
+            // SKY_FSR_FG_SNAPSHOT=<prefix>: generated frames and the real ones after them as <prefix>_<gen|real>_<n>.png
+            // (offscreen only; SKY_FSR_FG_SNAPSHOT_EVERY, SKY_FSR_FG_SNAPSHOT_FROM: gpu/fsr/framegen.cpp).
+            if (const char* prefix = skyenv::Get("SKY_FSR_FG_SNAPSHOT"))
+                gpu::framegen::SetSnapshotHook([prefix = std::string(prefix)](const char* kind, uint64_t index,
+                                                   const std::vector<uint32_t>& rgba, uint32_t w, uint32_t h) {
+                    const std::string path = prefix + "_" + kind + "_" + std::to_string(index) + ".png";
+                    stbi_write_png(path.c_str(), int(w), int(h), 4, rgba.data(), int(w * 4));
+                });
         }
     }
 
     SetFrameRateLimit(settings.fpsLimit);
     glyphs::Init(settings);
-    texpack::ConfigureForGame(game.id, settings.textureDump, settings.texturePacks);
+    texpack::ConfigureForGame(game.id, settings.textureDump, settings.texturePacks, settings.hdTextures);
     PortalInit();
-    gamemenu::Init(settings, window, SSA_GAME_VERSION);
+    gamemenu::Init(settings, window, ARKEYAN_GAME_VERSION);
     ToyboxInit(window);
     ToyboxSetAutoOpen(settings.toyboxAutoOpen);
     // While the game runs, Skylauncher refuses to restore a backup over its saves (Settings > Game data,
@@ -410,6 +443,7 @@ int main(int argc, char** argv)
     SDL_Gamepad* secondGamepad = nullptr; // Player 2's: another pad than the first one, no keyboard
     HostInput secondInput = input;
     secondInput.keyboard = false;
+    gpu::framestats::RegisterThread(gpu::framestats::Thread::Main, PlatformThreadCpuClock());
     while (true)
     {
         {
@@ -426,10 +460,17 @@ int main(int argc, char** argv)
         }
 
         glyphs::RunTestScript();
+        HostAudioCheckOutput(nullptr);
         SDL_Event event;
         while (SDL_PollEvent(&event))
         {
             mouseinput::OnEvent(event, window); // first: a quit frees the pointer before anything else
+            HostAudioCheckOutput(&event);
+            if (gpu::framestats::Enabled() &&
+                (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP ||
+                    event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN || event.type == SDL_EVENT_GAMEPAD_BUTTON_UP ||
+                    event.type == SDL_EVENT_GAMEPAD_AXIS_MOTION))
+                gpu::framestats::NoteInputEvent(event.common.timestamp); // the debug screen's pad-to-game latency
             // Closing the window, Cmd+Q, Ctrl+C or SIGTERM, or the window disappearing. The title's threads are still
             // running and use SDL (the audio driver thread feeds the audio stream, the renderer presents to the
             // window), so tearing SDL down first (SDL_Quit) would free objects under them; the system reclaims

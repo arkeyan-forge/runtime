@@ -1,6 +1,8 @@
 #include "host/toybox/model.h"
 #include "game.h"
+#include "d3d/upscale.h"
 #include "gpu/edge_smoothing.h"
+#include "gpu/gpu.h"
 #include "host/gamemenu.h"
 #include "host/settings.h"
 #include "host/toybox.h"
@@ -8,47 +10,87 @@
 #include <algorithm>
 #include <cstdio>
 #include <functional>
+#include <string_view>
 
-// The F3 menu's rows and logic (docs/runtime/host/gamemenu.md). The look is draw.cpp (DrawMenu), the input toybox.cpp, what a
-// row changes and saves host/gamemenu.cpp.
+// The F3 menu's logic (docs/runtime/host/gamemenu.md): its side panel, the Settings, Achievements and Controls pages
+// beside the rail. The look is draw.cpp (DrawMenu, DrawSettings, DrawAchievements, DrawCommands), the input toybox.cpp,
+// what a setting changes and saves host/gamemenu.cpp.
 namespace toybox
 {
     namespace
     {
+        // The settings, in the order the Settings page shows them, by section: Game, Video, Audio, Debug (SectionOf).
+        // Report a problem (Help) is the panel's own row.
         enum Row
         {
-            Volume,
-            PortalSound,
-            FpsCounter,
-            DebugScreen,
+            Commands,
+            SkipIntro,
             Fullscreen,
             FrameRate,
             AutoFallback,
             Scale,
+            Upscaler,
+            FsrQuality,
+            FrameGeneration,
             Anisotropy,
             EdgeSmoothing,
+            GpuBackend,
             Vsync,
-            SkipIntro,
-            Commands,
-            Report,
-            CloseMenu
+            Volume,
+            PortalSound,
+            Speakers,
+            FpsCounter,
+            DebugScreen,
+            PerfLog,
+            RowCount
         };
-        static_assert(CloseMenu + 1 == Model::MenuRowCount);
+
+        std::string SectionOf(int row)
+        {
+            return row <= SkipIntro  ? L("Game", "Jeu")
+                   : row <= Vsync    ? L("Video", "Vidéo")
+                   : row <= Speakers ? L("Audio", "Audio")
+                                     : L("Debug", "Débogage");
+        }
+
+        std::string LevelLabel(uint32_t level)
+        {
+            return level == 1 ? L("Compact", "Compact") : level == 2 ? L("Full", "Complet") : L("Off", "Non");
+        }
 
         constexpr uint32_t Scales[] = { 0, 1, 2, 3, 4 };
+        constexpr uint32_t Upscalers[] = { 0, 1 }; // off, FSR 3 (upscalemode::Upscaler)
+        constexpr uint32_t Presets[] = { 4, 0, 1, 2, 3 }; // upscalemode::Quality: native first, the full size
+
+        std::string PresetLabel(uint32_t preset)
+        {
+            return preset == 4   ? L("Native AA", "AA natif")
+                   : preset == 1 ? L("Balanced", "Équilibré")
+                   : preset == 2 ? L("Performance", "Performance")
+                   : preset == 3 ? L("Ultra performance", "Ultra performance")
+                                 : L("Quality", "Qualité");
+        }
         constexpr uint32_t Levels[] = { 1, 2, 4, 8, 16 };
+        constexpr uint32_t GpuBackends[] = { uint32_t(gpubackend::Backend::D3D12),
+            uint32_t(gpubackend::Backend::Vulkan) };
+
+        // The launcher's words for gpubackend's labels.
+        const char* ApiLabel(const char* label) { return std::string_view(label) == "D3D12" ? "Direct3D 12" : label; }
+        constexpr uint32_t SpeakerModes[] = { speakers::Auto, speakers::Stereo, speakers::Surround };
 
         std::string OnOff(bool on) { return on ? L("On", "Oui") : L("Off", "Non"); }
 
         // The rows shown, as indexes of Row: the edge smoothing row only for a game with a known FXAA pass, the portal's sound
-        // only for a game whose portal has a speaker.
+        // only for a game whose portal has a speaker, the graphics API only on desktop Windows.
         std::vector<int> ShownRows()
         {
             std::vector<int> shown;
-            for (int row = 0; row < Model::MenuRowCount; row++)
+            for (int row = 0; row < RowCount; row++)
                 if ((row != EdgeSmoothing || gamemenu::Current().edgeSmoothingShown) &&
                     (row != PortalSound || gamemenu::Current().portalSoundShown) &&
-                    (row != AutoFallback || gamemenu::Current().fpsLimit == 60))
+                    (row != AutoFallback || gamemenu::Current().fpsLimit == 60) &&
+                    (row != FsrQuality || gamemenu::Current().upscaler != 0) &&
+                    (row != GpuBackend || gamemenu::Current().gpuBackendShown))
                     shown.push_back(row);
             return shown;
         }
@@ -89,7 +131,7 @@ namespace toybox
         void LoadCommands()
         {
             g_commands = LoadLauncherConfig(LauncherConfigPath());
-            commands::Seed(g_commands, SSA_GAME_ID);
+            commands::Seed(g_commands, ARKEYAN_GAME_ID);
         }
 
         // Reads the file again, changes it, saves it, and hands the bindings to the running game (main.cpp takes them).
@@ -98,7 +140,7 @@ namespace toybox
             std::string path = LauncherConfigPath();
             g_commands = LoadLauncherConfig(path);
             change(g_commands);
-            commands::Bindings bindings = commands::Read(g_commands, SSA_GAME_ID);
+            commands::Bindings bindings = commands::Read(g_commands, ARKEYAN_GAME_ID);
             commands::Publish(bindings);
             ToyboxSetKeys(bindings.toyboxKeys, bindings.toyboxTab);
             if (SaveLauncherConfig(path, g_commands))
@@ -150,38 +192,37 @@ namespace toybox
         }
     }
 
-    int Model::MenuRowTotal() const { return int(ShownRows().size()); }
+    // --- The panel --------------------------------------------------------------------------------------------------------
 
-    std::vector<MenuRow> Model::MenuRows() const
+    std::vector<MenuRow> Model::MainRows() const
     {
         using Kind = MenuRow::Kind;
         const gamemenu::Values& v = gamemenu::Current();
-        std::vector<MenuRow> rows(MenuRowCount);
-        rows[Volume] = { Kind::Slider, L("Volume", "Volume"), std::to_string(v.volume) + " %", int(v.volume), false };
-        rows[PortalSound] = { Kind::Toggle, L("Portal sound", "Son du portail"), OnOff(v.portalSound), 0, false };
-        rows[FpsCounter] = { Kind::Toggle, L("FPS counter", "Compteur d'images"), OnOff(v.showFps), 0, false };
-        rows[DebugScreen] = { Kind::Toggle, L("Debug screen", "Écran de débogage"), OnOff(v.debugScreen), 0, false };
-        rows[Fullscreen] = { Kind::Toggle, L("Fullscreen", "Plein écran"), OnOff(v.fullscreen), 0, false };
-        rows[FrameRate] = { Kind::Choice, L("Frame rate", "Images par seconde"),
-            v.fpsLimit == 0 ? std::string(L("Unlimited", "Illimité")) : std::to_string(v.fpsLimit), 0, false };
-        rows[AutoFallback] = { Kind::Toggle, L("Drop to 30 FPS when needed", "Passer à 30 FPS si besoin"),
-            OnOff(v.fpsAutoFallback), 0, false };
-        rows[Scale] = { Kind::Choice, L("Resolution scale", "Échelle de résolution"),
-            v.scale == 0 ? std::string(L("Auto", "Auto")) : "x" + std::to_string(v.scale), 0, true };
-        rows[Anisotropy] = { Kind::Choice, L("Texture filtering", "Filtrage des textures"),
-            v.anisotropy == 1 ? std::string(L("Off", "Non")) : std::to_string(v.anisotropy) + "x", 0, true };
-        rows[EdgeSmoothing] = { Kind::Choice, L("Edge smoothing", "Lissage des bords"),
-            EdgeSmoothingLabel(gamemenu::EdgeSmoothingNow()), 0, false };
-        rows[Vsync] = { Kind::Toggle, L("VSync", "VSync"), OnOff(v.vsync), 0, true };
-        rows[SkipIntro] = { Kind::Toggle, L("Skip the start-up logos", "Passer les logos de départ"),
-            OnOff(v.skipIntroMovies), 0, true };
-        rows[Commands] = { Kind::Action, L("Commands", "Commandes"), "", 0, false };
-        rows[Report] = { Kind::Action, L("Report a problem", "Signaler un problème"), "", 0, false };
-        rows[CloseMenu] = { Kind::Action, L("Close", "Fermer"), "", 0, false };
-        std::vector<MenuRow> shown;
-        for (int row : ShownRows())
-            shown.push_back(rows[size_t(row)]);
-        return shown;
+        int onPortal = 0;
+        for (const SeatState& s : seats)
+            onPortal += !s.path.empty() || s.physical ? 1 : 0;
+        auto row = [](Kind kind, std::string label, std::string value, int percent = 0) {
+            MenuRow r;
+            r.kind = kind;
+            r.label = std::move(label);
+            r.value = std::move(value);
+            r.percent = percent;
+            return r;
+        };
+        std::vector<MenuRow> rows(look::MainRows);
+        rows[MainVolume] = row(Kind::Slider, L("Volume", "Volume"), std::to_string(v.volume), int(v.volume));
+        rows[MainResume] = row(Kind::Action, L("Resume", "Reprendre"), "");
+        rows[MainToyBox] = row(Kind::Action, "Toy Box",
+            onPortal == 0 ? std::string() : std::to_string(onPortal) + L(" on the portal", " sur le portail"));
+        rows[MainAchievements] = row(Kind::Action, L("Achievements", "Succès"),
+            achievementRows.empty()
+                ? std::string()
+                : std::to_string(AchievementsUnlocked()) + " / " + std::to_string(achievementRows.size()));
+        rows[MainSettings] = row(Kind::Action, L("Settings", "Réglages"), "");
+        rows[MainPerformance] = row(Kind::Choice, L("Performance", "Performances"), LevelLabel(v.debugScreen));
+        rows[MainReport] = row(Kind::Action, L("Report a problem", "Signaler un problème"), "");
+        rows[MainQuit] = row(Kind::Action, L("Quit to the launcher", "Quitter vers le launcher"), "");
+        return rows;
     }
 
     void Model::OpenMenu()
@@ -189,24 +230,415 @@ namespace toybox
         open = true;
         screen = Screen::Menu;
         dialogs.clear();
-        menuRow = 0;
-        commandsOpen = false;
+        fromMenu = false;
+        menuRow = MainResume;
         waiting = Waiting::None;
+        RefreshSeats(SDL_GetTicksNS());
+        achievementRows = ToyboxAchievements();
         m_dirty = true;
         fprintf(stderr, "[gamemenu] opened\n");
     }
 
     void Model::FocusMenuRow(int row, int step)
     {
-        menuRow = std::clamp(row, 0, MenuRowTotal() - 1);
-        MenuStep(menuRow, step);
+        menuRow = std::clamp(row, 0, look::MainRows - 1);
+        MainStep(menuRow, step);
         m_dirty = true;
     }
 
-    // `step` -1 / +1 changes a value (a toggle flips, a choice moves along its list, the volume by 10), 0 does the row.
+    void Model::SetVolumeAt(int percent)
+    {
+        menuRow = MainVolume;
+        uint32_t volume = uint32_t(std::clamp((percent + 5) / 10 * 10, 0, 100));
+        if (volume != gamemenu::Current().volume && !gamemenu::SetVolume(volume))
+            Toast(L("Could not save the setting (it applies to this run)",
+                      "Réglage non enregistré (valable pour cette partie)"),
+                4);
+        m_dirty = true;
+    }
+
+    // `step` -1 / +1 changes the volume by 10 or flips the Performance switch; 0 does the row.
+    void Model::MainStep(int row, int step)
+    {
+        const gamemenu::Values& v = gamemenu::Current();
+        switch (row)
+        {
+        case MainVolume:
+            if (step != 0 && !gamemenu::SetVolume(uint32_t(std::clamp(int(v.volume) / 10 * 10 + step * 10, 0, 100))))
+                Toast(L("Could not save the setting (it applies to this run)",
+                          "Réglage non enregistré (valable pour cette partie)"),
+                    4);
+            return;
+        case MainResume:
+            if (step == 0)
+                Close();
+            return;
+        case MainToyBox:
+            if (step == 0)
+                OpenPage(look::Page::ToyBox);
+            return;
+        case MainAchievements:
+            if (step == 0)
+                OpenPage(look::Page::Achievements);
+            return;
+        case MainSettings:
+            if (step == 0)
+                OpenPage(look::Page::Settings);
+            return;
+        case MainPerformance:
+            // The debug screen's three levels (off, compact, full): A and Right move on, Left back, round the ends.
+            if (!gamemenu::SetDebugScreen((v.debugScreen + uint32_t(step < 0 ? 2 : 1)) % 3))
+                Toast(L("Could not save the setting (it applies to this run)",
+                          "Réglage non enregistré (valable pour cette partie)"),
+                    4);
+            return;
+        case MainReport:
+            if (step == 0)
+                MenuStep(-1, 0);
+            return;
+        case MainQuit:
+            if (step == 0)
+                Ask({ L("Quit to the launcher?", "Quitter vers le launcher ?"),
+                    L("What the game has not saved is lost.", "Ce que le jeu n'a pas enregistré est perdu."),
+                    { L("Quit", "Quitter"), L("Keep playing", "Continuer") }, 1, false, [](int choice) {
+                        if (choice != 0)
+                            return;
+                        fprintf(stderr, "[gamemenu] quit to the launcher\n");
+                        SDL_Event quit{};
+                        quit.type = SDL_EVENT_QUIT;
+                        SDL_PushEvent(&quit);
+                    } });
+            return;
+        default: return;
+        }
+    }
+
+    void Model::RunMenu(Command command)
+    {
+        switch (command)
+        {
+        case Command::Up: menuRow = (menuRow + look::MainRows - 1) % look::MainRows; break;
+        case Command::Down: menuRow = (menuRow + 1) % look::MainRows; break;
+        case Command::Left:
+        case Command::Right:
+            if (menuRow == MainVolume || menuRow == MainPerformance)
+                MainStep(menuRow, command == Command::Left ? -1 : 1);
+            break;
+        case Command::Accept:
+            if (menuRow == MainVolume)
+                break;
+            MainStep(menuRow, 0);
+            break;
+        case Command::Back: Close(); break;
+        default: break;
+        }
+    }
+
+    // --- The pages beside the rail ---------------------------------------------------------------------------------------
+
+    look::Page Model::CurrentPage() const
+    {
+        switch (screen)
+        {
+        case Screen::Settings: return look::Page::Settings;
+        case Screen::Achievements: return look::Page::Achievements;
+        case Screen::Commands: return look::Page::Controls;
+        default: return look::Page::ToyBox;
+        }
+    }
+
+    void Model::OpenPage(look::Page page)
+    {
+        // A page reached from the panel (or from another page that was) comes back to the panel with B.
+        bool back = screen == Screen::Menu || fromMenu;
+        dialogs.clear();
+        waiting = Waiting::None;
+        switch (page)
+        {
+        case look::Page::ToyBox:
+            if (screen != Screen::Home)
+                Open(Screen::Home, seat);
+            break;
+        case look::Page::Achievements:
+            achievementRows = ToyboxAchievements();
+            achievementCursor = achievementFirstRow = 0;
+            open = true;
+            screen = Screen::Achievements;
+            fprintf(stderr, "[gamemenu] achievements opened (%d of %d unlocked)\n", AchievementsUnlocked(),
+                int(achievementRows.size()));
+            break;
+        case look::Page::Settings:
+            open = true;
+            screen = Screen::Settings;
+            settingsRow = 0;
+            settingsScroll = 0;
+            fprintf(stderr, "[gamemenu] settings opened\n");
+            break;
+        case look::Page::Controls: OpenCommands(); break;
+        case look::Page::Performance:
+        {
+            // The debug screen is over the game: turning it on (compact) goes back there to show it.
+            bool on = gamemenu::Current().debugScreen == 0;
+            gamemenu::SetDebugScreen(on ? 1 : 0);
+            if (on)
+                Close();
+            m_dirty = true;
+            return;
+        }
+        case look::Page::Count: break;
+        }
+        fromMenu = back;
+        m_dirty = true;
+    }
+
+    void Model::Leave()
+    {
+        if (!fromMenu)
+        {
+            Close();
+            return;
+        }
+        int row = screen == Screen::Settings       ? MainSettings
+                  : screen == Screen::Achievements ? MainAchievements
+                  : screen == Screen::Commands     ? MainSettings
+                                                   : MainToyBox;
+        if ((screen == Screen::Stats || screen == Screen::Upgrades) && stats.dirty)
+            SaveStats();
+        OpenMenu();
+        menuRow = row;
+    }
+
+    // --- Settings --------------------------------------------------------------------------------------------------------
+
+    namespace
+    {
+        // The Settings page's rows: every row shown, in Row's order (the first of a section carries its heading).
+        std::vector<int> ShownSettings() { return ShownRows(); }
+
+        template <class T>
+        int IndexOf(const T* list, size_t count, T value)
+        {
+            for (size_t i = 0; i < count; i++)
+                if (list[i] == value)
+                    return int(i);
+            return 0;
+        }
+
+        // The frame rates under the game's cap (game::Adapter::maxFpsLimit).
+        size_t CappedRates(uint32_t (&rates)[std::size(gamemenu::FrameRates)])
+        {
+            size_t count = 0;
+            for (uint32_t rate : gamemenu::FrameRates)
+                if (gamemenu::CapFrameRate(rate, ::game::Current().maxFpsLimit) == rate)
+                    rates[count++] = rate;
+            return count;
+        }
+    }
+
+    int Model::SettingsRowTotal() const { return int(ShownSettings().size()); }
+
+    std::vector<MenuRow> Model::SettingsRows() const
+    {
+        std::vector<MenuRow> all = MenuRows();
+        std::vector<MenuRow> rows;
+        for (int row : ShownSettings())
+        {
+            MenuRow shown = all[size_t(row)];
+            shown.section = SectionOf(row);
+            if (rows.empty() || rows.back().section != shown.section)
+                shown.heading = shown.section;
+            rows.push_back(std::move(shown));
+        }
+        return rows;
+    }
+
+    std::vector<MenuRow> Model::MenuRows() const
+    {
+        using Kind = MenuRow::Kind;
+        const gamemenu::Values& v = gamemenu::Current();
+        std::vector<MenuRow> rows(RowCount);
+        uint32_t rates[std::size(gamemenu::FrameRates)];
+        const size_t rateCount = CappedRates(rates);
+        const uint32_t edge = gamemenu::EdgeSmoothingNow();
+        static const uint32_t Modes[] = { edgesmoothing::Game, edgesmoothing::Light, edgesmoothing::Off };
+        auto row = [](Kind kind, const char* label, std::string value, const char* help, int cost = -1,
+                       bool nextStart = false) {
+            MenuRow r;
+            r.kind = kind;
+            r.label = label;
+            r.value = std::move(value);
+            r.help = help;
+            r.cost = cost;
+            r.nextStart = nextStart;
+            return r;
+        };
+        rows[Volume] = row(Kind::Slider, L("Volume", "Volume"), std::to_string(v.volume) + " %",
+            L("The game's music, voices and effects together.", "La musique, les voix et les effets du jeu ensemble."));
+        rows[Volume].percent = int(v.volume);
+        rows[PortalSound] = row(Kind::Toggle, L("Portal sound", "Son du portail"), OnOff(v.portalSound),
+            L("The traps' voices from the portal's speaker.", "La voix des pièges dans le haut-parleur du portail."));
+        auto layoutLabel = [](uint32_t mode) {
+            return std::string(mode == speakers::Surround ? "5.1" : L("Stereo", "Stéréo"));
+        };
+        rows[Speakers] = row(Kind::Choice, L("Speakers", "Enceintes"),
+            v.speakers == speakers::Auto ? std::string(L("Auto", "Auto")) + " (" + layoutLabel(v.speakersNow) + ")"
+                                         : layoutLabel(v.speakers),
+            L("Stereo or 5.1 surround. Auto: 5.1 on a 6-channel output.",
+                "Stéréo ou 5.1. Auto : 5.1 sur une sortie à 6 canaux."),
+            -1, true);
+        rows[Speakers].option = IndexOf(SpeakerModes, std::size(SpeakerModes), v.speakers);
+        rows[Speakers].options = int(std::size(SpeakerModes));
+        rows[FpsCounter] = row(Kind::Toggle, L("FPS counter", "Compteur d'images"), OnOff(v.showFps),
+            L("A small counter in the corner.", "Un petit compteur dans le coin."));
+        rows[DebugScreen] = row(Kind::Choice, L("Debug screen", "Écran de débogage"), LevelLabel(v.debugScreen),
+            L("Frame times, CPU and GPU over the game. Shift+F3 in play.",
+                "Temps d'image, CPU et GPU par-dessus le jeu. Maj+F3 en jeu."));
+        rows[DebugScreen].option = int(std::min<uint32_t>(v.debugScreen, 2));
+        rows[DebugScreen].options = 3;
+        rows[PerfLog] =
+            row(Kind::Toggle, L("Record a performance log", "Enregistrer les performances"), OnOff(v.perfLog),
+                L("A CSV line per frame in the logs folder, for a report.",
+                    "Une ligne CSV par image dans le dossier des journaux, pour un rapport."));
+        rows[Commands] = row(Kind::Action, L("Commands", "Commandes"), "",
+            L("The keyboard, pad and mouse keys of the game.",
+                "Les touches du clavier, de la manette et de la souris."));
+        rows[Fullscreen] = row(Kind::Toggle, L("Fullscreen", "Plein écran"), OnOff(v.fullscreen),
+            L("The game fills the screen.", "Le jeu occupe tout l'écran."));
+        rows[FrameRate] = row(Kind::Choice, L("Frame rate", "Images par seconde"), std::to_string(v.fpsLimit),
+            L("Smoother above 30: more work for the whole machine.",
+                "Plus fluide au-delà de 30 : plus de travail pour toute la machine."),
+            v.fpsLimit == 30 ? 1 : 3);
+        rows[FrameRate].option = IndexOf(rates, rateCount, v.fpsLimit);
+        rows[FrameRate].options = int(rateCount);
+        rows[AutoFallback] =
+            row(Kind::Toggle, L("Drop to 30 FPS when needed", "Passer à 30 FPS si besoin"), OnOff(v.fpsAutoFallback),
+                L("30 while 60 cannot be held, back to 60 when it can.",
+                    "30 tant que 60 ne tient pas, puis 60 dès que possible."));
+        // With FSR on, what it renders at and what it upscales to.
+        std::string scaleText = v.scale == 0 ? std::string(L("Auto", "Auto")) : "x" + std::to_string(v.scale);
+        if (v.upscaler == 1 && (upscale::Active() || upscale::SwitchesLive()))
+        {
+            const uint32_t frame = upscale::WindowFrameScale();
+            const uint32_t scene = upscalemode::SceneScale(frame, upscalemode::Quality(v.fsrQuality));
+            scaleText = "x" + std::to_string(scene) + L(", FSR 3 to x", ", FSR 3 vers x") + std::to_string(frame);
+        }
+        rows[Scale] = row(Kind::Choice, L("Resolution scale", "Échelle de résolution"), scaleText,
+            L("Sharper picture, more work for the graphics card.",
+                "Image plus nette, plus de travail pour la carte graphique."),
+            v.scale == 0   ? 3
+            : v.scale == 1 ? 1
+            : v.scale == 2 ? 3
+            : v.scale == 3 ? 4
+                           : 5,
+            true);
+        rows[Scale].option = IndexOf(Scales, std::size(Scales), v.scale);
+        rows[Scale].options = int(std::size(Scales));
+        rows[Upscaler] = row(Kind::Choice, L("Upscaling", "Mise à l'échelle"),
+            v.upscaler == 1 ? std::string("FSR 3") : std::string(L("Off", "Non")),
+            L("AMD FSR 3: fewer pixels drawn, a sharp picture rebuilt.",
+                "AMD FSR 3 : moins de pixels dessinés, une image nette reconstruite."),
+            v.upscaler == 1 ? 1 : -1, !upscale::SwitchesLive());
+        rows[Upscaler].option = IndexOf(Upscalers, std::size(Upscalers), v.upscaler);
+        rows[Upscaler].options = int(std::size(Upscalers));
+        rows[FsrQuality] = row(Kind::Choice, L("FSR quality", "Qualité FSR"), PresetLabel(v.fsrQuality),
+            L("Lower: fewer pixels, faster, softer.", "Plus bas : moins de pixels, plus rapide, plus doux."));
+        rows[FsrQuality].option = IndexOf(Presets, std::size(Presets), v.fsrQuality);
+        rows[FsrQuality].options = int(std::size(Presets));
+        rows[FrameGeneration] =
+            row(Kind::Toggle, L("Frame generation", "Génération d'images"), OnOff(v.frameGeneration),
+                L("FSR 3 makes a frame between two: twice the frames shown, a little more delay.",
+                    "FSR 3 crée une image entre deux : deux fois plus d'images, un peu plus de délai."),
+                v.frameGeneration ? 1 : -1);
+        switch (gamemenu::FrameGenerationBlocked())
+        {
+        case gamemenu::FrameGenerationBlock::Later:
+            rows[FrameGeneration].unavailable = L("Coming later.", "Bientôt disponible.");
+            rows[FrameGeneration].value = OnOff(false); // the setting is ignored meanwhile
+            rows[FrameGeneration].cost = -1;
+            break;
+        case gamemenu::FrameGenerationBlock::Device:
+            rows[FrameGeneration].unavailable =
+                L("Not available on this graphics card.", "Indisponible sur cette carte graphique.");
+            break;
+        case gamemenu::FrameGenerationBlock::Game:
+            rows[FrameGeneration].unavailable =
+                L("Not available in this game yet.", "Pas encore disponible dans ce jeu.");
+            break;
+        case gamemenu::FrameGenerationBlock::Upscaler:
+            rows[FrameGeneration].unavailable = L("Needs Upscaling on FSR 3.", "Demande la mise à l'échelle FSR 3.");
+            break;
+        case gamemenu::FrameGenerationBlock::None: break;
+        }
+        rows[Anisotropy] = row(Kind::Choice, L("Texture filtering", "Filtrage des textures"),
+            v.anisotropy == 1 ? std::string(L("Off", "Non")) : std::to_string(v.anisotropy) + "x",
+            L("Keeps the ground sharp in the distance.", "Garde le sol net au loin."),
+            v.anisotropy <= 1   ? 0
+            : v.anisotropy <= 4 ? 1
+                                : 2,
+            true);
+        rows[Anisotropy].option = IndexOf(Levels, std::size(Levels), v.anisotropy);
+        rows[Anisotropy].options = int(std::size(Levels));
+        rows[EdgeSmoothing] = row(Kind::Choice, L("Edge smoothing", "Lissage des bords"), EdgeSmoothingLabel(edge),
+            L("Softens jagged edges. Gentle keeps more detail.",
+                "Adoucit les bords en escalier. Doux garde plus de détails."),
+            edge == edgesmoothing::Off ? 0 : 1);
+        rows[EdgeSmoothing].option = IndexOf(Modes, std::size(Modes), edge);
+        rows[EdgeSmoothing].options = int(std::size(Modes));
+        // The chosen one, and the one that runs when they differ (a change waits for the next start, or a fallback).
+        {
+            const char* chosen = gpubackend::Label(gpubackend::Backend(v.gpuBackend));
+            std::string value = ApiLabel(chosen);
+            if (std::string_view(chosen) != gpu::BackendName())
+                value += std::string(L(" (now ", " (actuel : ")) + ApiLabel(gpu::BackendName()) + ")";
+            rows[GpuBackend] = row(Kind::Choice, L("Graphics API", "API graphique"), value,
+                L("Direct3D 12 by default; the game uses the other if it cannot start.",
+                    "Direct3D 12 par défaut ; le jeu prend l'autre s'il ne démarre pas."),
+                -1, true);
+            rows[GpuBackend].option = IndexOf(GpuBackends, std::size(GpuBackends), v.gpuBackend);
+            rows[GpuBackend].options = int(std::size(GpuBackends));
+        }
+        rows[Vsync] = row(Kind::Toggle, L("VSync", "VSync"), OnOff(v.vsync),
+            L("Waits for the display: no tearing.", "Attend l'écran : pas de déchirure."), -1, true);
+        rows[SkipIntro] = row(Kind::Toggle, L("Skip the start-up logos", "Passer les logos de départ"),
+            OnOff(v.skipIntroMovies),
+            L("Straight to the title when the game starts.", "Directement à l'écran titre au démarrage."), -1, true);
+        return rows;
+    }
+
+    void Model::FocusSettingsRow(int row, int step)
+    {
+        settingsRow = std::clamp(row, 0, SettingsRowTotal() - 1);
+        MenuStep(ShownSettings()[size_t(settingsRow)], step);
+        m_dirty = true;
+    }
+
+    void Model::RunSettings(Command command)
+    {
+        const int total = SettingsRowTotal();
+        switch (command)
+        {
+        case Command::Up: settingsRow = (settingsRow + total - 1) % total; break;
+        case Command::Down: settingsRow = (settingsRow + 1) % total; break;
+        case Command::Left:
+        case Command::Right:
+        case Command::Accept:
+            MenuStep(ShownSettings()[size_t(settingsRow)], command == Command::Left    ? -1
+                                                           : command == Command::Right ? 1
+                                                                                       : 0);
+            break;
+        case Command::PreviousSection:
+        case Command::NextSection:
+            OpenPage(look::PageStep(look::Page::Settings, command == Command::NextSection ? 1 : -1));
+            break;
+        case Command::Back: Leave(); break;
+        default: break;
+        }
+    }
+
+    // `row` is a Row (-1: Report a problem); `step` -1 / +1 changes a value (a toggle flips, a choice moves along its list, the
+    // volume by 10), 0 does the row.
     void Model::MenuStep(int row, int step)
     {
-        row = ShownRows()[size_t(std::clamp(row, 0, MenuRowTotal() - 1))]; // the shown row's place in Row
         const gamemenu::Values& v = gamemenu::Current();
         bool saved = true;
         auto flip = [&](bool value, bool (*set)(bool)) { saved = set(!value); };
@@ -224,34 +656,58 @@ namespace toybox
         case Volume:
             if (step != 0)
                 saved = gamemenu::SetVolume(uint32_t(std::clamp(int(v.volume) / 10 * 10 + step * 10, 0, 100)));
-            return;
+            break;
         case PortalSound: flip(v.portalSound, gamemenu::SetPortalSound); break;
+        case Speakers: along(SpeakerModes, std::size(SpeakerModes), v.speakers, gamemenu::SetSpeakers); break;
         case FpsCounter: flip(v.showFps, gamemenu::SetShowFps); break;
-        case DebugScreen: flip(v.debugScreen, gamemenu::SetDebugScreen); break;
+        case DebugScreen:
+        {
+            static const uint32_t DebugLevels[] = { 0, 1, 2 };
+            along(DebugLevels, 3, v.debugScreen, gamemenu::SetDebugScreen);
+            break;
+        }
+        case PerfLog:
+            if (gamemenu::SetPerfLog(!v.perfLog))
+            {
+                if (gamemenu::Current().perfLog)
+                    Toast(L("Recording: a CSV file in the logs folder",
+                              "Enregistrement : un fichier CSV dans le dossier des journaux"),
+                        4);
+            }
+            else
+                Toast(L("Could not create the performance log", "Impossible de créer le journal de performances"), 4);
+            return;
+        case Commands:
+            if (step == 0)
+                OpenPage(look::Page::Controls);
+            return;
         case Fullscreen: flip(v.fullscreen, gamemenu::SetFullscreen); break;
         case FrameRate:
         {
-            // The rates under the game's cap (game::Adapter::maxFpsLimit).
             uint32_t rates[std::size(gamemenu::FrameRates)];
-            size_t count = 0;
-            for (uint32_t rate : gamemenu::FrameRates)
-                if (gamemenu::CapFrameRate(rate, ::game::Current().maxFpsLimit) == rate)
-                    rates[count++] = rate;
-            along(rates, count, v.fpsLimit, gamemenu::SetFpsLimit);
+            along(rates, CappedRates(rates), v.fpsLimit, gamemenu::SetFpsLimit);
             break;
         }
         case AutoFallback: flip(v.fpsAutoFallback, gamemenu::SetFpsAutoFallback); break;
-        case Scale: along(Scales, 5, v.scale, gamemenu::SetScale); break;
-        case Anisotropy: along(Levels, 5, v.anisotropy, gamemenu::SetAnisotropy); break;
+        case Scale: along(Scales, std::size(Scales), v.scale, gamemenu::SetScale); break;
+        case Upscaler: along(Upscalers, std::size(Upscalers), v.upscaler, gamemenu::SetUpscaler); break;
+        case FsrQuality: along(Presets, std::size(Presets), v.fsrQuality, gamemenu::SetFsrQuality); break;
+        case FrameGeneration:
+            if (gamemenu::FrameGenerationBlocked() != gamemenu::FrameGenerationBlock::None)
+                return;
+            flip(v.frameGeneration, gamemenu::SetFrameGeneration);
+            break;
+        case Anisotropy: along(Levels, std::size(Levels), v.anisotropy, gamemenu::SetAnisotropy); break;
         case EdgeSmoothing:
         {
             static const uint32_t Modes[] = { edgesmoothing::Game, edgesmoothing::Light, edgesmoothing::Off };
             along(Modes, 3, gamemenu::EdgeSmoothingNow(), gamemenu::SetEdgeSmoothing);
             break;
         }
+        case GpuBackend: along(GpuBackends, std::size(GpuBackends), v.gpuBackend, gamemenu::SetGpuBackend); break;
         case Vsync: flip(v.vsync, gamemenu::SetVsync); break;
         case SkipIntro: flip(v.skipIntroMovies, gamemenu::SetSkipIntroMovies); break;
-        case Report:
+        case -1:
             if (step == 0)
             {
                 gamemenu::ReportResult result = gamemenu::WriteProblemReport();
@@ -270,19 +726,7 @@ namespace toybox
                     Toast(std::string(L("Could not save the report: ", "Rapport impossible : ")) + result.error, 6);
             }
             return;
-        case Commands:
-            if (step == 0)
-            {
-                LoadCommands();
-                commandsOpen = true;
-                commandRow = commandColumn = 0;
-                fprintf(stderr, "[gamemenu] commands opened\n");
-            }
-            return;
-        case CloseMenu:
-            if (step == 0)
-                Close();
-            return;
+        default: return;
         }
         if (!saved)
             Toast(L("Could not save the setting (it applies to this run)",
@@ -290,21 +734,79 @@ namespace toybox
                 4);
     }
 
-    void Model::RunMenu(Command command)
+    void Model::OpenCommands()
     {
-        if (commandsOpen)
+        LoadCommands();
+        open = true;
+        screen = Screen::Commands;
+        commandRow = commandColumn = 0;
+        waiting = Waiting::None;
+        fprintf(stderr, "[gamemenu] commands opened\n");
+    }
+
+    // --- Achievements ----------------------------------------------------------------------------------------------------
+
+    int Model::AchievementsUnlocked() const
+    {
+        int count = 0;
+        for (const ToyboxAchievementRow& row : achievementRows)
+            count += row.unlocked != 0 ? 1 : 0;
+        return count;
+    }
+
+    std::vector<int> Model::AchievementsShown() const
+    {
+        std::vector<int> shown;
+        for (size_t i = 0; i < achievementRows.size(); i++)
         {
-            RunCommands(command);
-            return;
+            bool unlocked = achievementRows[i].unlocked != 0;
+            if (achievementTab == 0 || (achievementTab == 1) == unlocked)
+                shown.push_back(int(i));
         }
+        return shown;
+    }
+
+    void Model::SetAchievementTab(int tab)
+    {
+        achievementTab = std::clamp(tab, 0, 2);
+        achievementCursor = achievementFirstRow = 0;
+        m_dirty = true;
+    }
+
+    void Model::FocusAchievement(int index)
+    {
+        achievementCursor = index;
+        m_dirty = true;
+    }
+
+    void Model::RunAchievements(Command command)
+    {
+        const int count = int(AchievementsShown().size()), columns = look::AchievementColumns;
+        auto move = [&](int to) {
+            if (count > 0)
+                achievementCursor = std::clamp(to, 0, count - 1);
+        };
         switch (command)
         {
-        case Command::Up: menuRow = (menuRow + MenuRowTotal() - 1) % MenuRowTotal(); break;
-        case Command::Down: menuRow = (menuRow + 1) % MenuRowTotal(); break;
-        case Command::Left: MenuStep(menuRow, -1); break;
-        case Command::Right: MenuStep(menuRow, 1); break;
-        case Command::Accept: MenuStep(menuRow, 0); break;
-        case Command::Back: Close(); break;
+        case Command::Left:
+            if (achievementCursor % columns > 0)
+                move(achievementCursor - 1);
+            break;
+        case Command::Right:
+            if (achievementCursor % columns < columns - 1 && achievementCursor + 1 < count)
+                move(achievementCursor + 1);
+            break;
+        case Command::Up:
+            if (achievementCursor >= columns)
+                move(achievementCursor - columns);
+            break;
+        case Command::Down:
+            if (achievementCursor / columns < (count - 1) / columns)
+                move(achievementCursor + columns);
+            break;
+        case Command::PreviousSection: SetAchievementTab((achievementTab + 2) % 3); break;
+        case Command::NextSection: SetAchievementTab((achievementTab + 1) % 3); break;
+        case Command::Back: Leave(); break;
         default: break;
         }
     }
@@ -422,7 +924,11 @@ namespace toybox
         case Command::Down: commandRow = (commandRow + 1) % lineCount; break;
         case Command::Left: commandColumn = std::max(commandColumn - 1, 0); break;
         case Command::Right: commandColumn = std::min(commandColumn + 1, ColumnCount - 1); break;
-        case Command::Back: commandsOpen = false; break;
+        case Command::Back: Leave(); break;
+        case Command::PreviousSection:
+        case Command::NextSection:
+            OpenPage(look::PageStep(look::Page::Controls, command == Command::NextSection ? 1 : -1));
+            break;
         case Command::Accept:
             if (commandRow < rowCount)
             {
@@ -477,7 +983,7 @@ namespace toybox
                     SaveFailed(notify);
                 break;
             }
-            default: commandsOpen = false; break;
+            default: Leave(); break;
             }
             break;
         default: break;

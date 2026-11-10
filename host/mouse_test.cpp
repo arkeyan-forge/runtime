@@ -1,6 +1,6 @@
 // The mouse (host/mouse.h): the names, the bindings over a game's defaults, and every transition of the capture: off by
 // default, focus lost and won back by a click (that click never reaches the game), the F3 menu or the Toy Box, a minimized
-// window, the game's own menu, nothing mapped, quitting. No SDL, no game data: ./SSAMouseTest
+// window, the game's own menu, nothing mapped, quitting. No SDL, no game data: ./ArkeyanMouseTest
 #include "host/mouse.h"
 #include <cstdio>
 

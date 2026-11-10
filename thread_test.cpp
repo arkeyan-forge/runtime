@@ -1,7 +1,7 @@
 // The guest threads without a game (thread.cpp, kernel/objects.cpp, indirect_call_guard.cpp): host calls into the guest,
 // thread memory over many create/exit cycles, the dispatcher table. Built with the game's ppc_config.h (its code range);
 // no game code runs, the test puts its own functions in the function table.
-//   ./SSAGuestThreadTest             Exit code 0 = pass.
+//   ./ArkeyanGuestThreadTest             Exit code 0 = pass.
 #include "kernel/objects.h"
 #include "loader.h"
 #include "memory.h"

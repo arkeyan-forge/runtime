@@ -1,4 +1,4 @@
-// Checks where host thunks go in the code's padding. usage: SSAThunkSlotTest
+// Checks where host thunks go in the code's padding. usage: ArkeyanThunkSlotTest
 #include "thunk_slot.h"
 #include <cstdio>
 #include <set>

@@ -1,16 +1,20 @@
 #include "host/gamemenu.h"
+#include "d3d/upscale.h"
 #include "gpu/edge_smoothing.h"
+#include "gpu/fsr/framegen.h"
 #include "gpu/gpu.h"
 #include "game.h"
 #include "game_hooks.h"
 #include "host/audio.h"
 #include "host/collection/datadir.h"
+#include "host/debug_screen.h"
 #include "host/env.h"
 #include "host/launcher.h"
 #include "host/log.h"
 #include "host/portal.h"
 #include "host/report.h"
 #include "host/settings.h"
+#include "host/speakers.h"
 #include "host/toybox.h"
 #include "kernel/video.h"
 #include <SDL3/SDL.h>
@@ -30,6 +34,7 @@ namespace
     // The FPS counter: frames presented over the last half second.
     uint64_t g_countStart, g_countFrames;
     std::string g_fpsText = "-- FPS";
+    std::string g_perfLogName; // the performance log's file name
 
     // Writes one key of the game's own section in launcher.ini (the file the launcher shows). The file is read and written whole:
     // every other key is kept, comments are not.
@@ -37,7 +42,7 @@ namespace
     {
         std::string path = LauncherConfigPath();
         LauncherConfig config = LoadLauncherConfig(path);
-        config[std::string(SSA_GAME_ID) + sectionSuffix][key] = value;
+        config[std::string(ARKEYAN_GAME_ID) + sectionSuffix][key] = value;
         if (SaveLauncherConfig(path, config))
             return true;
         fprintf(stderr, "[gamemenu] cannot write %s: %s\n", path.c_str(), SDL_GetError());
@@ -68,7 +73,16 @@ void gamemenu::Init(const RuntimeSettings& settings, SDL_Window* window, const c
         settings.anisotropy, settings.vsync, settings.skipIntroMovies, settings.edgeSmoothing, settings.fpsAutoFallback,
         settings.debugScreen, ::game::HostKernelPixelShader != 0, g_version, settings.reduceMotion,
         settings.portalSound, PortalGameHasSpeaker() };
-    InitDebugScreen(g_gameInfo.name, g_version.c_str());
+    g_values.upscaler = uint32_t(settings.upscaler);
+    g_values.fsrQuality = uint32_t(settings.fsrQuality);
+    g_values.frameGeneration = settings.fsrFrameGeneration;
+    g_values.gpuBackend = uint32_t(settings.gpuBackend);
+#if defined(_WIN32) && !defined(PLUME_D3D12_COREWINDOW)
+    g_values.gpuBackendShown = true;
+#endif
+    InitDebugScreen(g_gameInfo.name, g_version.c_str(), window);
+    g_values.speakers = settings.speakers;
+    g_values.speakersNow = HostAudioLayout();
     HostAudioSetVolume(settings.volume);
     PortalSetSound(settings.portalSound);
     ToyboxSetKeys(settings.toyboxKeys, settings.toyboxTab);
@@ -92,6 +106,15 @@ bool gamemenu::SetPortalSound(bool on)
     return Save(".audio", "portal_sound", on ? "1" : "0");
 }
 
+bool gamemenu::SetSpeakers(uint32_t mode)
+{
+    g_values.speakers = mode;
+    g_restart = true;
+    const char* name = speakers::Name(speakers::Mode(mode));
+    Logged("speakers", std::string(name) + " (next start)");
+    return Save(".audio", "speakers", name);
+}
+
 bool gamemenu::SetShowFps(bool on)
 {
     g_values.showFps = on;
@@ -100,13 +123,78 @@ bool gamemenu::SetShowFps(bool on)
     return SaveVideo("show_fps", on ? "1" : "0");
 }
 
-bool gamemenu::SetDebugScreen(bool on)
+bool gamemenu::SetDebugScreen(uint32_t level)
 {
-    g_values.debugScreen = on;
+    g_values.debugScreen = level % debugscreen::LevelCount;
     g_countStart = 0;
     g_fpsText = "-- FPS";
-    Logged("debug_screen", on ? "1" : "0");
-    return SaveVideo("debug_screen", on ? "1" : "0");
+    Logged("debug_screen", std::to_string(g_values.debugScreen));
+    return SaveVideo("debug_screen", std::to_string(g_values.debugScreen));
+}
+
+bool gamemenu::CycleDebugScreen() { return SetDebugScreen(debugscreen::NextLevel(g_values.debugScreen)); }
+
+bool gamemenu::SetPerfLog(bool on)
+{
+    if (std::FILE* stopped = PerfLogStopped())
+        fclose(stopped);
+    if (!on)
+    {
+        if (std::FILE* file = SwapPerfLog(nullptr))
+            fclose(file);
+        g_values.perfLog = false;
+        Logged("perf_log", "off");
+        return true;
+    }
+    if (g_values.perfLog)
+        return true;
+    // The logs folder (SKY_LAUNCHER_LOG_DIR as for the report), a file per recording: <game>-perf-<date>-<time>.csv.
+    fs::path folder = datadir::Logs();
+    if (const char* chosen = skyenv::Get("SKY_LAUNCHER_LOG_DIR"))
+        folder = datadir::FromText(chosen);
+    std::error_code error;
+    fs::create_directories(folder, error);
+    std::string name = report::FileName(ARKEYAN_GAME_ID);
+    if (size_t at = name.find("-report-"); at != std::string::npos)
+        name.replace(at, 8, "-perf-");
+    if (size_t dot = name.rfind(".txt"); dot != std::string::npos)
+        name.replace(dot, 4, ".csv");
+    fs::path path = folder / datadir::FromText(name.c_str());
+#if defined(_WIN32)
+    std::FILE* file = _wfopen(path.c_str(), L"wb");
+#else
+    std::FILE* file = fopen(path.c_str(), "wb");
+#endif
+    if (file == nullptr)
+    {
+        fprintf(stderr, "[gamemenu] cannot write the performance log %s\n", name.c_str());
+        return false;
+    }
+    if (std::FILE* before = SwapPerfLog(file))
+        fclose(before);
+    g_values.perfLog = true;
+    g_perfLogName = name;
+    Logged("perf_log", name);
+    return true;
+}
+
+bool gamemenu::RecordPerfLogFor(uint64_t seconds)
+{
+    if (g_values.perfLog || !SetPerfLog(true))
+        return false;
+    StopPerfLogAt(SDL_GetTicksNS() + seconds * 1'000'000'000ull);
+    return true;
+}
+
+std::string gamemenu::FinishedPerfLog()
+{
+    std::FILE* stopped = PerfLogStopped();
+    if (stopped == nullptr)
+        return {};
+    fclose(stopped);
+    g_values.perfLog = false;
+    Logged("perf_log", "off (" + g_perfLogName + " finished)");
+    return g_perfLogName;
 }
 
 bool gamemenu::SetFullscreen(bool on)
@@ -158,6 +246,12 @@ bool gamemenu::SetSkipIntroMovies(bool on)
     return SaveForNextStart("skip_intro_movies", on ? "1" : "0");
 }
 
+bool gamemenu::SetGpuBackend(uint32_t backend)
+{
+    g_values.gpuBackend = backend;
+    return SaveForNextStart("gpu_backend", gpubackend::Name(gpubackend::Backend(backend)));
+}
+
 bool gamemenu::SetEdgeSmoothing(uint32_t mode)
 {
     g_values.edgeSmoothing = mode;
@@ -165,6 +259,48 @@ bool gamemenu::SetEdgeSmoothing(uint32_t mode)
     const char* name = edgesmoothing::Name(edgesmoothing::Mode(mode));
     Logged("edge_smoothing", name);
     return SaveVideo("edge_smoothing", name);
+}
+
+bool gamemenu::SetUpscaler(uint32_t upscaler)
+{
+    g_values.upscaler = upscaler;
+    const auto mode = upscalemode::Upscaler(upscaler);
+    if (!upscale::SwitchesLive())
+        return SaveForNextStart("upscaler", upscalemode::Name(mode));
+    upscale::Request(mode, upscalemode::Quality(g_values.fsrQuality));
+    Logged("upscaler", upscalemode::Name(mode));
+    return SaveVideo("upscaler", upscalemode::Name(mode));
+}
+
+bool gamemenu::SetFsrQuality(uint32_t quality)
+{
+    g_values.fsrQuality = quality;
+    const auto preset = upscalemode::Quality(quality);
+    if (g_values.upscaler != uint32_t(upscalemode::Upscaler::Off))
+        upscale::Request(upscalemode::Upscaler(g_values.upscaler), preset);
+    Logged("fsr_quality", upscalemode::Name(preset));
+    return SaveVideo("fsr_quality", upscalemode::Name(preset));
+}
+
+bool gamemenu::SetFrameGeneration(bool on)
+{
+    g_values.frameGeneration = on;
+    gpu::framegen::SetEnabled(on);
+    Logged("fsr_frame_generation", on ? "on" : "off");
+    return SaveVideo("fsr_frame_generation", on ? "on" : "off");
+}
+
+gamemenu::FrameGenerationBlock gamemenu::FrameGenerationBlocked()
+{
+    if (!gpu::framegen::Preview())
+        return FrameGenerationBlock::Later;
+    if (!gpu::framegen::Available())
+        return FrameGenerationBlock::Device;
+    if (gpu::framegen::Blocked())
+        return FrameGenerationBlock::Game;
+    if (g_values.upscaler != uint32_t(upscalemode::Upscaler::Fsr3) || !upscale::Active())
+        return FrameGenerationBlock::Upscaler;
+    return FrameGenerationBlock::None;
 }
 
 uint32_t gamemenu::EdgeSmoothingNow()
@@ -226,7 +362,7 @@ gamemenu::ReportResult gamemenu::WriteProblemReport()
             folders.push_back(datadir::FromText(desktop));
         folders.push_back(logFolder);
     }
-    std::string name = report::FileName(SSA_GAME_ID);
+    std::string name = report::FileName(ARKEYAN_GAME_ID);
     for (const fs::path& folder : folders)
     {
         std::error_code error;

@@ -62,6 +62,20 @@ namespace art
     // True for a game whose pictures this file knows how to read (those with a manifest: "ssa", "giants", "swapforce").
     bool Known(std::string_view game);
 
+    // [Imaginators] The manifest's "light_on_black": a logo drawn opaque on black (the title screen's picture) made
+    // transparent, black as nothing and each colour at the alpha its brightest channel gives (light added on black, so
+    // the glow stays a glow on any background) less the burst's faint haze, cut to what is visible.
+    Image LightOnBlack(const Image& picture);
+
+    // [Imaginators] The manifest's "feather": a picture of the logo on the game's own sky (the dashboard's tile, the sky of
+    // its backdrop) fading out from an ellipse to its edges, so that it melts into the backdrop behind it.
+    Image Feather(const Image& picture);
+
+    // The https address of a cleaner logo than the disc's (the manifest's "logo_download"), empty when the game has none.
+    // Only the launcher downloads it, once the game's disc is verified; the disc's logo stays the fallback (and the game
+    // icon's source).
+    std::string LogoDownload(std::string_view game);
+
     // The game's logo alone, read from the disc as the manifest says and not cached (Arkeyan-Builder makes the game's icon from it).
     // False when `game` has no manifest or the disc has no readable logo.
     bool ReadLogo(std::string_view game, const Disc& disc, Image& logo);
@@ -86,7 +100,8 @@ namespace art
         Portraits = 2, // the toy portraits (the in-game Toy Box asks for these only)
         Artworks = 4, // the large toy pictures of the games that have them (Giants: about 8 s and 60 MB the first time)
         Upgrades = 8, // the toys' upgrade names, descriptions and prices (<data>/<Game>/upgrades.json; game_text.h)
-        All = 15,
+        PartNames = 16, // Imaginators' creation parts' names (<data>/<Game>/parts.json; game_text.h)
+        All = 31,
     };
 
     struct Extraction
@@ -95,6 +110,7 @@ namespace art
         int portraits = 0; // portrait files in the folder afterwards
         int artworks = 0; // artwork files in its folder afterwards
         bool upgrades = false; // upgrades.json present afterwards
+        bool partNames = false; // parts.json present afterwards
     };
 
     // Reads `game`'s pictures from the player's disc into its caches; what is already cached (by this version of the

@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <string>
 #include <thread>
 #ifdef _WIN32
@@ -27,8 +28,8 @@
 #include <cpuid.h>
 #endif
 
-#ifndef SSA_BUILD
-#define SSA_BUILD "unknown"
+#ifndef ARKEYAN_BUILD
+#define ARKEYAN_BUILD "unknown"
 #endif
 
 namespace
@@ -158,7 +159,7 @@ void LogInit()
 {
     if (const char* chosen = skyenv::Get("SKY_LOG"))
         g_path = chosen;
-    else if (std::filesystem::path folder = datadir::Game(SSA_GAME_ID); !folder.empty())
+    else if (std::filesystem::path folder = datadir::Game(ARKEYAN_GAME_ID); !folder.empty())
     {
         std::error_code error;
         std::filesystem::create_directories(folder, error);
@@ -195,15 +196,26 @@ void LogInit()
 
 void LogHeader(const RuntimeSettings& settings)
 {
-    fprintf(stderr, "[log] %s\n", g_path.empty() ? "no log file" : g_path.c_str());
-    fprintf(stderr, "[version] ArkeyanRuntime %s, build %s\n", SSA_VERSION, SSA_BUILD);
+    // When the run started, in the computer's local time: a player who pastes several logs can tell them apart.
+    const std::time_t now = std::time(nullptr);
+    std::tm local{};
+    char started[40] = "";
+#ifdef _WIN32
+    const bool known = localtime_s(&local, &now) == 0;
+#else
+    const bool known = localtime_r(&now, &local) != nullptr;
+#endif
+    if (known)
+        std::strftime(started, sizeof(started), ", started %Y-%m-%d %H:%M:%S (local time)", &local);
+    fprintf(stderr, "[log] %s%s\n", g_path.empty() ? "no log file" : g_path.c_str(), started);
+    fprintf(stderr, "[version] ArkeyanRuntime %s, build %s\n", ARKEYAN_VERSION, ARKEYAN_BUILD);
     fprintf(stderr, "[system] %s\n", SystemOsName());
     fprintf(stderr, "[system] CPU %s, %d logical cores, AVX %s, AVX2 %s; %d MB RAM\n", SystemCpuName(),
         SDL_GetNumLogicalCPUCores(), SDL_HasAVX() ? "yes" : "no", SDL_HasAVX2() ? "yes" : "no", SDL_GetSystemRAM());
     fprintf(stderr, "[settings] %s\n", DescribeSettings(settings).c_str());
 }
 
-const char* LogBuild() { return SSA_BUILD; }
+const char* LogBuild() { return ARKEYAN_BUILD; }
 
 const char* SystemOsName()
 {

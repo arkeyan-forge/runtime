@@ -8,7 +8,7 @@
 [[vk::binding(1, 0)]] RWByteAddressBuffer g_pixels : register(u1, space0);
 [[vk::binding(0, 0)]] Texture2D<float> g_depth : register(t0, space0);
 
-// SPIR-V allows one push constant block: ReadbackRawCS reads its step from offset.x.
+// SPIR-V allows one push constant block: ReadbackRawCS reads its step from offset.x and its channel from offset.y.
 struct ResolveDepthConstants
 {
     int2 offset;
@@ -54,8 +54,8 @@ void ReadbackCS(uint3 id : SV_DispatchThreadID)
     g_pixels.Store((id.y * width + id.x) * 4, c.r | (c.g << 8) | (c.b << 16) | (c.a << 24));
 }
 
-// The red channel's bits, unconverted, of one texel per `step` x `step` block, packed at the reduced size: depth
-// resolves written back to guest memory, at the guest's resolution.
+// One channel's bits (red unless asked), unconverted, of one texel per `step` x `step` block, packed at the reduced
+// size: depth resolves written back to guest memory, at the guest's resolution; the frame dump's float scan.
 [numthreads(8, 8, 1)]
 void ReadbackRawCS(uint3 id : SV_DispatchThreadID)
 {
@@ -66,7 +66,7 @@ void ReadbackRawCS(uint3 id : SV_DispatchThreadID)
     height /= step;
     if (id.x >= width || id.y >= height)
         return;
-    g_pixels.Store((id.y * width + id.x) * 4, asuint(g_image.Load(int3(id.xy * step, 0)).r));
+    g_pixels.Store((id.y * width + id.x) * 4, asuint(g_image.Load(int3(id.xy * step, 0))[g_resolveDepth.offset.y & 3]));
 }
 
 // EDRAM depth resolves: the depth under each pixel of the destination, read at the pixel plus `offset`, in the red

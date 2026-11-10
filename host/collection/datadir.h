@@ -27,6 +27,10 @@ namespace datadir
     // "superchargers" is "SuperChargers".
     std::string GameFolderName(std::string_view id);
     std::filesystem::path Game(std::string_view id = "ssa");
+    // Where a game keeps what belongs to the player (saves, achievements and play time, portal.txt): the player profile's
+    // folder for the game, <SKY_PROFILE_DIR>/<Game>, when the launcher set one (a profile other than the first), else the
+    // game's own folder (Game).
+    std::filesystem::path PlayerGame(std::string_view id = "ssa");
     std::filesystem::path LauncherIni();
     std::filesystem::path Kits();
     std::filesystem::path Toolchains();

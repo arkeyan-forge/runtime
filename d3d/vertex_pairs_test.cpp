@@ -1,4 +1,4 @@
-// Checks that 16-bit vertex component pairs come back in order. usage: SSAVertexPairsTest
+// Checks that 16-bit vertex component pairs come back in order. usage: ArkeyanVertexPairsTest
 #include "d3d/vertex_pairs.h"
 #include <cstdio>
 #include <vector>
@@ -47,6 +47,30 @@ int main()
     d3d::SwapHalfPairs(shortData.data(), shortData.size(), 20, 0, 8);
     d3d::SwapHalfPairs(shortData.data(), shortData.size(), 0, 0, 4);
     CHECK(shortData == std::vector<uint8_t>(6, 1));
+
+    // SwapVertexWords in one pass equals the 32-bit swap then SwapHalfPairs, for each element the mask covers; a
+    // last vertex cut short too (its whole words only).
+    {
+        std::vector<uint8_t> guest(2 * 20 + 10);
+        for (size_t i = 0; i < guest.size(); i++)
+            guest[i] = uint8_t(i * 7 + 3);
+        std::vector<uint8_t> expected(guest.size());
+        for (size_t i = 0; i + 4 <= guest.size(); i += 4)
+            for (size_t b = 0; b < 4; b++)
+                expected[i + b] = guest[i + 3 - b];
+        expected[48] = guest[48], expected[49] = guest[49];
+        d3d::SwapHalfPairs(expected.data(), expected.size(), 20, 0, 8);
+        d3d::SwapHalfPairs(expected.data(), expected.size(), 20, 12, 4);
+        // The cut vertex (bytes 40-49): its words 0 and 1 are whole, so SwapHalfPairs' all-or-nothing rule swaps them too.
+        const uint64_t words = d3d::PairWords(0, 8) | d3d::PairWords(12, 4);
+        CHECK(words == 0b1011);
+        std::vector<uint8_t> converted(guest.size());
+        d3d::SwapVertexWords(guest.data(), converted.data(), guest.size(), 20, words);
+        CHECK(converted == expected);
+        d3d::SwapVertexWords(guest.data(), converted.data(), guest.size(), 20, 0);
+        CHECK(converted[0] == guest[3] && converted[2] == guest[1] && converted[48] == guest[48]);
+    }
+    CHECK(d3d::PairWords(2, 4) == 0 && d3d::PairWords(252, 8) == 0 && d3d::PairWords(248, 8) == 0xC0ull << 56);
 
     printf("vertex pairs test: %d failures\n", g_failures);
     return g_failures ? 1 : 0;

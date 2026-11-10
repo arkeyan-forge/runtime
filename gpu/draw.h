@@ -85,6 +85,9 @@ namespace gpu
         const void* guestConstants;
         // Nonzero: consecutive draws with the same id have the same guestConstants (they are uploaded and copied once).
         uint64_t guestConstantsId;
+        // Nonzero: a hash of guestConstants' content (gpu::Draw's, kept per group as the groups change), so the GPU
+        // thread does not hash the 8 KB again for its per-frame deduplication.
+        uint64_t guestConstantsHash = 0;
         // Optional, with guestConstants: a version per group of 16 registers (128), changing with the group's content;
         // gpu::Draw then queues only the groups that changed.
         const uint32_t* guestConstantGroups;
@@ -108,6 +111,7 @@ namespace gpu
         // coordinates (in guest texels) scale them (bit n = register n).
         uint32_t scaledTextures;
         float resolutionScale; // the target's: guest pixels (vPos, point sizes) to host pixels
+        float mipBias = 0.0f; // texture LOD bias of every implicit-LOD fetch (an upscaled scene's: -log2(ratio))
         // The vertex input the vertex shader fetches at a computed index, as `pulledCount` float4s (0: none).
         const float* pulledVertices;
         uint32_t pulledCount;

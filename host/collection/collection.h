@@ -75,6 +75,9 @@ namespace collection
         figures::AreaState state = figures::AreaState::Blank;
         figures::FigureStats stats;
         int level = 1;
+        uint8_t battleClass = 0; // a creation crystal's (figures::BattleClassName); 0: none, or not made yet
+        bool missingSignature =
+            false; // an Imaginators toy without its factory signature (made by our tools): the game refuses it
         LockInfo lock;
 
         // What to show: the edition the player picked, else the variant's.
@@ -96,7 +99,14 @@ namespace collection
     // The level a card shows for `game`, the same in the Toy Box and Skylauncher: "Level 6"; "Level 10 (15)" when the
     // figure's own level is above the game's cap (a figure Giants took to 15, shown in Spyro's Adventure); "New" for a
     // character never played; "Unreadable" for a damaged one; empty for toys without progress. French with `french`.
+    // A creation crystal shows its class and level instead ("Ninja · Level 14", "Virtual · ..." when made here without the
+    // factory signature), "Ready to create" when blank.
     std::string LevelText(const Figure& figure, const std::string& game, bool french = false);
+    // An Imaginators toy made here, without its factory signature (Figure::missingSignature): the port plays it, a real
+    // game refuses it. By language code ("en", "fr", "de", "it", "es", "nl"; English otherwise).
+    const char* VirtualToyText(const std::string& language);
+    // "Knight" ... "Bazooker" (1-10), the French names with `french`; empty otherwise.
+    std::string BattleClassText(int battleClass, bool french = false);
 
     struct Filter
     {
@@ -138,6 +148,15 @@ namespace collection
     // figure that is not a readable trap.
     bool SetTrapVillain(const std::string& path, uint8_t villain, bool evolved, std::string* error = nullptr);
     bool SetNickname(const std::string& path, const std::string& utf8, std::string* error = nullptr);
+    // Imaginators: a creation crystal's name, experience, gold and creation (figures::CrystalStats). A blank crystal gets
+    // its first creation (figures::CreateCrystal's areas, the dump's own identity and signature blocks kept).
+    bool WriteCrystal(const std::string& path, const figures::CrystalStats& stats, std::string* error = nullptr);
+    figures::AreaState ReadCrystal(const std::string& path, figures::CrystalStats& stats);
+    // The whole dump replaced by `tag` (a backup first). Refused while another process uses it.
+    bool ReplaceDump(const std::string& path, const FigureData& tag, std::string* error = nullptr);
+    // SuperChargers: a vehicle's gearbits (figures::SetGearbits), the rest of the dump kept. Refused for another toy, or a
+    // vehicle the game never used (its first use writes the fields the gearbits sit beside).
+    bool SetGearbits(const std::string& path, uint32_t gearbits, std::string* error = nullptr);
     // Renames the dump (and its metadata and backups). `file` is a bare file name; the extension is kept if missing.
     bool Rename(const std::string& path, const std::string& file, std::string* error = nullptr);
 

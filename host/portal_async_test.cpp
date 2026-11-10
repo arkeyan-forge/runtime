@@ -2,7 +2,9 @@
 // once whatever the device does, and the reopen attempts back off. Run with no arguments; exit code 0 = pass.
 #include "host/portal_async.h"
 #include "host/portal_stall.h"
+#include <algorithm>
 #include <cstdio>
+#include <mutex>
 #include <vector>
 
 namespace
@@ -114,6 +116,70 @@ namespace
         uint8_t report[32];
         CHECK(portal.Read(report, sizeof(report)) == 0);
     }
+
+    // A real portal's pace: a status report every millisecond (its first one says a toy arrived in slot 0), each
+    // command answered at once.
+    class StreamingPortal final : public PortalBackend
+    {
+    public:
+        const char* Name() const override { return "streaming"; }
+        bool IsConnected() override { return true; }
+        bool Write(const uint8_t* command, size_t size) override
+        {
+            std::lock_guard lock(m_mutex);
+            m_answers.emplace_back(command, command + size);
+            return true;
+        }
+        size_t Read(uint8_t* report, size_t capacity) override
+        {
+            std::lock_guard lock(m_mutex);
+            std::vector<uint8_t> next;
+            if (!m_answers.empty())
+            {
+                next = m_answers.front();
+                m_answers.erase(m_answers.begin());
+            }
+            else if (Clock::now() - m_last >= milliseconds(1))
+            {
+                m_last = Clock::now();
+                next = { 'S', uint8_t(m_first ? 3 : 1), 0, 0, 0, m_counter++, 1 };
+                m_first = false;
+            }
+            const size_t size = std::min(next.size(), capacity);
+            std::copy(next.begin(), next.begin() + long(size), report);
+            return size;
+        }
+
+    private:
+        std::mutex m_mutex;
+        std::vector<std::vector<uint8_t>> m_answers;
+        Clock::time_point m_last{};
+        uint8_t m_counter = 0;
+        bool m_first = true;
+    };
+
+    // Answers before the status reports, which wait as one: the latest, with every change (issue #20, Giants' resets).
+    void TestAnswersFirst()
+    {
+        AsyncPortal portal(
+            std::make_unique<StreamingPortal>(), true, { milliseconds(20), milliseconds(100), milliseconds(1) });
+        std::this_thread::sleep_for(milliseconds(60));
+        uint8_t report[32];
+        // Sixty reports came; the one waiting still says the toy arrived (changed), and is the newest.
+        CHECK(portal.Read(report, sizeof(report)) == 7 && report[0] == 'S' && report[1] == 3 && report[5] > 20);
+        int answered = 0;
+        for (uint8_t block = 1; block <= 20; block++)
+        {
+            const uint8_t query[] = { 'Q', 0x10, block };
+            portal.Write(query, sizeof(query));
+            std::this_thread::sleep_for(milliseconds(12));
+            // The title's next read is the answer, however many status reports came meanwhile.
+            if (portal.Read(report, sizeof(report)) == 3 && report[0] == 'Q' && report[2] == block)
+                answered++;
+        }
+        CHECK(answered == 20);
+        CHECK(portal.Read(report, sizeof(report)) == 7 && report[0] == 'S' && report[1] == 1);
+    }
 }
 
 int main()
@@ -122,6 +188,7 @@ int main()
     TestBackoff();
     TestSlowWrites();
     TestDisconnected();
+    TestAnswersFirst();
     fprintf(stderr, "%d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }

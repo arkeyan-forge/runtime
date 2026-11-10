@@ -176,8 +176,21 @@ namespace
         save(packs / "00000000000000bb.dds", std::vector<uint8_t>(good.begin(), good.begin() + 200));
         save(packs / "00000000000000cc.txt", good);
 
-        texpack::Configure(dump, true, packs, true);
+        // The generated pack (textures-hd): its own textures count, the player's same hash wins.
+        std::filesystem::path generated = root / "textures-hd";
+        std::filesystem::create_directories(generated);
+        std::vector<std::vector<uint8_t>> small;
+        save(generated / "00000000000000aa.dds", WriteChain(dds::Format::BC1, 64, 32, 7, small));
+        save(generated / "00000000000000dd.dds", WriteChain(dds::Format::BC1, 64, 32, 7, small));
+
+        // The HD textures alone (texture_packs off): the generated pack is read, the player's folder is not.
+        texpack::Configure(dump, false, packs, false, generated);
+        CHECK(texpack::Active() && !texpack::Dumping() && texpack::Files() == 2);
+        CHECK(texpack::Find(0xaa) != nullptr && texpack::Find(0xaa)->info.width == 64);
+
+        texpack::Configure(dump, true, packs, true, generated);
         CHECK(texpack::Active() && texpack::Dumping());
+        CHECK(texpack::Find(0xdd) != nullptr && texpack::Find(0xdd)->info.width == 64);
         const texpack::Replacement* found = texpack::Find(0xaa);
         CHECK(found != nullptr && found->info.width == 128 && found->info.height == 64 && found->info.levels == 8);
         CHECK(texpack::Find(0xbb) == nullptr);

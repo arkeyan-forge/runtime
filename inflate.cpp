@@ -19,7 +19,7 @@
 
 // The helpers of the hooks below; a game hooks its three zlib calls together, as the stream state lives on the host.
 #ifdef GAME_HOOK_inflate
-#ifdef SSA_INFLATE_MINIZ
+#ifdef ARKEYAN_INFLATE_MINIZ
 // No system zlib (Windows): miniz's inflate, public domain, from the tree. Only the declarations here; CMake compiles
 // miniz.c itself. Its stream is zlib's, field for field, so the hooks below are the same for both.
 #define MINIZ_HEADER_FILE_ONLY

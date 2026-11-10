@@ -1,4 +1,4 @@
-// Checks the pacer of per-frame simulation steps with a fake clock. usage: SSAStepPacerTest
+// Checks the pacer of per-frame simulation steps with a fake clock. usage: ArkeyanStepPacerTest
 #include "d3d/step_pacer.h"
 #include <cstdio>
 

@@ -688,12 +688,29 @@ namespace glyphs
             return out;
         }
 
-        // RGBA8 levels of a whole-texture glyph.
-        std::vector<std::vector<uint32_t>> Draw(
-            Glyph glyph, Style style, uint32_t width, uint32_t height, uint32_t levels, bool flipped)
+        // RGBA8 levels of a whole-texture glyph; `plate`: centred, at 4/5 of the size, on an opaque dark plate (a world
+        // prompt's face shows the picture through its own outline, a disc or a pill).
+        std::vector<std::vector<uint32_t>> Draw(Glyph glyph, Style style, uint32_t width, uint32_t height,
+            uint32_t levels, bool flipped, bool plate = false)
         {
             Canvas canvas(width, height);
-            Paint(canvas, glyph, style, false);
+            if (plate)
+            {
+                canvas.Fill([](float, float) { return -1.0f; }, Rgb(34, 36, 42));
+                Canvas picture(width * 4 / 5, height * 4 / 5);
+                Paint(picture, glyph, style, false);
+                uint32_t left = (width - picture.width) / 2, top = (height - picture.height) / 2;
+                for (uint32_t y = 0; y < picture.height; y++)
+                    for (uint32_t x = 0; x < picture.width; x++)
+                    {
+                        const float* from = &picture.pixels[(size_t(y) * picture.width + x) * 4];
+                        float* to = &canvas.pixels[(size_t(top + y) * width + left + x) * 4];
+                        for (int c = 0; c < 4; c++)
+                            to[c] = from[c] + to[c] * (1 - from[3]);
+                    }
+            }
+            else
+                Paint(canvas, glyph, style, false);
             if (flipped)
                 for (uint32_t y = 0; y < height / 2; y++)
                     std::swap_ranges(&canvas.pixels[size_t(y) * width * 4], &canvas.pixels[size_t(y + 1) * width * 4],
@@ -1219,7 +1236,7 @@ namespace glyphs
 
         std::vector<std::vector<uint32_t>> image;
         if (known->cells.empty())
-            image = Draw(known->glyph, style, width, height, levels, known->flipped);
+            image = Draw(known->glyph, style, width, height, levels, known->flipped, known->plate);
         else
         {
             std::vector<uint32_t> base = guestBase();
@@ -1249,6 +1266,19 @@ namespace glyphs
     bool HidesDraw(uint32_t count, const void* indices)
     {
         return g_fontLoaded && HidesDraw(game::Current().glyphTextures, Current(), count, indices);
+    }
+
+    PromptPart PromptPartOf(uint32_t count, const void* indices, uint64_t& hash)
+    {
+        return g_fontLoaded ? PromptPartOf(game::Current().glyphPrompts, Current(), count, indices, hash)
+                            : PromptPart::None;
+    }
+
+    const Prompt* PromptOf(uint32_t faceCount, uint64_t faceHash, uint32_t lettersCount, uint64_t lettersHash)
+    {
+        return Current() == Style::Xbox360
+                   ? nullptr
+                   : PromptOf(game::Current().glyphPrompts, faceCount, faceHash, lettersCount, lettersHash);
     }
 
     int UvMatrix(uint64_t vertexShader, std::span<const uint64_t> glyphHashes)

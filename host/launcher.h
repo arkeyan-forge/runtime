@@ -17,14 +17,20 @@ struct GameRelease
     uint32_t mediaId;
     uint32_t version;             // XEX execution info version
     const char* defaultXexSha256; // lowercase hex
+    // SHA-256 of its loaded image (the decrypted, decompressed basefile), lowercase hex. A disc of another edition with
+    // this image runs the same recompiled code: only its XEX header differs (docs/tools/edition_finder.md).
+    const char* imageSha256;
 };
 
 struct GameInfo
 {
-    const char* id;             // settings file section
-    const char* name;           // display name
+    const char* id; // settings file section
+    const char* name; // display name
     std::span<const GameRelease> releases;
-    const char* runtime;        // executable that runs this game
+    const char* runtime; // executable that runs this game
+    // The game's colour (0xRRGGBB): Skylauncher's StyleOf(game).glow, taken from the title's logo. The in-game interface
+    // makes it readable on its panels and uses it as its one accent (host/toybox/look.h, ReadableAccent).
+    uint32_t glow = 0x6BBAFF;
 };
 
 // Supported games (host/launcher_games.cpp). Adding a game is adding a table entry.
@@ -38,12 +44,12 @@ enum class GameSourceStatus
     Ok,
     NotFound,
     Unreadable,
-    Folder,         // extracted game folder: the disc reader only reads images for now
-    NotXboxDisc,    // no XDVDFS volume, or the image is cut short before it
+    Folder, // extracted game folder: the disc reader only reads images for now
+    NotXboxDisc, // no XDVDFS volume, or the image is cut short before it
     NotXbox360Game, // XDVDFS volume without default.xex (original Xbox or data disc)
-    Damaged,        // default.xex missing bytes or not an XEX2 executable
-    WrongGame,      // another title ID
-    WrongVersion,   // this title, but a default.xex no runtime was recompiled from
+    Damaged, // default.xex missing bytes or not an XEX2 executable
+    WrongGame, // another title ID
+    WrongVersion, // this title, but a default.xex no runtime was recompiled from
 };
 
 struct GameSourceCheck

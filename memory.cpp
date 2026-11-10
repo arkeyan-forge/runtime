@@ -71,6 +71,7 @@ uint32_t GuestHeap::Alloc(uint32_t size, uint32_t align, uint32_t address)
             m_free.emplace(uint32_t(base + size), uint32_t(blockEnd - base - size));
 
         m_used.emplace(uint32_t(base), size);
+        m_usedBytes.fetch_add(size, std::memory_order_relaxed);
         return uint32_t(base);
     }
 
@@ -89,6 +90,7 @@ uint32_t GuestHeap::Free(uint32_t address)
     uint32_t size = used->second;
     const uint32_t freedSize = size;
     m_used.erase(used);
+    m_usedBytes.fetch_sub(size, std::memory_order_relaxed);
     memset(g_memory.Translate(base), 0, size);
 
     // Coalesce with the neighbouring free blocks.

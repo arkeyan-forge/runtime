@@ -1,5 +1,5 @@
 // Checks the file list and its checker (file_list.h) on synthetic files in a scratch folder. No game data.
-// usage: SSAFileListTest <scratch dir>
+// usage: ArkeyanFileListTest <scratch dir>
 #include "file_list.h"
 #include <cstdio>
 #include <filesystem>
