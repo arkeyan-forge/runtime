@@ -1,4 +1,5 @@
 #include "kernel/video.h"
+#include "d3d/ultrawide.h"
 #include "game.h"
 #include "kernel/files.h"
 #include "kernel/frame_limiter.h"
@@ -41,12 +42,20 @@ namespace
     uint64_t
         g_interruptsHandled; // interrupts (blanks and others) whose guest callback has returned (InterruptsHandled)
     uint64_t g_lastFlip;
+    uint64_t g_lastFlipNs; // steady clock when the last frame's wait ended (its work starts there)
 
     uint32_t g_fpsLimit = 30;
     FrameLimiter g_limiter; // above 60 (and unlimited): the host paces the frames, the blanks stay 60 Hz
     constexpr uint64_t SpinNanoseconds = 1'500'000; // a sleep wakes up up to about a millisecond late
 
     bool FasterThanBlanks(uint32_t fps) { return fps == 0 || fps > 60; }
+
+    uint64_t SteadyNs()
+    {
+        return uint64_t(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
+                .count());
+    }
 
     // Engines step by measured time: holding the flip for two blanks gives a steady 30 FPS.
     FrameRateFallback g_halfRate;
@@ -226,16 +235,23 @@ void WaitForFlip(uint32_t presentInterval)
             [](uint64_t ns) { std::this_thread::sleep_for(std::chrono::nanoseconds(ns)); });
         return;
     }
-    // fps_limit 60: halve the rate while the frames miss their blank, unless the player turned it off (g_halfRate).
+    // fps_limit 60: halve the rate while the game cannot hold 60, unless the player turned it off (g_halfRate).
     if (g_fpsLimit == 60 && vblanks == 1)
     {
-        // A load: up to 5 s after a file open (Swap Force decodes a figure for ~4 s after opening its files).
+        const uint64_t now = SteadyNs();
+        // A load: up to 5 s after a file open (Swap Force decodes a figure for ~4 s after opening its files). A movie
+        // paces itself. Neither counts, and the rate never switches during them.
         constexpr uint64_t LoadingNs = 5'000'000'000;
-        const uint64_t opened = LastFileOpenNs(), now = uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                                      std::chrono::steady_clock::now().time_since_epoch())
-                                                          .count());
-        const auto change =
-            g_halfRate.Sample(FpsAutoFallback(), g_vblanks > g_lastFlip + 1, opened != 0 && now - opened < LoadingNs);
+        // The margin 60 needs: the frame's work done within 3/4 of a blank. A game that waits for a blank in its own
+        // code before it swaps (presentIntervalPacesGame: Swap Force and the later Alchemy games) always arrives just
+        // after one, whatever its work: for it a frame fits when it is not late.
+        constexpr uint64_t FitsNs = uint64_t(std::chrono::nanoseconds(VBlankPeriod).count()) * 3 / 4;
+        const uint64_t opened = LastFileOpenNs();
+        const bool paused = (opened != 0 && now - opened < LoadingNs) || ultrawide::MoviePlaying();
+        const bool late = g_vblanks > g_lastFlip + 1;
+        const bool fits =
+            !late && (game::Current().presentIntervalPacesGame || (g_lastFlipNs != 0 && now - g_lastFlipNs < FitsNs));
+        const auto change = g_halfRate.Sample(FpsAutoFallback(), late, fits, paused);
         static bool told = false;
         static uint32_t logged = 0;
         if (change == FrameRateFallback::Change::Halved)
@@ -244,10 +260,14 @@ void WaitForFlip(uint32_t presentInterval)
                 ToyboxNotice("30 FPS: 60 not held", "30 FPS : 60 non tenu");
             if (logged++ < 20)
                 fprintf(stderr,
-                    "[video] fps limit 60: frames miss their 16.7 ms blank: drop to 30 FPS until they fit again\n");
+                    "[video] fps limit 60: a quarter of the frames miss their 16.7 ms blank for 5 s: drop to 30 FPS "
+                    "until "
+                    "they fit again (held %u s at least)\n",
+                    g_halfRate.holdFrames / 30);
         }
         else if (change == FrameRateFallback::Change::Restored && logged++ < 20)
-            fprintf(stderr, "[video] fps limit 60: frames fit in a blank again, back to 60 FPS\n");
+            fprintf(
+                stderr, "[video] fps limit 60: 90 %% of the frames fit in 3/4 of a blank for 10 s, back to 60 FPS\n");
         if (g_halfRate.active)
             vblanks = 2;
     }
@@ -256,6 +276,7 @@ void WaitForFlip(uint32_t presentInterval)
     uint64_t target = vblanks == 0 ? g_vblanks : g_lastFlip + vblanks;
     g_vblankSignal.wait(lock, [&] { return g_vblanks >= target; });
     g_lastFlip = g_vblanks;
+    g_lastFlipNs = SteadyNs();
 }
 
 uint64_t InterruptsHandled()

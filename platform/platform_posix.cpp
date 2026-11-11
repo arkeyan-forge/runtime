@@ -389,3 +389,5 @@ int64_t PlatformReadFile(PlatformFile file, void* buffer, uint32_t size, uint64_
 }
 
 void PlatformCloseFile(PlatformFile file) { close(int(file)); }
+
+bool PlatformStartAgain(const char*, const char*) { return false; }

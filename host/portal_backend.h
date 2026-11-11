@@ -34,8 +34,15 @@ public:
 // Real portals. Both rescan for the device while it is unplugged; null when the host API is unavailable.
 // Wii, Wii U, PS3, PS4 and PC portals: USB HID (1430:0150), through SDL's hidapi.
 std::unique_ptr<PortalBackend> CreateHidPortal();
-// Xbox 360 and Xbox One portals: vendor-specific USB, through libusb loaded at run time.
+// Xbox 360 and Xbox One portals: vendor-specific USB, through libusb loaded at run time (Linux), IOKit (macOS), WinUSB
+// and Windows.Gaming.Input.Custom (Windows).
 std::unique_ptr<PortalBackend> CreateUsbPortal();
+namespace portal_usb
+{
+    struct Api;
+}
+// Tests: the USB backend over the given calls (a fake device, host/portal_usb_backend_test.cpp).
+std::unique_ptr<PortalBackend> CreateUsbPortalWith(const portal_usb::Api& usb);
 
 // --portal-probe (docs/runtime/host/portal_probe.md): each real portal found by a transport, after trying to open it and query it.
 struct PortalProbe

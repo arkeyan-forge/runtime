@@ -4,6 +4,7 @@
 // XenosRecomp translated them. EDRAM surfaces become host render targets; resolves copy them into host textures that
 // stand in for the guest textures they were resolved to.
 #include "d3d/capture.h"
+#include "d3d/bink_display.h"
 #include "d3d/command_buffers.h"
 #include "d3d/render_stats.h"
 #include "d3d/depth_readback.h"
@@ -223,6 +224,12 @@ namespace
             desc.usage =
                 depth ? gpu::TextureUsage::DepthStencil : gpu::TextureUsage::RenderTarget | gpu::TextureUsage::Sampled;
             texture = gpu::CreateTexture(desc);
+            if (!depth && texture != nullptr)
+            {
+                // A resolve may read a new colour target before its first draw or guest clear.
+                const float black[4] = {};
+                gpu::ClearColor(texture, black);
+            }
         }
         return texture;
     }
@@ -614,6 +621,15 @@ namespace
         uint64_t key = TextureKey(fetch);
         HostTexture& host = g_textures[key];
         entry = &host;
+        if (!host.resolved && info.host == gpu::Format::UNKNOWN)
+        {
+            static uint64_t reported = 0;
+            const uint64_t bit = uint64_t(1) << (fetch.Format() & 63);
+            if ((reported & bit) == 0)
+                fprintf(stderr, "[render] unsupported texture format %u (%ux%u): sampling black\n", fetch.Format(),
+                    fetch.Width(), fetch.Height());
+            reported |= bit;
+        }
         if (host.resolved || info.host == gpu::Format::UNKNOWN || host.checkedFrame == g_frame)
             return host.texture;
         const uint64_t start = PlatformNowNs();
@@ -2665,13 +2681,18 @@ PPC_FUNC(GAME_HOOK(D3DDevice_Swap))
         }
         if (gpu::framestats::Enabled())
             gpu::framestats::GuestFrame(g_stats.draws, g_stats.resolves);
-        if (it != g_textures.end() && it->second.texture != nullptr)
+        const bool failedMovie = d3d::FailedBinkMoviePlaying();
+        if (failedMovie || (it != g_textures.end() && it->second.texture != nullptr))
         {
+            // Present(nullptr) clears the output to black and still draws the host overlay.
+            const gpu::Texture* presented = failedMovie ? nullptr : it->second.texture;
             SetGameRendering(true);
-            DumpResolve(it->second.texture);
-            timer.Exclude([&] { gpu::Present(it->second.texture); });
+            if (presented != nullptr)
+                DumpResolve(presented);
+            timer.Exclude([&] { gpu::Present(presented); });
             SnapshotPresentedFrame();
-            CheckMovieFrame(it->second.texture);
+            if (presented != nullptr)
+                CheckMovieFrame(it->second.texture);
         }
         if (skyenv::Get("SKY_RENDER_STATS") != nullptr && g_frame % 60 == 0)
         {

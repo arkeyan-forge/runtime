@@ -39,6 +39,10 @@ void PlatformStartThread(size_t stackSize, std::function<void()> body);
 // Names the calling thread for debuggers and crash reports.
 void PlatformSetThreadName(const char* name);
 
+// Desktop Windows: starts a new copy of this program with the same command line and `name`=`value` added to its
+// environment (the switch to Vulkan, main.cpp). False when it did not start, and on the other systems.
+bool PlatformStartAgain(const char* name, const char* value);
+
 // CPU time (user and system) the whole process has used, in nanoseconds; false where it cannot be read.
 bool PlatformProcessCpuNs(uint64_t& ns);
 // The calling thread's CPU clock, which PlatformThreadCpuNs reads from any thread while the thread lives (0: none).

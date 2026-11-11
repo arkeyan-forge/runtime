@@ -288,7 +288,7 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
         else if (key == "anisotropy")
             set.Anisotropy(file, value);
         else if (key == "fps_auto_fallback")
-            set.Bool(file, "fps_auto_fallback", value, s.fpsAutoFallback);
+            s.fpsAutoFallbackSet |= set.Bool(file, "fps_auto_fallback", value, s.fpsAutoFallback);
         else if (key == "fps_limit")
             set.FpsLimit(file, value);
         else if (key == "skip_intro_movies")

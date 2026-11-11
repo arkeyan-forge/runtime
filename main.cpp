@@ -19,6 +19,7 @@
 #include "host/texture_pack.h"
 #include "host/toybox.h"
 #include "gpu/gpu.h"
+#include "gpu/first_frame.h"
 #include "d3d/ultrawide.h"
 #include "d3d/upscale.h"
 #include "kernel/video.h"
@@ -81,6 +82,32 @@ struct HostInput
     std::string rumble[2];          // off, low, normal, strong, per player
     bool raw = false; // the pad as it is, no keyboard and no remapping (the F3 menu's Commands page waits for a button)
 };
+
+// Desktop Windows: D3D12 showed nothing (gpu/first_frame.h). Vulkan for this game from now on, then a new start: the
+// launcher starts the game again when it said it would (SKY_LAUNCHER_RESTARTS=1), else a new copy starts here. Both get
+// SKY_GPU_BACKEND=vulkan, so a settings file that could not be written never brings D3D12 back: no loop. Called from
+// the GPU's watch thread while the game's threads may be stuck on the GPU: the exit does not wait for them.
+static void SwitchToVulkan(const char* why)
+{
+    const std::string path = LauncherConfigPath();
+    LauncherConfig config = LoadLauncherConfig(path);
+    gpu::firstframe::WriteSwitch(config, std::string(ARKEYAN_GAME_ID) + ".video", why);
+    if (SaveLauncherConfig(path, config))
+        fprintf(stderr, "[gpu] this game starts with Vulkan from now on: gpu_backend = vulkan in [%s.video]\n",
+            ARKEYAN_GAME_ID);
+    else
+        fprintf(stderr, "[gpu] cannot write %s: Vulkan for this start only\n", path.c_str());
+    savebackup::SetGameRunning(false); // the new copy must not find this one's marker
+    const bool launcher = skyenv::Get("SKY_LAUNCHER_RESTARTS") != nullptr;
+    if (launcher)
+        fprintf(stderr, "[gpu] restarting with Vulkan: the launcher starts the game again\n");
+    else if (PlatformStartAgain("SKY_GPU_BACKEND", "vulkan"))
+        fprintf(stderr, "[gpu] restarting with Vulkan: a new copy of the game started\n");
+    else
+        fprintf(stderr, "[gpu] could not start the game again: start it again, it will use Vulkan\n");
+    fflush(stderr);
+    std::_Exit(gpu::firstframe::RestartExitCode);
+}
 
 static HostInput MakeHostInput(const RuntimeSettings& settings)
 {
@@ -355,7 +382,10 @@ int main(int argc, char** argv)
     SDL_Window* window = nullptr;
     if (!headless)
     {
-        SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO);
+        // Video has its own diagnostics and Linux fallback in CreateDisplayWindow. A failed audio or gamepad
+        // subsystem must not prevent the window from being created.
+        if (!SDL_Init(SDL_INIT_GAMEPAD | SDL_INIT_AUDIO))
+            fprintf(stderr, "[display] SDL audio/gamepad init failed: %s\n", SDL_GetError());
         HostAudioInit(settings.speakers);
         gpu::g_settings = { .resolutionScale = settings.resolutionScale,
             .anisotropy = settings.anisotropy,
@@ -363,6 +393,7 @@ int main(int argc, char** argv)
             .fpsLimit = settings.fpsLimit,
             .edgeSmoothing = settings.edgeSmoothing,
             .backend = settings.gpuBackend };
+        gpu::SetFirstFrameFallback(SwitchToVulkan);
         // The game's name and its version (games/<id>/game.txt): "Skylanders: Spyro's Adventure v0.9.1".
         const std::string title = std::string(g_gameInfo.name) + " v" + ARKEYAN_GAME_VERSION;
         window = CreateDisplayWindow(title.c_str(), 1280, 720, settings.fullscreen);
@@ -423,11 +454,23 @@ int main(int argc, char** argv)
         }
     }
 
+    if (headless)
+        fprintf(stderr, "[gpu] not initialized: SKY_HEADLESS requested\n");
+
     SetFrameRateLimit(settings.fpsLimit);
     glyphs::Init(settings);
     texpack::ConfigureForGame(game.id, settings.textureDump, settings.texturePacks, settings.hdTextures);
     PortalInit();
     gamemenu::Init(settings, window, ARKEYAN_GAME_VERSION);
+    // fps_auto_fallback never set (0.9.5 and earlier: on for everyone): the GPU's default, written to the game's video
+    // section once, so the launcher's page and the F3 menu show what runs.
+    if (!settings.fpsAutoFallbackSet && window != nullptr)
+    {
+        const char* why = "";
+        const bool on = gpu::DropTo30ByDefault(&why);
+        fprintf(stderr, "[video] drop to 30 FPS when needed: %s by default (%s)\n", on ? "on" : "off", why);
+        gamemenu::SetFpsAutoFallback(on);
+    }
     ToyboxInit(window);
     ToyboxSetAutoOpen(settings.toyboxAutoOpen);
     // While the game runs, Skylauncher refuses to restore a backup over its saves (Settings > Game data,

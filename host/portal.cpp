@@ -378,8 +378,12 @@ void PortalInit()
     {
         backend = CreateUsbPortal();
         if (backend == nullptr)
-            fprintf(stderr,
-                "[portal] usb: libusb-1.0 not found, no Xbox 360 or Xbox One portal (set SKY_LIBUSB to its path)\n");
+#ifdef _WIN32
+            fprintf(stderr, "[portal] usb: neither winusb.dll nor Windows.Gaming.Input.Custom: no Xbox portal\n");
+#else
+            fprintf(stderr, "[portal] usb: libusb-1.0 not found, no Xbox 360 or Xbox One portal (install the "
+                            "libusb-1.0 package; SKY_LIBUSB=<path> names another copy)\n");
+#endif
         if (backend != nullptr && (mode == "auto" || (mode == "real" && waiting != nullptr)) && !backend->IsConnected())
             backend.reset();
     }

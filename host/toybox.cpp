@@ -875,8 +875,12 @@ void ToyboxFilterGamepad(GamepadState& state)
     // --- The wheel -------------------------------------------------------------------------------------------------
     if (model.screen == Screen::Wheel)
     {
-        float x = state.thumbLX / 32767.0f, y = state.thumbLY / 32767.0f;
-        if (std::abs(state.thumbLX) > StickAim || std::abs(state.thumbLY) > StickAim)
+        // Either stick aims; the one tilted further wins (a player may hold the camera stick out of habit).
+        const bool right = std::max(std::abs(state.thumbRX), std::abs(state.thumbRY)) >
+                           std::max(std::abs(state.thumbLX), std::abs(state.thumbLY));
+        const int16_t sx = right ? state.thumbRX : state.thumbLX, sy = right ? state.thumbRY : state.thumbLY;
+        float x = sx / 32767.0f, y = sy / 32767.0f;
+        if (std::abs(sx) > StickAim || std::abs(sy) > StickAim)
             model.AimWheel(PlaceOf(x, y));
         uint16_t dpad = buttons & (Button::DpadUp | Button::DpadDown | Button::DpadLeft | Button::DpadRight);
         if (dpad != 0)

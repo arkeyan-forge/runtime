@@ -25,6 +25,7 @@
 #include "env.h"
 #include "host/windows_devices.h"
 #ifdef _WIN32
+#include "host/portal_gip_win.h"
 #include <windows.h>
 #include <cfgmgr32.h>
 #ifndef CM_GETIDLIST_FILTER_PRESENT
@@ -41,6 +42,11 @@ namespace
 #ifdef __APPLE__
     // macOS has no libusb: IOKit answers the same calls (host/portal_usb_mac.cpp).
     bool LoadUsb(Api& usb) { return portal_usb::LoadIokit(usb); }
+#elif defined(_WIN32)
+    // Windows: WinUSB devices through winusb.dll (host/portal_usb_win.cpp); libusb-1.0.dll only when SKY_LIBUSB names
+    // it (it also opens libusbK and libusb0 devices).
+    bool UsesLibusb() { return skyenv::Get("SKY_LIBUSB") != nullptr; }
+    bool LoadUsb(Api& usb) { return UsesLibusb() ? portal_usb::LoadLibusb(usb) : portal_usb::LoadWinusb(usb); }
 #else
     bool LoadUsb(Api& usb) { return portal_usb::LoadLibusb(usb); }
 #endif
@@ -253,8 +259,8 @@ namespace
 
             // What the device is, for a player's log (logged once per connection): its interfaces, and on Linux the kernel
             // driver each one had before the claim (xpad takes vendor 1430's Xbox 360 class interfaces).
-            fprintf(stderr, "[portal] usb: %04X:%04X %s\n", descriptor.idVendor, descriptor.idProduct,
-                portal_usb::DescribeInterfaces(configuration, size_t(size)).c_str());
+            fprintf(stderr, "[portal] usb: %04X:%04X (revision %04X) %s\n", descriptor.idVendor, descriptor.idProduct,
+                descriptor.bcdDevice, portal_usb::DescribeInterfaces(configuration, size_t(size)).c_str());
 #ifdef __linux__
             if (std::string drivers =
                     portal_usb::LinuxInterfaceDrivers("/sys", descriptor.idVendor, descriptor.idProduct);
@@ -280,9 +286,21 @@ namespace
             m_wroteFailed = m_readOne = m_wroteOne = m_saidSilent = false;
             m_firstWrite = std::chrono::steady_clock::time_point{};
             m_reports.clear();
+            m_trace.Reset();
+            fprintf(stderr,
+                "[portal] %s portal %04X:%04X connected (interface %d, endpoints %02X/%02X, packets %u/%u bytes)\n",
+                Name(), descriptor.idVendor, descriptor.idProduct, usbInterface.number, usbInterface.in,
+                usbInterface.out, usbInterface.inSize, usbInterface.outSize);
+#ifdef __linux__
+            if (std::string drivers =
+                    portal_usb::LinuxInterfaceDrivers("/sys", descriptor.idVendor, descriptor.idProduct);
+                !drivers.empty())
+                fprintf(stderr, "[portal] usb: kernel drivers after the claim: %s\n", drivers.c_str());
+#endif
+            if (m_framing == Framing::Xbox360)
+                fprintf(stderr, "[portal] usb: %s\n",
+                    portal_usb::StartXbox360(m_usb, m_handle, usbInterface.number).c_str());
             m_reader = std::thread([this] { ReadLoop(); });
-            fprintf(stderr, "[portal] %s portal %04X:%04X connected (interface %d, endpoints %02X/%02X)\n", Name(),
-                descriptor.idVendor, descriptor.idProduct, usbInterface.number, usbInterface.in, usbInterface.out);
 
             if (m_framing == Framing::Gip)
                 PowerOn();
@@ -317,12 +335,12 @@ namespace
             }
             if (!m_wroteOne)
             {
-                // The first command the portal took, with its bytes: the framing a player's log can be checked against.
                 m_wroteOne = true;
                 m_firstWrite = std::chrono::steady_clock::now();
-                fprintf(stderr, "[portal] usb: first write accepted on endpoint %02X (%d bytes: %s)\n", endpoint, size,
-                    portal_usb::HexBytes(data, size_t(size)).c_str());
             }
+            // The first packets the portal took, with their bytes: the framing a player's log can be checked against.
+            if (std::string line = m_trace.Line(true, data, size_t(size), PortalLogEnabled()); !line.empty())
+                fprintf(stderr, "[portal] usb: %s\n", line.c_str());
             return true;
         }
 
@@ -339,12 +357,12 @@ namespace
 #endif
         }
 
-        // The first packet of a connection, of any size, header included: proof that the portal talks.
-        void LogFirstReport(const uint8_t* packet, size_t size)
+        // The first packets of a connection, of any size, header included: proof that the portal talks.
+        void LogReport(const uint8_t* packet, size_t size)
         {
             m_readOne = true;
-            fprintf(stderr, "[portal] usb: first report (%zu bytes): %s\n", size,
-                portal_usb::HexBytes(packet, size).c_str());
+            if (std::string line = m_trace.Line(false, packet, size, PortalLogEnabled()); !line.empty())
+                fprintf(stderr, "[portal] usb: %s\n", line.c_str());
         }
 
         // A portal that took commands for 5 s and sent nothing back (issue #20: an Xbox 360 portal on Linux), said once.
@@ -367,22 +385,21 @@ namespace
             uint8_t packet[64];
             while (!m_lost)
             {
-                int size = 0;
-                int result = m_usb.interrupt_transfer(m_handle, m_interface.in, packet, sizeof(packet), &size, 100);
-                if (result == portal_usb::ErrorTimeout || (result == 0 && size == 0))
+                // One packet per transfer (portal_usb::ReadLength); a transfer that timed out may hold one.
+                const int size = portal_usb::ReadPacket(m_usb, m_handle, m_interface, packet, sizeof(packet), 100);
+                if (size == 0)
                 {
                     CheckSilence();
                     continue;
                 }
-                if (result != 0)
+                if (size < 0)
                 {
-                    fprintf(stderr, "[portal] USB read failed (%s)\n", m_usb.error_name(result));
+                    fprintf(stderr, "[portal] USB read failed (%s)\n", m_usb.error_name(size));
                     m_lost = true;
                     break;
                 }
 
-                if (!m_readOne)
-                    LogFirstReport(packet, size_t(size));
+                LogReport(packet, size_t(size));
                 if (m_framing == Framing::Gip)
                     HandleGip(packet, size_t(size));
                 else if (portal_usb::Span report = portal_usb::Xbox360Report(size_t(size)); report.size > 0)
@@ -475,6 +492,7 @@ namespace
         std::atomic<bool> m_readOne = false;
         std::atomic<bool> m_wroteOne = false, m_saidSilent = false;
         std::atomic<std::chrono::steady_clock::time_point> m_firstWrite{};
+        portal_usb::PacketTrace m_trace; // the first packets each way, per connection
     };
 }
 
@@ -513,10 +531,70 @@ namespace
             if (CM_Locate_DevNodeA(&instance, const_cast<char*>(id), CM_LOCATE_DEVNODE_NORMAL) == CR_SUCCESS &&
                 CM_Get_DevNode_Registry_PropertyA(instance, CM_DRP_SERVICE, nullptr, service, &length, 0) == CR_SUCCESS)
                 node.service = service;
+            // The driver package's published name, from the driver key, for the way back (WindowsDriverRemoval).
+            HKEY key = nullptr;
+            if (instance != 0 && CM_Open_DevNode_Key(instance, KEY_READ, 0, RegDisposition_OpenExisting, &key,
+                                     CM_REGISTRY_SOFTWARE) == CR_SUCCESS)
+            {
+                char inf[64] = "";
+                DWORD size = sizeof(inf) - 1, type = 0;
+                if (RegQueryValueExA(key, "InfPath", nullptr, &type, reinterpret_cast<BYTE*>(inf), &size) ==
+                        ERROR_SUCCESS &&
+                    type == REG_SZ)
+                    node.inf = inf;
+                RegCloseKey(key);
+            }
             nodes.push_back(node);
         }
         return nodes;
     }
+
+    // Windows' two routes to the Xbox portals in one backend: WinUSB devices (host/portal_usb_win.cpp) and the Xbox One
+    // portal on Windows' own driver (host/portal_gip_win.cpp). The one connected is used, the GIP one first.
+    class XboxPortals final : public PortalBackend
+    {
+    public:
+        XboxPortals(std::unique_ptr<PortalBackend> winusb, std::unique_ptr<PortalBackend> gip)
+            : m_winusb(std::move(winusb)), m_gip(std::move(gip))
+        {}
+
+        const char* Name() const override
+        {
+            const PortalBackend* active = m_active.load();
+            return active != nullptr ? active->Name() : m_winusb->Name();
+        }
+        bool IsConnected() override { return Active() != nullptr; }
+        bool Write(const uint8_t* command, size_t size) override
+        {
+            PortalBackend* active = Active();
+            return active != nullptr && active->Write(command, size);
+        }
+        size_t Read(uint8_t* report, size_t capacity) override
+        {
+            PortalBackend* active = Active();
+            return active != nullptr ? active->Read(report, capacity) : 0;
+        }
+        bool TakesSound() override
+        {
+            PortalBackend* active = Active();
+            return active != nullptr && active->TakesSound();
+        }
+        bool WriteSound(const uint8_t* block, size_t size) override
+        {
+            PortalBackend* active = Active();
+            return active != nullptr && active->WriteSound(block, size);
+        }
+
+    private:
+        PortalBackend* Active()
+        {
+            m_active = m_gip->IsConnected() ? m_gip.get() : m_winusb->IsConnected() ? m_winusb.get() : nullptr;
+            return m_active;
+        }
+
+        std::unique_ptr<PortalBackend> m_winusb, m_gip;
+        std::atomic<PortalBackend*> m_active{ nullptr };
+    };
 
     // The game's log: each portal Windows has, its driver, and what is wrong with it for Arkeyan (issue #19).
     void LogWindowsPortalDrivers(bool libusb)
@@ -556,53 +634,36 @@ std::unique_ptr<PortalBackend> CreateUsbPortal()
     Api usb{};
     const bool loaded = LoadUsb(usb);
 #ifdef _WIN32
-    LogWindowsPortalDrivers(loaded);
+    LogWindowsPortalDrivers(loaded && UsesLibusb());
 #endif
+#ifdef _WIN32
+    // The Xbox One portal on Windows' own driver: Windows.Gaming.Input.Custom, waited for only when one is plugged in.
+    bool xboxOne = false;
+    for (const portal_usb::WindowsUsbNode& node : WindowsPortalNodes())
+        xboxOne = xboxOne || (portal_usb::KnownXboxPortal(node.vendor, node.product) == XboxFamily::XboxOne &&
+                                 portal_usb::WindowsDriverProblem(node, false).empty() &&
+                                 _stricmp(node.service.c_str(), "WinUSB") != 0);
+    std::unique_ptr<PortalBackend> gip = CreateGipPortal(xboxOne ? 3000 : 0);
+    std::unique_ptr<PortalBackend> winusb;
+    if (loaded)
+    {
+        fprintf(stderr, "[portal] usb: %s\n", usb.from);
+        winusb = std::make_unique<UsbPortal>(usb);
+    }
+    if (gip == nullptr || winusb == nullptr)
+        return gip != nullptr ? std::move(gip) : std::move(winusb);
+    return std::make_unique<XboxPortals>(std::move(winusb), std::move(gip));
+#else
     if (!loaded)
         return nullptr;
     fprintf(stderr, "[portal] usb: %s\n", usb.from);
     return std::make_unique<UsbPortal>(usb);
+#endif
 }
 
-namespace
+std::unique_ptr<PortalBackend> CreateUsbPortalWith(const portal_usb::Api& usb)
 {
-    // Reset, in the Xbox 360 framing: "ok" only when the 'R' answer comes back (0.9.4 took any packet, and nothing back
-    // as well, for an answer); else the first packet that came, which tells the framing the portal uses.
-    std::string Query(const Api& usb, portal_usb::Handle* handle, const Interface& usbInterface, PortalProbe& probe)
-    {
-        const uint8_t reset = 'R';
-        auto packet = portal_usb::MakeXbox360Packet(portal_usb::Xbox360CommandHeader, &reset, 1);
-        int transferred = 0;
-        int result =
-            usb.interrupt_transfer(handle, usbInterface.out, packet.data(), int(packet.size()), &transferred, 500);
-        if (result != 0)
-            return std::string("error: write failed (") + usb.error_name(result) + ")";
-        // The answer carries the 2-byte header before the 'R'; a report of another kind may come first (status).
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
-        std::string first;
-        int packets = 0;
-        for (auto now = std::chrono::steady_clock::now(); now < deadline; now = std::chrono::steady_clock::now())
-        {
-            uint8_t reply[64];
-            auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
-            result = usb.interrupt_transfer(
-                handle, usbInterface.in, reply, sizeof(reply), &transferred, unsigned(std::max<long long>(left, 1)));
-            if (result == portal_usb::ErrorTimeout)
-                break;
-            if (result != 0)
-                return std::string("error: read failed (") + usb.error_name(result) + ")";
-            if (packets++ == 0)
-                first = portal_usb::HexBytes(reply, size_t(transferred));
-            if (const int at = portal_usb::Xbox360ResetAnswer(reply, size_t(transferred)); at >= 0)
-            {
-                NameProbe(probe, reply + at, size_t(transferred - at));
-                return "ok";
-            }
-        }
-        return packets == 0 ? "error: no 'R' answer within 1 s (nothing came back)"
-                            : "error: no 'R' answer within 1 s (" + std::to_string(packets) +
-                                  " other packets, the first: " + first + ")";
-    }
+    return std::make_unique<UsbPortal>(usb);
 }
 
 std::string ProbeUsbPortals(std::vector<PortalProbe>& portals)
@@ -614,7 +675,7 @@ std::string ProbeUsbPortals(std::vector<PortalProbe>& portals)
     std::vector<std::pair<uint16_t, uint16_t>> listed;
     for (const portal_usb::WindowsUsbNode& node : WindowsPortalNodes())
     {
-        const std::string problem = portal_usb::WindowsDriverProblem(node, loaded);
+        const std::string problem = portal_usb::WindowsDriverProblem(node, loaded && UsesLibusb());
         if (problem.empty() ||
             std::find(listed.begin(), listed.end(), std::pair(node.vendor, node.product)) != listed.end())
             continue;
@@ -628,9 +689,28 @@ std::string ProbeUsbPortals(std::vector<PortalProbe>& portals)
         probe.details = "driver " + (node.service.empty() ? std::string("(none)") : node.service);
         portals.push_back(probe);
     }
+    // The Xbox One portal on Windows' own Xbox driver: through Windows.Gaming.Input.Custom.
+    for (const portal_usb::WindowsUsbNode& node : WindowsPortalNodes())
+    {
+        if (portal_usb::KnownXboxPortal(node.vendor, node.product) != XboxFamily::XboxOne ||
+            _stricmp(node.service.c_str(), "WinUSB") == 0 ||
+            !portal_usb::WindowsDriverProblem(node, loaded && UsesLibusb()).empty() ||
+            std::find(listed.begin(), listed.end(), std::pair(node.vendor, node.product)) != listed.end())
+            continue;
+        listed.emplace_back(node.vendor, node.product);
+        PortalProbe probe{ "usb", node.vendor, node.product, "Xbox One portal (experimental)" };
+        std::string steps = "driver " + node.service + ", reached through Windows.Gaming.Input.Custom";
+        probe.status = ProbeGipPortal(probe, steps);
+        probe.details = steps;
+        portals.push_back(probe);
+    }
 #endif
     if (!loaded)
-        return "libusb-1.0 not found (set SKY_LIBUSB to its path)";
+#ifdef _WIN32
+        return "winusb.dll could not be loaded"; // never libusb on Windows: WinUSB and GIP are the routes there
+#else
+        return "libusb-1.0 is not installed (install the libusb-1.0 package)";
+#endif
 
     portal_usb::Device** devices = nullptr;
     ptrdiff_t count = usb.get_device_list(usb.context, &devices);
@@ -688,7 +768,19 @@ std::string ProbeUsbPortals(std::vector<PortalProbe>& portals)
             probe.status = std::string("error: cannot claim interface (") + usb.error_name(result) + ")";
         else
         {
-            probe.status = gip ? "ok" : Query(usb, handle, usbInterface, probe); // GIP: opened and claimed only
+            std::string steps;
+#ifdef __linux__
+            if (std::string drivers =
+                    portal_usb::LinuxInterfaceDrivers("/sys", descriptor.idVendor, descriptor.idProduct);
+                !drivers.empty())
+                steps += "; after the claim: " + drivers; // xpad gone from the claimed interface
+#endif
+            std::vector<uint8_t> answer;
+            // GIP: opened and claimed only
+            probe.status = gip ? "ok" : portal_usb::QueryXbox360Reset(usb, handle, usbInterface, steps, answer);
+            if (!answer.empty())
+                NameProbe(probe, answer.data(), answer.size());
+            probe.details += steps;
             usb.release_interface(handle, usbInterface.number);
         }
         usb.close(handle);

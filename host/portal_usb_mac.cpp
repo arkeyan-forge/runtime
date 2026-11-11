@@ -54,6 +54,7 @@ namespace portal_usb
     {
         InterfaceInterface** interface = nullptr;
         std::map<uint8_t, uint8_t> pipes; // endpoint address -> pipe reference
+        std::map<uint8_t, uint16_t> packetSizes; // endpoint address -> wMaxPacketSize
         std::map<uint8_t, std::unique_ptr<Reader>> readers;
     };
 
@@ -276,7 +277,10 @@ namespace
             if ((*interface)
                     ->GetPipeProperties(interface, pipe, &direction, &endpoint, &type, &packetSize, &interval) ==
                 kIOReturnSuccess)
+            {
                 claimed.pipes[EndpointAddress(direction, endpoint)] = pipe;
+                claimed.packetSizes[EndpointAddress(direction, endpoint)] = packetSize;
+            }
         }
         return 0;
     }
@@ -296,12 +300,14 @@ namespace
         return result == kIOReturnSuccess ? int(setup.wLenDone) : ErrorFromIoReturn(result);
     }
 
-    void ReadLoop(InterfaceInterface** interface, uint8_t pipe, Reader* reader)
+    // One packet per ReadPipe (`packetSize`, the pipe's wMaxPacketSize): a larger read of 32-byte packets would wait
+    // for a second packet and join the two (portal_usb::ReadLength).
+    void ReadLoop(InterfaceInterface** interface, uint8_t pipe, uint16_t packetSize, Reader* reader)
     {
         for (int stalls = 0;;)
         {
-            uint8_t packet[64];
-            UInt32 size = sizeof(packet);
+            uint8_t packet[1024];
+            UInt32 size = packetSize != 0 && packetSize < sizeof(packet) ? packetSize : 64;
             IOReturn result = (*interface)->ReadPipe(interface, pipe, packet, &size);
             if (result == kIOUSBPipeStalled && ++stalls < 3) // a stall cleared once or twice; then it is an error
             {
@@ -348,7 +354,8 @@ namespace
             if (reader == nullptr)
             {
                 reader = std::make_unique<Reader>();
-                reader->thread = std::thread(ReadLoop, claimed.interface, pipe->second, reader.get());
+                reader->thread =
+                    std::thread(ReadLoop, claimed.interface, pipe->second, claimed.packetSizes[endpoint], reader.get());
             }
             std::unique_lock lock(reader->mutex);
             if (!reader->arrived.wait_for(lock, std::chrono::milliseconds(timeout),

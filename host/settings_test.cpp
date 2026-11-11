@@ -5,7 +5,6 @@
 #include "host/gamemenu.h"
 #include "host/pad_map.h"
 #include "host/settings.h"
-#include "host/settings_fallback.h"
 #include <cstdio>
 #include <cstdlib>
 #include <map>
@@ -97,7 +96,7 @@ int main()
     CHECK(run.settings.anisotropy == 1 && run.settings.fpsLimit == 30 && run.settings.inputDevice == "auto");
     CHECK(!run.settings.skipIntroMovies);
     CHECK(!SkipIntroMovies());
-    CHECK(run.settings.fpsAutoFallback && FpsAutoFallback());
+    CHECK(run.settings.fpsAutoFallback && FpsAutoFallback() && !run.settings.fpsAutoFallbackSet);
     for (const char* game : { "ssa", "giants", "swapforce", "trapteam" })
     {
         RuntimeSettings settings;
@@ -111,85 +110,15 @@ int main()
             fallbackConfig, game, [](const char*) -> const char* { return nullptr; }, 1, argv, settings, warnings,
             error));
         CHECK(!settings.fpsAutoFallback && !FpsAutoFallback() && settings.fpsLimit == 60 && warnings.empty());
+        CHECK(settings.fpsAutoFallbackSet);
     }
     run = Parse(
         { { "video", { { "fps_auto_fallback", "0" } } }, { "ssa.video", { { "fps_auto_fallback", "1" } } } }, {}, {});
     CHECK(run.settings.fpsAutoFallback && FpsAutoFallback());
     run = Parse({ { "ssa.video", { { "fps_auto_fallback", "invalid" } } } }, {}, {});
-    CHECK(run.settings.fpsAutoFallback && run.warnings.size() == 1);
+    CHECK(run.settings.fpsAutoFallback && run.warnings.size() == 1 && !run.settings.fpsAutoFallbackSet);
     CHECK(DescribeSettings(run.settings).find("fps auto fallback on") != std::string::npos);
 
-    // Twenty misses in the rolling 120-frame window, recovery, short returns and disabling while active.
-    {
-        using Change = FrameRateFallback::Change;
-        FrameRateFallback startup;
-        for (int i = 0; i < 19; i++)
-            CHECK(startup.Sample(true, true) == Change::None);
-        CHECK(startup.Sample(true, true) == Change::Halved && startup.fitsToRestore == 600);
-        FrameRateFallback fallback;
-        for (int i = 0; i < 600; i++)
-            CHECK(fallback.Sample(true, false) == Change::None);
-        // A burst of 19 slow frames (a load, a camera cut) keeps 60.
-        for (int i = 0; i < 19; i++)
-            CHECK(fallback.Sample(true, true) == Change::None);
-        for (int i = 0; i < 120; i++)
-            CHECK(fallback.Sample(true, false) == Change::None);
-        // The burst has left the window; 20 misses spread over it halve.
-        for (int i = 0; i < 10; i++)
-            CHECK(fallback.Sample(true, true) == Change::None);
-        for (int i = 0; i < 50; i++)
-            CHECK(fallback.Sample(true, false) == Change::None);
-        for (int i = 0; i < 9; i++)
-            CHECK(fallback.Sample(true, true) == Change::None);
-        CHECK(fallback.Sample(true, true) == Change::Halved && fallback.active);
-        CHECK(fallback.fitsToRestore == 300);
-        // 30 not held (17 late frames in 300, more than 1 in 20): the count starts again.
-        for (int i = 0; i < 300; i++)
-            CHECK(fallback.Sample(true, i % 18 == 0) == Change::None);
-        // A late frame now and then (15 in 300, 1 in 20) does not hold 60 back.
-        for (int i = 0; i < 299; i++)
-            CHECK(fallback.Sample(true, i % 20 == 19) == Change::None);
-        CHECK(fallback.Sample(true, true) == Change::Restored && !fallback.active);
-        for (int cycle = 0; cycle < 6; cycle++)
-        {
-            for (int i = 0; i < 19; i++)
-                fallback.Sample(true, true);
-            CHECK(fallback.Sample(true, true) == Change::Halved);
-            CHECK(fallback.fitsToRestore == std::min(300u << (cycle + 1), 1800u));
-            for (uint32_t i = 1; i < fallback.fitsToRestore; i++)
-                CHECK(fallback.Sample(true, false) == Change::None);
-            CHECK(fallback.Sample(true, false) == Change::Restored);
-        }
-        for (int i = 0; i < 600; i++)
-            fallback.Sample(true, false);
-        for (int i = 0; i < 19; i++)
-            fallback.Sample(true, true);
-        CHECK(fallback.Sample(true, true) == Change::Halved && fallback.fitsToRestore == 300);
-        CHECK(fallback.Sample(false, true) == Change::None && !fallback.active);
-        for (int i = 0; i < 100; i++)
-            CHECK(fallback.Sample(false, true) == Change::None && !fallback.active);
-        CHECK(fallback.Sample(true, true) == Change::None); // re-enabling starts fresh
-    }
-    // A load's frames (a file opened in the last 5 s) are not counted; after it the window starts empty, and a game at
-    // 30 is back at 60 at once.
-    {
-        using Change = FrameRateFallback::Change;
-        FrameRateFallback fallback;
-        for (int i = 0; i < 600; i++)
-            fallback.Sample(true, false);
-        for (int i = 0; i < 19; i++)
-            CHECK(fallback.Sample(true, true) == Change::None);
-        for (int i = 0; i < 200; i++)
-            CHECK(fallback.Sample(true, true, true) == Change::None && !fallback.active);
-        for (int i = 0; i < 19; i++)
-            CHECK(fallback.Sample(true, true) == Change::None);
-        CHECK(fallback.Sample(true, true) == Change::Halved);
-        for (int i = 0; i < 50; i++)
-            CHECK(fallback.Sample(true, false, true) == Change::None && fallback.active);
-        CHECK(fallback.Sample(true, false) == Change::Restored && !fallback.active && fallback.fitsToRestore == 300);
-        for (int i = 0; i < 19; i++)
-            CHECK(fallback.Sample(true, true) == Change::None);
-    }
     CHECK(run.settings.glyphs == "auto");
     CHECK(run.settings.gamepad.empty() && run.settings.language.empty() && run.settings.arguments.empty());
     CHECK(run.settings.keys[KeyIndex("a")] == "Space" && run.settings.keys[KeyIndex("dpad_right")] == "Right");

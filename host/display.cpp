@@ -1,4 +1,5 @@
 #include "host/display.h"
+#include "host/video_driver.h"
 #include "gpu/gpu.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
@@ -24,6 +25,16 @@ namespace
     gpu::Texture* g_texture;
     int g_textureWidth;
     int g_textureHeight;
+
+    const char* VideoDriver()
+    {
+#if defined(PLUME_D3D12_COREWINDOW)
+        return "CoreWindow";
+#else
+        const char* driver = SDL_GetCurrentVideoDriver();
+        return driver != nullptr ? driver : "none";
+#endif
+    }
 }
 
 static void WritePpm(const std::string& path, const std::vector<uint32_t>& rgba, int width, int height)
@@ -125,9 +136,67 @@ SDL_Window* CreateDisplayWindow(const char* title, int width, int height, bool f
         }
     SDL_WindowFlags flags =
         SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | (fullscreen ? SDL_WINDOW_FULLSCREEN : 0);
-    SDL_Window* window = SDL_CreateWindow(title, width, height, flags | gpu::WindowFlags());
-    if (window == nullptr)
-    {
+    SDL_Window* window = nullptr;
+#if defined(__linux__)
+    constexpr bool linuxDesktop = true;
+#else
+    constexpr bool linuxDesktop = false;
+#endif
+    std::string requested;
+#if !defined(PLUME_D3D12_COREWINDOW)
+    if (const char* hint = SDL_GetHint(SDL_HINT_VIDEO_DRIVER))
+        requested = hint;
+#endif
+    auto open = [&](const char* driver) {
+#if !defined(PLUME_D3D12_COREWINDOW)
+        if (driver != nullptr)
+        {
+            fprintf(stderr, "[display] retrying SDL video with %s\n", driver);
+            // The built-in source picker may also have initialized video. Its windows are already destroyed.
+            while (SDL_WasInit(SDL_INIT_VIDEO) != 0)
+                SDL_QuitSubSystem(SDL_INIT_VIDEO);
+            if (!SDL_SetHintWithPriority(SDL_HINT_VIDEO_DRIVER, driver, SDL_HINT_OVERRIDE))
+            {
+                fprintf(stderr, "[display] cannot select SDL video driver %s: %s\n", driver, SDL_GetError());
+                return false;
+            }
+        }
+        SDL_ClearError();
+        if (SDL_WasInit(SDL_INIT_VIDEO) == 0 && !SDL_InitSubSystem(SDL_INIT_VIDEO))
+        {
+            fprintf(stderr, "[display] SDL video init failed (requested %s, selected %s): %s\n",
+                driver != nullptr ? driver : (requested.empty() ? "auto" : requested.c_str()), VideoDriver(),
+                SDL_GetError());
+            return false;
+        }
+        fprintf(stderr, "[display] SDL video driver: %s (requested %s)\n", VideoDriver(),
+            driver != nullptr ? driver : (requested.empty() ? "auto" : requested.c_str()));
+        int count = 0;
+        SDL_ClearError();
+        SDL_DisplayID* displays = SDL_GetDisplays(&count);
+        const std::string displayError = SDL_GetError();
+        SDL_free(displays);
+        fprintf(stderr, "[display] SDL displays: %d%s%s\n", count,
+            displayError.empty() ? "" : ": ", displayError.c_str());
+        if (!videodriver::Usable(linuxDesktop, requested, VideoDriver(), count))
+        {
+            fprintf(stderr, "[display] no usable native display with SDL video driver %s\n", VideoDriver());
+            return false;
+        }
+#else
+        (void)driver;
+#endif
+#if !defined(PLUME_D3D12_COREWINDOW)
+        SDL_ClearError();
+#endif
+        window = SDL_CreateWindow(title, width, height, flags | gpu::WindowFlags());
+        if (window != nullptr)
+            return true;
+        fprintf(stderr, "[display] window creation failed (SDL video %s, flags 0x%llX): %s\n", VideoDriver(),
+            static_cast<unsigned long long>(flags | gpu::WindowFlags()), SDL_GetError());
+        // A native Linux Vulkan window must keep SDL_WINDOW_VULKAN; removing it silently renders offscreen.
+        if (linuxDesktop && !videodriver::Offscreen(VideoDriver()))
+            return false;
         // SDL's offscreen driver has no Metal view: the GPU then renders to an offscreen target. Without a graphics
         // flag or this property, SDL would load OpenGL for the window, which that driver lacks on macOS.
         SDL_PropertiesID properties = SDL_CreateProperties();
@@ -137,9 +206,17 @@ SDL_Window* CreateDisplayWindow(const char* title, int width, int height, bool f
         SDL_SetNumberProperty(properties, SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, Sint64(flags));
         SDL_SetBooleanProperty(properties, SDL_PROP_WINDOW_CREATE_EXTERNAL_GRAPHICS_CONTEXT_BOOLEAN, true);
         window = SDL_CreateWindowWithProperties(properties);
+        if (window == nullptr)
+            fprintf(stderr, "[display] external graphics window failed (SDL video %s): %s\n",
+                VideoDriver(), SDL_GetError());
         SDL_DestroyProperties(properties);
-    }
+        return window != nullptr;
+    };
+    videodriver::Start(linuxDesktop, requested, open);
     g_gpuReady = window != nullptr && gpu::Init(window);
+    if (!g_gpuReady)
+        fprintf(stderr, "[gpu] not initialized: %s (SDL video driver %s); see startup errors above\n",
+            window == nullptr ? "no display window" : "GPU initialization failed", VideoDriver());
     return window;
 }
 

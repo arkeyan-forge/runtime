@@ -125,7 +125,7 @@ add_executable(ArkeyanRuntime
     kernel/xmp.cpp)
 set_target_properties(ArkeyanRuntime PROPERTIES OUTPUT_NAME "${ARKEYAN_RUNTIME_NAME}")
 if(NOT ARKEYAN_KIT_BUILD)
-    if(WIN32 AND NOT ARKEYAN_UWP)
+    if(WIN32)
         string(REPLACE "." "," ARKEYAN_GAME_VERSION_PARTS "${ARKEYAN_GAME_VERSION}.0")
         set(ARKEYAN_ICON_RESOURCE "")
         if(EXISTS "${ARKEYAN_GAME_ICON_DIR}/game_icon.ico")
@@ -350,9 +350,26 @@ target_include_directories(ArkeyanTargetWritesTest PRIVATE .)
 add_executable(ArkeyanFloatScanTest d3d/float_scan_test.cpp)
 target_include_directories(ArkeyanFloatScanTest PRIVATE .)
 
+# Empty and malformed movie frames must be black and terminal: ./ArkeyanBinkFrameTest
+add_executable(ArkeyanBinkFrameTest d3d/bink_frame_test.cpp)
+target_include_directories(ArkeyanBinkFrameTest PRIVATE .)
+
+# The actual Bink hooks with synthetic guest calls, no game code or GPU: ./ArkeyanBinkDisplayTest
+add_executable(ArkeyanBinkDisplayTest d3d/bink_display_test.cpp d3d/bink_display.cpp memory.cpp)
+target_include_directories(ArkeyanBinkDisplayTest PRIVATE d3d/tests/include .)
+target_include_directories(ArkeyanBinkDisplayTest SYSTEM PRIVATE
+    ${ARKEYAN_XENON_UTILS} ${ARKEYAN_XENON_THIRDPARTY}/simde)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_compile_options(ArkeyanBinkDisplayTest PRIVATE "SHELL:-iquote ${ARKEYAN_XENON_UTILS}")
+endif()
+
 # Where host thunks go in the code's padding: ./ArkeyanThunkSlotTest
 add_executable(ArkeyanThunkSlotTest thunk_slot_test.cpp)
 target_include_directories(ArkeyanThunkSlotTest PRIVATE .)
+
+# When a guest yield backs off, and the scope that keeps a working job from it, with a fake clock: ./ArkeyanYieldBackOffTest
+add_executable(ArkeyanYieldBackOffTest kernel/yield_backoff_test.cpp)
+target_include_directories(ArkeyanYieldBackOffTest PRIVATE .)
 
 # The frame rate limiter's schedule and wait, with a fake clock: ./ArkeyanFrameLimiterTest
 add_executable(ArkeyanFrameLimiterTest kernel/frame_limiter_test.cpp)
@@ -500,6 +517,20 @@ target_include_directories(ArkeyanSwapChainRecoveryTest PRIVATE .)
 add_executable(ArkeyanGpuBackendTest gpu/gpu_backend_test.cpp)
 target_include_directories(ArkeyanGpuBackendTest PRIVATE .)
 
+# The vsync mode for a refresh rate and the display cadence: ./ArkeyanPresentModeTest
+add_executable(ArkeyanPresentModeTest gpu/present_mode_test.cpp)
+target_include_directories(ArkeyanPresentModeTest PRIVATE .)
+
+# The automatic 60 -> 30 policy on recorded and made-up frame sequences: ./ArkeyanFrameRateFallbackTest
+add_executable(ArkeyanFrameRateFallbackTest host/settings_fallback_test.cpp)
+target_include_directories(ArkeyanFrameRateFallbackTest PRIVATE .)
+# Direct3D 12's first frames: when none reaches the screen, Vulkan (gpu/first_frame.h): ./ArkeyanFirstFrameTest
+add_executable(ArkeyanFirstFrameTest gpu/first_frame_test.cpp)
+target_include_directories(ArkeyanFirstFrameTest PRIVATE .)
+# SDL video selection and Linux native driver retries, without SDL or game data: ./ArkeyanVideoDriverTest
+add_executable(ArkeyanVideoDriverTest host/video_driver_test.cpp)
+target_include_directories(ArkeyanVideoDriverTest PRIVATE .)
+
 # The pacer of per-frame simulation steps, with a fake clock: ./ArkeyanStepPacerTest
 add_executable(ArkeyanStepPacerTest d3d/step_pacer_test.cpp)
 target_include_directories(ArkeyanStepPacerTest PRIVATE .)
@@ -524,6 +555,19 @@ target_include_directories(ArkeyanPortalUsbTest PRIVATE .)
 if(APPLE)
     target_sources(ArkeyanPortalUsbTest PRIVATE host/portal_usb_mac.cpp)
     target_link_libraries(ArkeyanPortalUsbTest PRIVATE "-framework IOKit" "-framework CoreFoundation")
+endif()
+
+# The USB backend over a fake Xbox 360 portal (no device needed): ./ArkeyanPortalUsbBackendTest
+add_executable(ArkeyanPortalUsbBackendTest host/portal_usb.cpp host/portal_usb_backend_test.cpp)
+target_include_directories(ArkeyanPortalUsbBackendTest PRIVATE .)
+target_link_libraries(ArkeyanPortalUsbBackendTest PRIVATE SDL3::SDL3-static)
+if(APPLE)
+    target_sources(ArkeyanPortalUsbBackendTest PRIVATE host/portal_usb_mac.cpp)
+    target_link_libraries(ArkeyanPortalUsbBackendTest PRIVATE "-framework IOKit" "-framework CoreFoundation")
+elseif(WIN32 AND NOT ARKEYAN_UWP)
+    target_sources(ArkeyanPortalUsbBackendTest PRIVATE host/portal_usb_win.cpp host/portal_gip_win.cpp host/windows_devices.cpp)
+    target_compile_definitions(ArkeyanPortalUsbBackendTest PRIVATE _WIN32_WINNT=0x0A00)
+    target_link_libraries(ArkeyanPortalUsbBackendTest PRIVATE cfgmgr32 setupapi winusb runtimeobject ole32)
 endif()
 
 # The Traptanium speaker's route per portal model and the computer's stream, on the game's framing (no game data needed): ./ArkeyanPortalSpeakerTest
@@ -654,6 +698,9 @@ if(WIN32)
     target_link_libraries(ArkeyanRuntime PRIVATE ws2_32) # the Toy Box link (host/toybox_socket.cpp)
     if(NOT ARKEYAN_UWP)
         target_link_libraries(ArkeyanRuntime PRIVATE cfgmgr32) # each portal's driver, read only (host/portal_usb.cpp)
+        # The Xbox portals: WinUSB devices, and the Xbox One portal through Windows.Gaming.Input.Custom
+        target_sources(ArkeyanRuntime PRIVATE host/portal_usb_win.cpp host/portal_gip_win.cpp)
+        target_link_libraries(ArkeyanRuntime PRIVATE winusb runtimeobject ole32)
     endif()
     add_custom_command(TARGET ArkeyanRuntime POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/THIRD_PARTY_NOTICES.md

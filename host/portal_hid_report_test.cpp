@@ -38,7 +38,7 @@ namespace
         };
         std::vector<Control> controls;
         int openResult = 0, claimResult = 0, controlResult = -100; // -100: the request's length
-        int readResult = 0, readSize = 0;
+        int readResult = 0, readSize = 0, readLength = 0;
     } g_usb;
 
     portal_usb::Device* const XboxDevice = reinterpret_cast<portal_usb::Device*>(0x10);
@@ -96,8 +96,9 @@ namespace
                 { requestType, request, value, index, length, std::vector<uint8_t>(data, data + length) });
             return g_usb.controlResult == -100 ? int(length) : g_usb.controlResult;
         };
-        usb.interrupt_transfer = [](portal_usb::Handle*, unsigned char endpoint, unsigned char* data, int, int* done,
-                                     unsigned int timeout) {
+        usb.interrupt_transfer = [](portal_usb::Handle*, unsigned char endpoint, unsigned char* data, int length,
+                                     int* done, unsigned int timeout) {
+            g_usb.readLength = length;
             g_usb.calls.push_back("interrupt " + std::to_string(endpoint) + " " + std::to_string(timeout));
             for (int i = 0; i < g_usb.readSize; i++)
                 data[i] = uint8_t(i == 0 ? 'R' : i);
@@ -196,6 +197,9 @@ namespace
         CHECK(link.Read(report, sizeof(report), 50, error) == 0 && error.empty());
         g_usb.readSize = 32;
         CHECK(link.Read(report, sizeof(report), 50, error) == 32);
+        // One packet at most (the endpoint's 64 bytes), whatever the buffer.
+        uint8_t large[128];
+        CHECK(link.Read(large, sizeof(large), 50, error) == 32 && g_usb.readLength == 64);
         g_usb.readResult = portal_usb::ErrorNoDevice;
         CHECK(link.Read(report, sizeof(report), 50, error) == -1 && error == "libusb interrupt transfer: LIBUSB_ERROR");
         g_usb.readResult = 0;
@@ -225,6 +229,26 @@ namespace
         link.Release();
         CHECK(link.Claim(usb, address, 0x1430, 0x0999) == "libusb: the portal is not in the USB device list");
         g_usb.calls.clear();
+
+        // Windows: the same link over WinUSB (a portal a tool moved to WinUSB): its name in the errors, no udev rule.
+        portal_hid::ControlLink winusb(true);
+        CHECK(winusb.Claim(usb, {}, 0x1430, 0x0999) == "WinUSB: the portal is not in the USB device list");
+        g_usb.openResult = portal_usb::ErrorAccess;
+        CHECK(winusb.Claim(usb, {}, 0x1430, 0x0150) ==
+              "WinUSB: cannot open (LIBUSB_ERROR_ACCESS); another program holds the portal");
+        g_usb.openResult = 0;
+        CHECK(winusb.Claim(usb, {}, 0x1430, 0x0150).empty() && winusb.In() == 0x81 && winusb.Interface() == 0);
+        g_usb.controlResult = 5;
+        const uint8_t status[] = { 'S' };
+        CHECK(winusb.Send(status, sizeof(status)) == "WinUSB control transfer: 5 of 32 bytes");
+        g_usb.controlResult = -100;
+        winusb.Release();
+        g_usb.calls.clear();
+
+        // The IN endpoint's packet size from the descriptor.
+        const uint8_t small[] = { 9, 2, 25, 0, 1, 1, 0, 0x80, 50, 9, 4, 0, 0, 1, 3, 0, 0, 0, 7, 5, 0x81, 3, 32, 0, 1 };
+        uint16_t packet = 0;
+        CHECK(portal_hid::InEndpoint(small, sizeof(small), 0, &packet) == 0x81 && packet == 32);
     }
 }
 

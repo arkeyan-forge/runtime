@@ -1,7 +1,9 @@
 // Portals that are USB HID devices (Wii, Wii U, PS3, PS4, PC): 32-byte input reports on the interrupt IN endpoint,
 // commands as 32-byte output reports (SET_REPORT on the control endpoint). Reached through SDL's hidapi; the commands go
 // on Windows through hid.dll's HidD_SetOutputReport, on macOS as a USB control request to the device, on Linux through
-// hidapi's write or, when the portal refuses it, a USB control request through libusb (WriteMethod below).
+// hidapi's write or, when the portal refuses it, a USB control request through libusb (WriteMethod below). On Windows a
+// portal a tool such as Zadig moved to WinUSB is no HID device any more: the same control request and the interrupt IN
+// endpoint are reached through winusb.dll (host/portal_hid_control.h), so it plays as it is.
 //
 // The portal's reports are on a vendor-defined usage page (FF00), and SDL's hidapi by default enumerates game
 // controllers only (SDL_HINT_HIDAPI_ENUMERATE_ONLY_CONTROLLERS: it drops every device whose usage page is known and is
@@ -20,6 +22,7 @@
 #include <set>
 #include <vector>
 #ifdef _WIN32
+#include "host/portal_hid_control.h"
 #include <windows.h>
 #include <hidsdi.h>
 #endif
@@ -161,8 +164,31 @@ namespace
             if (handle != INVALID_HANDLE_VALUE)
                 CloseHandle(handle);
             handle = INVALID_HANDLE_VALUE;
+            link.Release();
         }
+
+        // A portal on WinUSB (no HID device): the commands as SET_REPORT and the reports from the IN endpoint.
+        portal_hid::ControlLink link{ true };
     };
+
+    // WinUSB's calls (host/portal_usb_win.cpp), loaded once.
+    const portal_usb::Api* Winusb()
+    {
+        static portal_usb::Api usb{};
+        static const bool loaded = portal_usb::LoadWinusb(usb);
+        return loaded ? &usb : nullptr;
+    }
+
+    // Claims a 1430:0150 portal that is on WinUSB. Empty, or why not ("...not in the USB device list": none is).
+    std::string ClaimWinusb(OutputHandle& output, uint16_t vendor, uint16_t product)
+    {
+        const portal_usb::Api* usb = Winusb();
+        if (usb == nullptr)
+            return "WinUSB: winusb.dll could not be loaded";
+        output.length = 1 + PortalReportSize;
+        return output.link.Claim(*usb, portal_hid::UsbAddress{}, vendor, product);
+    }
+    constexpr const char* NoWinusbPortal = "WinUSB: the portal is not in the USB device list";
 #elif defined(__APPLE__)
     constexpr auto& Methods = portal_hid::MacMethods;
 
@@ -275,7 +301,7 @@ namespace
                 return true;
             const portal_usb::Api* usb = Libusb();
             if (usb == nullptr)
-                return why = "libusb-1.0 not found (set SKY_LIBUSB to its path)", false;
+                return why = "libusb-1.0 is not installed (install the libusb-1.0 package)", false;
             why = link.Claim(*usb, portal_hid::LinuxUsbAddress("/sys", path), PortalVendor, PortalProduct);
             if (!why.empty())
                 return false;
@@ -305,6 +331,13 @@ namespace
         uint8_t report[1 + 64]{};
         memcpy(report + 1, command, std::min(size, PortalReportSize));
 #ifdef _WIN32
+        if (method == WriteMethod::ControlReport) // a portal on WinUSB (ClaimWinusb)
+        {
+            if (!output.link.Claimed())
+                return error = "WinUSB: the portal is not claimed", false;
+            error = output.link.Send(command, size);
+            return error.empty();
+        }
         if (method == WriteMethod::OutputReport)
         {
             size_t length = std::clamp(output.length, size_t(1 + PortalReportSize), sizeof(report));
@@ -349,10 +382,11 @@ namespace
         return true;
     }
 
-    // Whether the control link holds the portal's interface (Linux): SDL's handle on the hidraw node is then gone.
+    // Whether the control link holds the portal's interface: SDL's handle on the hidraw node is then gone (Linux), or
+    // there is none (Windows, a portal on WinUSB).
     bool Linked(const OutputHandle& output)
     {
-#ifdef __linux__
+#if defined(__linux__) || defined(_WIN32)
         return output.link.Claimed();
 #else
         (void)output;
@@ -365,7 +399,7 @@ namespace
     int ReadReport(SDL_hid_device* device, OutputHandle& output, uint8_t* buffer, size_t capacity, int timeoutMs,
         std::string& error)
     {
-#ifdef __linux__
+#if defined(__linux__) || defined(_WIN32)
         if (output.link.Claimed())
             return output.link.Read(buffer, int(capacity), unsigned(std::max(timeoutMs, 1)), error);
 #endif
@@ -386,17 +420,17 @@ namespace
         // AsyncPortal (host/portal_async.h) calls this on its own thread and spaces out the attempts.
         bool IsConnected() override
         {
-            if (m_device == nullptr)
+            if (!Opened())
                 Open();
-            return m_device != nullptr;
+            return Opened();
         }
 
-        bool IsOpen() override { return m_device != nullptr; }
+        bool IsOpen() override { return Opened(); }
 
         // Tries the method that worked last first, then the others; keeps the first that works.
         bool Write(const uint8_t* command, size_t size) override
         {
-            if (m_device == nullptr)
+            if (!Opened())
                 return false;
             char letter = size > 0 ? char(command[0]) : '?';
             // The speaker on: a new line for the decoder (WriteSound).
@@ -408,6 +442,8 @@ namespace
             std::string errors;
             for (WriteMethod method : portal_hid::TryOrder(Methods, m_method))
             {
+                if (m_linkOnly)
+                    method = WriteMethod::ControlReport; // no HID device: the control link is the only way
                 std::string error;
                 if (SendCommand(method, m_device, m_output, command, size, error))
                 {
@@ -420,6 +456,8 @@ namespace
                     return true;
                 }
                 errors += std::string(errors.empty() ? "" : "; ") + MethodName(method) + ": " + error;
+                if (m_linkOnly)
+                    break;
             }
             Say("[portal] hid: write of '" + std::string(1, letter) + "' failed (" + errors + ")");
             Close();
@@ -459,7 +497,7 @@ namespace
 
         size_t Read(uint8_t* report, size_t capacity) override
         {
-            if (m_device == nullptr)
+            if (!Opened())
                 return 0;
 
             uint8_t buffer[64];
@@ -483,6 +521,9 @@ namespace
         }
 
     private:
+        // A HID device, or (Windows) a portal on WinUSB reached through the control link only.
+        bool Opened() const { return m_device != nullptr || m_linkOnly; }
+
         // A portal that opens and then fails at once repeats the same lines: each is logged once until a write works.
         void Say(const std::string& line)
         {
@@ -530,6 +571,25 @@ namespace
 #endif
                 }
             }
+#ifdef _WIN32
+            // No HID portal: one a tool such as Zadig moved to WinUSB is reached through winusb.dll.
+            if (m_device == nullptr)
+            {
+                const std::string why = ClaimWinusb(m_output, PortalVendor, PortalProduct);
+                m_linkOnly = why.empty();
+                if (m_linkOnly)
+                {
+                    char line[200];
+                    snprintf(line, sizeof(line),
+                        "[portal] hid: %04X:%04X is on WinUSB (no HID device): interface %d claimed, commands as "
+                        "SET_REPORT, reports from endpoint %02X",
+                        PortalVendor, PortalProduct, m_output.link.Interface(), m_output.link.In());
+                    Say(line);
+                }
+                else if (why != NoWinusbPortal)
+                    Say("[portal] hid: a portal on WinUSB cannot be used (" + why + ")");
+            }
+#endif
             m_lastCount = count;
             m_wrote = m_read = m_soundRefused = false;
             m_samples = 0;
@@ -538,14 +598,17 @@ namespace
 
         void Close()
         {
-            if (m_device == nullptr)
+            if (!Opened())
                 return;
-            SDL_hid_close(m_device);
+            if (m_device != nullptr)
+                SDL_hid_close(m_device);
             m_output.Close();
             m_device = nullptr;
+            m_linkOnly = false;
         }
 
         SDL_hid_device* m_device = nullptr;
+        bool m_linkOnly = false;
         OutputHandle m_output;
         WriteMethod m_method = Methods[0];
         int m_lastCount = -1;
@@ -649,5 +712,33 @@ std::string ProbeHidPortals(std::vector<PortalProbe>& portals)
         portals.push_back(probe);
     }
     SDL_hid_free_enumeration(devices);
+#ifdef _WIN32
+    // A portal a tool such as Zadig moved to WinUSB: no HID device, the same commands through winusb.dll.
+    OutputHandle output;
+    if (const std::string why = ClaimWinusb(output, PortalVendor, PortalProduct); why != NoWinusbPortal)
+    {
+        PortalProbe probe{ "hid", PortalVendor, PortalProduct, "Portal of Power" };
+        probe.opened = why.empty();
+        if (!probe.opened)
+            probe.status = "error: cannot open (" + why + ")";
+        else
+        {
+            char details[96];
+            snprintf(details, sizeof(details), "driver WinUSB, interface %d, reports from endpoint %02X",
+                output.link.Interface(), output.link.In());
+            probe.details = details;
+            const WriteMethod method = WriteMethod::ControlReport;
+            std::vector<uint8_t> answer;
+            const std::string reset = Query(nullptr, output, method, 'R', &answer);
+            NameProbe(probe, answer.data(), answer.size());
+            const std::string status = reset.rfind("ok", 0) == 0 ? Query(nullptr, output, method, 'S') : "not tried";
+            probe.methods.push_back({ MethodName(method), "R: " + reset + "; S: " + status });
+            probe.write = reset.rfind("ok", 0) == 0 ? MethodName(method) : "";
+            probe.status = probe.write.empty() ? reset : "ok";
+        }
+        output.Close();
+        portals.push_back(probe);
+    }
+#endif
     return {};
 }

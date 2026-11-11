@@ -59,6 +59,11 @@ namespace gpu
     // pixel size, or is width x height without a window.
     bool Init(SDL_Window* window, uint32_t width = 0, uint32_t height = 0);
 
+    // The automatic drop to 30's default for a player who never set fps_auto_fallback, from Init's adapter: off on
+    // discrete GPUs (the auto scale's "discrete GPU" cases), where 60 is rarely out of reach and each switch stutters;
+    // on for integrated, virtual and Apple GPUs, and before Init. `why` names the case.
+    bool DropTo30ByDefault(const char** why = nullptr);
+
     // Host rendering settings (host/settings.h), set before Init.
     struct Settings
     {
@@ -78,6 +83,9 @@ namespace gpu
     extern Settings g_settings;
     // The backend that runs, once Init has made its device: "Metal", "D3D12" or "Vulkan".
     const char* BackendName();
+    // Desktop Windows, set before Init: when D3D12 runs as the setting's choice and no frame reaches the screen
+    // (gpu/first_frame.h), `fallback(why)` is called once, from the watch thread; it does not return (main.cpp).
+    void SetFirstFrameFallback(void (*fallback)(const char* why));
     void Shutdown();
 
     // Textures may be created at any time; a destroyed one goes once the frames queued before have used it.

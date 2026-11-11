@@ -1,4 +1,5 @@
 #include "kernel/objects.h"
+#include "kernel/yield_backoff.h"
 #include "loader.h"
 #include "platform/platform.h"
 #include "thread.h"
@@ -21,26 +22,22 @@ namespace
         return g_memory.Read<uint32_t>(ctx.r13.u32) + g_module.tlsDataSize + index * 4;
     }
 
-    // A zero-length sleep or a yield hands the hardware thread to another ready thread, or returns at once: the title
-    // polls job queues and spin locks that way (its main thread spins while the render job waits for the vertical
-    // blank). On the console that only costs a hardware thread it owns; here it would keep host cores busy, so a thread
-    // that keeps yielding with no work in between (32 times, less than 100 us apart) backs off with short sleeps.
+    // A guest yield, with the back-off of kernel/yield_backoff.h.
     void Yield()
     {
         using Clock = std::chrono::steady_clock;
-        constexpr auto SpinGap = std::chrono::microseconds(100);
-        constexpr uint32_t SpinsBeforeSleeping = 32;
         constexpr auto BackOff = std::chrono::microseconds(200);
+        thread_local kernel::YieldBackOff t_backOff;
 
-        thread_local Clock::time_point t_lastYield;
-        thread_local uint32_t t_spins;
-
-        t_spins = Clock::now() - t_lastYield < SpinGap ? t_spins + 1 : 0;
-        if (t_spins < SpinsBeforeSleeping)
-            std::this_thread::yield();
-        else
+        auto now = [] {
+            return uint64_t(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now().time_since_epoch()).count());
+        };
+        if (t_backOff.ShouldSleep(now(), kernel::ThreadIsWorking()))
             std::this_thread::sleep_for(BackOff);
-        t_lastYield = Clock::now();
+        else
+            std::this_thread::yield();
+        t_backOff.Done(now());
     }
 
     std::shared_ptr<GuestThread> ThreadFromHandle(uint32_t handle, uint32_t pcr)

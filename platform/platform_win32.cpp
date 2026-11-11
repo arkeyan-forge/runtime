@@ -347,3 +347,27 @@ int64_t PlatformReadFile(PlatformFile file, void* buffer, uint32_t size, uint64_
 }
 
 void PlatformCloseFile(PlatformFile file) { CloseHandle(reinterpret_cast<HANDLE>(file)); }
+
+bool PlatformStartAgain(const char* name, const char* value)
+{
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+    std::wstring program(32768, L'\0');
+    program.resize(GetModuleFileNameW(nullptr, program.data(), DWORD(program.size())));
+    if (program.empty() || !SetEnvironmentVariableA(name, value))
+        return false;
+    std::wstring commandLine = GetCommandLineW(); // CreateProcessW may write into it
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    PROCESS_INFORMATION process{};
+    if (!CreateProcessW(
+            program.c_str(), commandLine.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &startup, &process))
+        return false;
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    return true;
+#else
+    (void)name;
+    (void)value;
+    return false;
+#endif
+}

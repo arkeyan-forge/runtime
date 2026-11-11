@@ -5,18 +5,21 @@
 #include <cstdint>
 #include <utility>
 
-// The automatic 60 -> 30 policy, independent of the clock, renderer and settings file.
-// A sample is late when more than one blank has passed since the last flip. Halving takes a sustained shortfall, a
-// frame in six late over 2 s (under ~50 FPS): 3 in 30 frames also caught a single burst of slow frames (a load, a
-// camera cut). At 30, 60 is tried again after `fitsToRestore` frames unless 30 itself was not held (more than 1 in 20
-// late): one late frame used to restart the count, and a level's streaming hitches (1-3 a second in SSA) kept the game at
-// 30 for good (docs/runtime/xbox360/video_vblank.md). A try that fails within 10 s doubles the wait, up to 60 s.
-// Frames while the game loads (`loading`: a file opened in the last 5 s) are not counted: a load's slow frames halved the
-// rate (Swap Force loading its figure); after the load the window starts empty, and a game at 30 is back at 60 at once.
+// The automatic 60 -> 30 policy, independent of the clock, renderer and settings file. Each switch is a visible stutter,
+// so it switches only when the game really cannot hold 60, and stays (docs/runtime/xbox360/video_vblank.md).
+// A sample is `late` when more than one blank passed since the last flip, `fits` when the frame's work ended within
+// 3/4 of a blank (only read at 30: the margin 60 needs; for a game that waits for a blank itself, not late). `paused`: a load (a file opened in the last 5 s) or a movie:
+// nothing is counted and nothing switches; after it the counts start again, the rate stays.
+// At 60, frames are counted in blocks of 60 (a second): the rate halves after `HeavyBlocks` heavy blocks in a row, a
+// quarter of their frames late or more (under ~50 FPS for 5 s). A load's hitch, a shader build or two seconds of a busy
+// scene never get there; the old rule (20 late in 120 frames) halved on them and came back at once (a Windows run
+// switched every few seconds). At 30, the rate stays at least `HoldFrames` (30 s), then 60 comes back once 90 % of the
+// last 300 frames (10 s) fit. A drop within 60 s of coming back doubles the hold, up to 2 minutes.
 struct FrameRateFallback
 {
-    static constexpr uint32_t Window = 120, MissesToHalve = 20;
-    static constexpr uint32_t FitsToRestore = 300, MaxFitsToRestore = 1800, ShortSixty = 600, LateOneIn = 20;
+    static constexpr uint32_t Block = 60, LateInHeavyBlock = 15, HeavyBlocks = 5;
+    static constexpr uint32_t HoldFrames = 900, MaxHoldFrames = 3600, ShortSixty = 3600;
+    static constexpr uint32_t FitWindow = 300, FitsToRestore = 270;
     enum class Change
     {
         None,
@@ -25,59 +28,64 @@ struct FrameRateFallback
     };
 
     bool active = false;
-    std::array<bool, Window> missed = {};
-    uint32_t next = 0, fitsToRestore = FitsToRestore, framesAtSixty = 0;
-    uint32_t framesAtThirty = 0, lateAtThirty = 0; // since the halving, or since the last count that did not hold 30
-    bool loaded = false;                           // frames of a load were skipped since the last counted one
+    bool paused = false; // frames of a load or a movie were skipped since the last counted one
+    // At 60: the block being counted, the heavy blocks in a row, the frames since 60 came back (saturated).
+    uint32_t inBlock = 0, lateInBlock = 0, heavyBlocks = 0, framesAtSixty = ShortSixty;
+    // At 30: the frames held, the hold this time, the last FitWindow frames' `fits` and their sum.
+    uint32_t framesAtThirty = 0, holdFrames = HoldFrames;
+    std::array<bool, FitWindow> fit = {};
+    uint32_t fitNext = 0, fitSamples = 0, fitCount = 0;
 
-    Change Sample(bool enabled, bool late, bool loading = false)
+    Change Sample(bool enabled, bool late, bool fits, bool pausedNow = false)
     {
         if (!enabled)
         {
             *this = {};
             return Change::None;
         }
-        if (loading)
+        if (pausedNow)
         {
-            loaded = true;
+            paused = true;
             return Change::None;
         }
-        if (std::exchange(loaded, false))
-        {
-            missed = {};
-            next = 0;
-            if (active)
-            {
-                active = false;
-                framesAtSixty = 0;
-                fitsToRestore = FitsToRestore;
-                return Change::Restored;
-            }
-        }
+        if (std::exchange(paused, false))
+            ClearCounts();
         if (active)
         {
             framesAtThirty++;
-            lateAtThirty += late;
-            if (framesAtThirty < fitsToRestore)
-                return Change::None;
-            const bool held = lateAtThirty * LateOneIn <= framesAtThirty;
-            framesAtThirty = lateAtThirty = 0;
-            if (!held)
+            fitCount += uint32_t(fits) - uint32_t(fit[fitNext]);
+            fit[fitNext] = fits;
+            fitNext = (fitNext + 1) % FitWindow;
+            if (fitSamples < FitWindow)
+                fitSamples++;
+            if (framesAtThirty < holdFrames || fitSamples < FitWindow || fitCount < FitsToRestore)
                 return Change::None;
             active = false;
-            missed = {};
-            next = framesAtSixty = 0;
+            framesAtSixty = 0;
+            ClearCounts();
             return Change::Restored;
         }
-        missed[next] = late;
-        next = (next + 1) % Window;
         if (framesAtSixty < ShortSixty)
             framesAtSixty++;
-        if (std::count(missed.begin(), missed.end(), true) < MissesToHalve)
+        lateInBlock += late;
+        if (++inBlock < Block)
+            return Change::None;
+        heavyBlocks = lateInBlock >= LateInHeavyBlock ? heavyBlocks + 1 : 0;
+        inBlock = lateInBlock = 0;
+        if (heavyBlocks < HeavyBlocks)
             return Change::None;
         active = true;
-        framesAtThirty = lateAtThirty = 0;
-        fitsToRestore = framesAtSixty < ShortSixty ? std::min(fitsToRestore * 2, MaxFitsToRestore) : FitsToRestore;
+        framesAtThirty = 0;
+        holdFrames = framesAtSixty < ShortSixty ? std::min(holdFrames * 2, MaxHoldFrames) : HoldFrames;
+        ClearCounts();
         return Change::Halved;
+    }
+
+private:
+    void ClearCounts()
+    {
+        inBlock = lateInBlock = heavyBlocks = 0;
+        fit = {};
+        fitNext = fitSamples = fitCount = 0;
     }
 };

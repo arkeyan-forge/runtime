@@ -30,6 +30,8 @@ struct RuntimeSettings
     bool fullscreen = false;      // desktop fullscreen (no mode change)
     uint32_t anisotropy = 1;      // 1, 2, 4, 8, 16
     bool fpsAutoFallback = true; // [<game>.video] fps_auto_fallback: allow the automatic 60 -> 30 drop
+    bool fpsAutoFallbackSet =
+        false; // the player set it; else main.cpp takes the GPU's default (gpu::DropTo30ByDefault)
     uint32_t fpsLimit = 30;       // 30 or 60 (an older limit above 60, or none, reads as 60)
     bool aspectAuto = true; // [video] aspect: auto follows a window wider than 16:9 (Hor+ camera, wide scene and
     // frame, HUD centred); 16:9 keeps the game's 16:9 picture, with bars on a wider window

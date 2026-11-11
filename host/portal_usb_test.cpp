@@ -2,7 +2,9 @@
 // ./ArkeyanPortalUsbTest
 #include "portal_usb.h"
 #include "host/windows_devices.h"
+#include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -38,6 +40,98 @@ namespace
             out.insert(out.end(), { 7, 5, endpoint.address, endpoint.attributes, 32, 0, 1 });
     }
     std::vector<uint8_t> Configuration() { return { 9, 2, 0, 0, 1, 1, 0, 0x80, 50 }; }
+
+    // A fake Xbox 360 portal behind the libusb-shaped calls, speaking the protocol as the public notes describe it:
+    // interrupt IN 0x81 and OUT 0x02, 32-byte packets, "0B 14" before the command letter both ways; 'R' is answered
+    // with 'R' and the portal's id, 'A' with 'A', then 'S' status packets. Its IN endpoint behaves as USB does: a
+    // transfer ends on a short packet or when it is full; at its timeout it returns a timeout with what it holds.
+    struct FakePortal
+    {
+        std::vector<std::vector<uint8_t>> pending; // packets the portal has ready
+        std::vector<std::vector<uint8_t>> written;
+        bool stallsStart = false; // the start request (C1 01 0100) is stalled
+        bool waitsForStart = false; // answers nothing until the start request came
+        bool started = false;
+        bool answersOnly = false; // 'R' gets its answer and no status after it (issue #23's portal)
+        int startRequests = 0;
+    } g_fake;
+
+    // What issue #23's Xbox 360 portal (SteamOS, 0.9.5) sent first: its status report, no figure, counter E5, active.
+    const std::vector<uint8_t> Issue23Status = [] {
+        std::vector<uint8_t> packet(32, 0);
+        const uint8_t head[] = { 0x0B, 0x14, 0x53, 0x00, 0x00, 0x00, 0x00, 0xE5, 0x01 };
+        std::copy(std::begin(head), std::end(head), packet.begin());
+        return packet;
+    }();
+
+    std::vector<uint8_t> FakePacket(std::initializer_list<uint8_t> report)
+    {
+        std::vector<uint8_t> packet(32, 0);
+        packet[0] = 0x0B;
+        packet[1] = 0x14;
+        std::copy(report.begin(), report.end(), packet.begin() + 2);
+        return packet;
+    }
+
+    int FakeControl(portal_usb::Handle*, uint8_t type, uint8_t request, uint16_t value, uint16_t index,
+        unsigned char* data, uint16_t length, unsigned int)
+    {
+        if (type == 0xC1 && request == 0x01 && value == 0x0100 && index == 0)
+        {
+            g_fake.startRequests++;
+            if (g_fake.stallsStart)
+                return portal_usb::ErrorPipe;
+            g_fake.started = true;
+            const uint8_t reply[20] = { 0x00, 0x14, 0x01 };
+            memcpy(data, reply, std::min<size_t>(length, sizeof(reply)));
+            return std::min<int>(length, int(sizeof(reply)));
+        }
+        return portal_usb::ErrorPipe;
+    }
+
+    int FakeInterrupt(
+        portal_usb::Handle*, unsigned char endpoint, unsigned char* data, int length, int* transferred, unsigned int)
+    {
+        *transferred = 0;
+        if (endpoint == 0x02)
+        {
+            std::vector<uint8_t> packet(data, data + length);
+            g_fake.written.push_back(packet);
+            if (length == 32 && data[0] == 0x0B && data[1] == 0x14 && (g_fake.started || !g_fake.waitsForStart))
+            {
+                if (data[2] == 'R')
+                    g_fake.pending.push_back(FakePacket({ 'R', 0x01, 0x28 }));
+                else if (data[2] == 'A')
+                    g_fake.pending.push_back(FakePacket({ 'A', 0x01 }));
+                if (!g_fake.answersOnly)
+                    g_fake.pending.push_back(FakePacket({ 'S', 0x01, 0, 0, 0, 0x01 }));
+            }
+            *transferred = length;
+            return 0;
+        }
+        if (endpoint != 0x81)
+            return portal_usb::ErrorNotFound;
+        while (!g_fake.pending.empty() && *transferred < length)
+        {
+            std::vector<uint8_t>& packet = g_fake.pending.front();
+            const int size = std::min(int(packet.size()), length - *transferred);
+            memcpy(data + *transferred, packet.data(), size_t(size));
+            *transferred += size;
+            const bool shortPacket = size < 32;
+            g_fake.pending.erase(g_fake.pending.begin());
+            if (shortPacket)
+                return 0;
+        }
+        return *transferred == length ? 0 : portal_usb::ErrorTimeout;
+    }
+
+    portal_usb::Api FakeApi()
+    {
+        portal_usb::Api usb{};
+        usb.control_transfer = FakeControl;
+        usb.interrupt_transfer = FakeInterrupt;
+        return usb;
+    }
 }
 
 int main()
@@ -50,6 +144,127 @@ int main()
     Interface found = FindInterface(xbox360.data(), xbox360.size());
     CHECK(found.number == 0 && found.in == 0x81 && found.out == 0x02 && !found.gip && found.xbox360);
     CHECK(XboxFamilyOf(found) == XboxFamily::Xbox360);
+
+    CHECK(found.inSize == 32 && found.outSize == 32);
+
+    // One packet per IN transfer: a 64-byte read of 32-byte packets waits for a second one (issue #20).
+    CHECK(ReadLength(found, 64) == 32 && ReadLength(found, 16) == 16 && ReadLength(Interface{}, 64) == 32);
+    CHECK(Received(0, 32) == 32 && Received(ErrorTimeout, 32) == 32 && Received(ErrorTimeout, 0) == 0 &&
+          Received(ErrorPipe, 0) == ErrorPipe && Received(ErrorNoDevice, 5) == ErrorNoDevice);
+
+    {
+        // The fake portal: the start request, then 'R' and its answer, one packet per read.
+        Api usb = FakeApi();
+        g_fake = {};
+        CHECK(StartXbox360(usb, nullptr, 0) == "start request C1 01 0100: 00 14 01 (20 bytes, zeros after)");
+        const uint8_t reset[] = { 'R' };
+        Xbox360Packet command = MakeXbox360Packet(Xbox360CommandHeader, reset, 1);
+        int transferred = 0;
+        CHECK(usb.interrupt_transfer(nullptr, found.out, command.data(), 32, &transferred, 100) == 0 &&
+              transferred == 32);
+        // What 0.9.5 asked for (64 bytes) joins two packets into one "report" (the second is lost), and with one
+        // packet ready ends in a timeout holding it, which it dropped.
+        uint8_t reply[64]{};
+        CHECK(usb.interrupt_transfer(nullptr, found.in, reply, 64, &transferred, 100) == 0 && transferred == 64 &&
+              reply[2] == 'R' && reply[34] == 'S');
+        g_fake.pending = { FakePacket({ 'R', 0x01, 0x28 }) };
+        CHECK(usb.interrupt_transfer(nullptr, found.in, reply, 64, &transferred, 100) == ErrorTimeout &&
+              transferred == 32 && reply[2] == 'R');
+        g_fake.pending = { FakePacket({ 'R', 0x01, 0x28 }), FakePacket({ 'S', 0x01 }) };
+        CHECK(ReadPacket(usb, nullptr, found, reply, sizeof(reply), 100) == 32 && reply[2] == 'R');
+        CHECK(Xbox360ResetAnswer(reply, 32) == 2 && Xbox360Report(32).size == 30);
+        CHECK(ReadPacket(usb, nullptr, found, reply, sizeof(reply), 100) == 32 && reply[2] == 'S');
+        CHECK(ReadPacket(usb, nullptr, found, reply, sizeof(reply), 100) == 0);
+        // A short packet ends a transfer too; a timeout that holds a packet still gives it.
+        g_fake.pending = { std::vector<uint8_t>{ 0x0B, 0x14, 'Q' } };
+        CHECK(ReadPacket(usb, nullptr, found, reply, sizeof(reply), 100) == 3);
+        Interface wide = found;
+        wide.inSize = 64;
+        g_fake.pending = { FakePacket({ 'S' }) };
+        CHECK(ReadPacket(usb, nullptr, wide, reply, sizeof(reply), 100) == 32 && reply[2] == 'S');
+
+        // A portal that stalls the start request is only logged; one that waits for it answers after it.
+        g_fake = {};
+        g_fake.stallsStart = true;
+        CHECK(StartXbox360(usb, nullptr, 0).find("stalled (the portal does not need it") != std::string::npos);
+        g_fake = {};
+        g_fake.waitsForStart = true;
+        CHECK(usb.interrupt_transfer(nullptr, 0x02, command.data(), 32, &transferred, 100) == 0);
+        CHECK(ReadPacket(usb, nullptr, found, reply, sizeof(reply), 100) == 0);
+        StartXbox360(usb, nullptr, 0);
+        CHECK(usb.interrupt_transfer(nullptr, 0x02, command.data(), 32, &transferred, 100) == 0);
+        CHECK(ReadPacket(usb, nullptr, found, reply, sizeof(reply), 100) == 32 && reply[2] == 'R');
+        CHECK(g_fake.startRequests == 1 && g_fake.written.size() == 2);
+    }
+
+    {
+        // Issue #23, replayed: the portal's status report is waiting when the probe writes 'R', and the answer comes
+        // after it. 0.9.5's 64-byte read took both packets as one and judged it by the first: the player's line.
+        Api usb = FakeApi();
+        usb.error_name = ErrorName;
+        g_fake = {};
+        g_fake.answersOnly = true;
+        g_fake.pending = { Issue23Status };
+        const uint8_t reset[] = { 'R' };
+        Xbox360Packet command = MakeXbox360Packet(Xbox360CommandHeader, reset, 1);
+        int transferred = 0;
+        CHECK(usb.interrupt_transfer(nullptr, found.out, command.data(), 32, &transferred, 100) == 0);
+        uint8_t reply[64]{};
+        CHECK(usb.interrupt_transfer(nullptr, found.in, reply, 64, &transferred, 100) == 0 && transferred == 64);
+        CHECK(Xbox360ResetAnswer(reply, size_t(transferred)) == -1 &&
+              HexBytes(reply, size_t(transferred)) == "0B 14 53 00 00 00 00 E5 01 00 00 00 00 00 00 00 ...");
+        CHECK(reply[34] == 'R'); // the answer was there, in the second half
+
+        // Now: one packet per read, the status passed over, the answer matched.
+        g_fake = {};
+        g_fake.answersOnly = true;
+        g_fake.pending = { Issue23Status };
+        std::string steps;
+        std::vector<uint8_t> answer;
+        CHECK(QueryXbox360Reset(usb, nullptr, found, steps, answer) == "ok");
+        CHECK(answer.size() == 30 && answer[0] == 'R' && answer[1] == 0x01 && answer[2] == 0x28);
+        CHECK(steps.find("; start request C1 01 0100: ") == 0);
+        CHECK(steps.find("; out 1: 0B 14 52 (32 bytes, zeros after)") != std::string::npos);
+        CHECK(steps.find("; in 1: 0B 14 53 00 00 00 00 E5 01 (32 bytes, zeros after) at ") != std::string::npos);
+        CHECK(steps.find("; in 2: 0B 14 52 01 28 (32 bytes, zeros after) at ") != std::string::npos);
+        CHECK(g_fake.startRequests == 1 && g_fake.written.size() == 1);
+
+        // A portal that only sends its status: the status says so, with the first packet.
+        g_fake = {};
+        g_fake.answersOnly = true;
+        g_fake.stallsStart = true;
+        g_fake.pending = { Issue23Status };
+        steps.clear();
+        answer.clear();
+        usb.interrupt_transfer = [](portal_usb::Handle* handle, unsigned char endpoint, unsigned char* data, int length,
+                                     int* transferred, unsigned int timeout) {
+            if (endpoint == 0x02) // taken, never answered
+                return *transferred = length, 0;
+            return FakeInterrupt(handle, endpoint, data, length, transferred, timeout);
+        };
+        CHECK(QueryXbox360Reset(usb, nullptr, found, steps, answer) ==
+              "error: no 'R' answer within 1 s (1 other packets, the first: 0B 14 53 00 00 00 00 E5 01 00 00 00 00 00 "
+              "00 00 ...)");
+        CHECK(answer.empty() && steps.find("stalled") != std::string::npos);
+    }
+
+    {
+        // The log's packets: the bytes up to the last non-zero one; 8 each way, then none (all with SKY_PORTAL_LOG).
+        const uint8_t packet[32] = { 0x0B, 0x14, 'R', 0x01, 0x28 };
+        CHECK(PacketHex(packet, 32) == "0B 14 52 01 28 (32 bytes, zeros after)");
+        CHECK(PacketHex(packet, 5) == "0B 14 52 01 28 (5 bytes)");
+        const uint8_t zeros[4] = {};
+        CHECK(PacketHex(zeros, 4) == "zeros (4 bytes)");
+        PacketTrace trace;
+        CHECK(trace.Line(true, packet, 32) == "out 1: 0B 14 52 01 28 (32 bytes, zeros after)");
+        CHECK(trace.Line(false, packet, 5) == "in 1: 0B 14 52 01 28 (5 bytes)");
+        for (int i = 2; i < PacketTrace::Logged; i++)
+            trace.Line(true, packet, 32);
+        CHECK(trace.Line(true, packet, 32).find("(later packets: SKY_PORTAL_LOG=1)") != std::string::npos);
+        CHECK(trace.Line(true, packet, 32).empty() && !trace.Line(true, packet, 32, true).empty());
+        trace.Reset();
+        CHECK(trace.Line(true, packet, 32).rfind("out 1: ", 0) == 0);
+    }
 
     // Bulk endpoints and alternate settings do not count; a later interface with interrupt endpoints does.
     std::vector<uint8_t> mixed = Configuration();
@@ -185,20 +400,68 @@ int main()
               node.interfaceNumber == 0);
         CHECK(!ParseWindowsUsbInstance("HID\\VID_1430&PID_0150\\1", node) &&
               !ParseWindowsUsbInstance("USB\\ROOT_HUB30", node));
-        WindowsUsbNode hid{ 0x1430, 0x0150, -1, "HidUsb" }, winusb{ 0x1430, 0x0150, -1, "WinUSB" },
-            none{ 0x1430, 0x0150, -1, "" }, composite{ 0x1430, 0x0150, -1, "usbccgp" },
-            xbox{ 0x1430, 0x1F17, 0, "xusb22" }, xboxWinusb{ 0x1430, 0x1F17, 0, "WinUSB" };
+        WindowsUsbNode hid{ 0x1430, 0x0150, -1, "HidUsb", "" }, winusb{ 0x1430, 0x0150, -1, "WinUSB", "" },
+            none{ 0x1430, 0x0150, -1, "", "" }, composite{ 0x1430, 0x0150, -1, "usbccgp", "" },
+            xbox{ 0x1430, 0x1F17, 0, "xusb22", "" }, xboxWinusb{ 0x1430, 0x1F17, 0, "WinUSB", "" },
+            xboxNone{ 0x1430, 0x1F17, -1, "", "" }, xboxLibusbK{ 0x1430, 0x1F17, -1, "libusbK", "" };
         CHECK(WindowsDriverProblem(hid, false).empty() && WindowsDriverProblem(composite, false).empty());
-        CHECK(WindowsDriverProblem(winusb, false).find("it uses the WinUSB driver, not Windows' own HID driver") == 0);
-        CHECK(WindowsDriverProblem(winusb, true).find("uninstall the device and its driver") != std::string::npos);
+        // A HID portal on WinUSB is used through it (0.9.6); on libusb0 or libusbK (a Trap Team Wii portal Zadig moved
+        // to libusb0, which came back after an uninstall) the way back, with the driver package's name when known.
+        CHECK(WindowsDriverProblem(winusb, false).empty() && WindowsDriverProblem(winusb, true).empty());
         CHECK(WindowsDriverProblem(none, false).find("no driver") == 0);
-        CHECK(WindowsDriverProblem(xbox, false).find("libusb-1.0, which Windows does not have") != std::string::npos);
-        CHECK(WindowsDriverProblem(xbox, true).find("WinUSB, libusbK or libusb0 devices only") != std::string::npos);
-        CHECK(WindowsDriverProblem(xboxWinusb, true).empty());
-        // The Xbox One portal, which Windows' own Xbox driver holds: named, and the next version's.
-        WindowsUsbNode xboxOne{ 0x1430, 0x09AA, -1, "xboxgip" };
-        CHECK(WindowsDriverProblem(xboxOne, false).find("an Xbox One portal (driver xboxgip)") == 0 &&
-              WindowsDriverProblem(xboxOne, true).find("from the next version") != std::string::npos);
+        WindowsUsbNode libusb0{ 0x1430, 0x0150, -1, "libusb0", "oem42.inf" },
+            libusbK{ 0x1430, 0x0150, -1, "libusbK", "" };
+        const std::string back = WindowsDriverProblem(libusb0, false);
+        CHECK(back.find("it uses the libusb0 driver, which a tool such as Zadig installed") == 0);
+        CHECK(
+            back.find("Uninstall device, tick \"Attempt to remove the driver for this device\"") != std::string::npos);
+        CHECK(back.find("3. if it is back on libusb0: in a Command Prompt run as administrator, pnputil /enum-drivers "
+                        "(the driver is oem42.inf), then pnputil /delete-driver oem42.inf /uninstall /force") !=
+              std::string::npos);
+        CHECK(back.find("choose WinUSB for it in Zadig") != std::string::npos &&
+              back == WindowsDriverProblem(libusb0, true));
+        CHECK(WindowsDriverProblem(libusbK, false)
+                  .find("find the libusbK driver's oemNN.inf), then pnputil "
+                        "/delete-driver oemNN.inf /uninstall /force") != std::string::npos);
+        libusbK.inf = "libusbk.inf"; // not a third-party package's published name: never offered for deletion
+        CHECK(WindowsDriverProblem(libusbK, false).find("delete-driver oemNN.inf") != std::string::npos);
+        // Xbox 360 portals: WinUSB is opened without libusb; any other driver needs the one-time WinUSB step.
+        CHECK(WindowsDriverProblem(xboxWinusb, false).empty() && WindowsDriverProblem(xboxWinusb, true).empty());
+        CHECK(WindowsDriverProblem(xbox, false).find("an Xbox 360 portal on the xusb22 driver") == 0 &&
+              WindowsDriverProblem(xbox, true).find("WinUsb Device") != std::string::npos);
+        CHECK(WindowsDriverProblem(xboxNone, false).find("an Xbox 360 portal with no driver") == 0);
+        CHECK(WindowsDriverProblem(xboxLibusbK, true).empty() &&
+              WindowsDriverProblem(xboxLibusbK, false)
+                      .find("which Arkeyan cannot open (it opens WinUSB devices): use "
+                            "WinUSB instead, once, in Device Manager") != std::string::npos);
+        for (const WindowsUsbNode& each : { winusb, none, libusb0, libusbK, xbox, xboxNone, xboxLibusbK })
+            CHECK(WindowsDriverProblem(each, false).find("SKY_LIBUSB") == std::string::npos); // never on Windows
+        // The Xbox One portal: Windows' own Xbox driver is the route (Windows.Gaming.Input.Custom), WinUSB too.
+        WindowsUsbNode xboxOne{ 0x1430, 0x09AA, -1, "xboxgip", "" }, xboxOneWinusb{ 0x1430, 0x09AA, -1, "WinUSB", "" },
+            xboxOneLibusb0{ 0x1430, 0x09AA, -1, "libusb0", "" };
+        CHECK(WindowsDriverProblem(xboxOne, false).empty() && WindowsDriverProblem(xboxOneWinusb, false).empty());
+        CHECK(WindowsDriverProblem(xboxOneLibusb0, false).find("To give it back to Windows' own Xbox driver: 1. ") !=
+                  std::string::npos &&
+              WindowsDriverProblem(xboxOneLibusb0, true).empty());
+    }
+
+    {
+        // Windows' WinUSB transport: its errors as libusb's codes, the interface classes it opens a device through, the
+        // revision in a hardware id.
+        CHECK(ErrorFromWin32(0) == 0 && ErrorFromWin32(win32_error::SemTimeout) == ErrorTimeout &&
+              ErrorFromWin32(win32_error::GenFailure) == ErrorPipe &&
+              ErrorFromWin32(win32_error::AccessDenied) == ErrorBusy &&
+              ErrorFromWin32(win32_error::DeviceNotConnected) == ErrorNoDevice && ErrorFromWin32(87) == ErrorIo);
+        const std::string zadig = std::string("{6b7bb2fd-1a43-4f23-a0ec-9b3a7d3c5a42}\0", 39) +
+                                  std::string("bad\0", 4) + std::string("{6B7BB2FD-1A43-4F23-A0EC-9B3A7D3C5A42}\0", 39);
+        std::vector<std::string> classes = WinusbInterfaceClasses(zadig);
+        CHECK(classes.size() == 3 && classes[0] == "{6B7BB2FD-1A43-4F23-A0EC-9B3A7D3C5A42}" &&
+              classes[1] == "{A5DCBF10-6530-11D2-901F-00C04FB951ED}" &&
+              classes[2] == "{DEE824EF-729B-4A0E-9C14-B7117D33A817}");
+        CHECK(WinusbInterfaceClasses("").size() == 2 && WinusbInterfaceClasses("{1234}").size() == 2);
+        CHECK(WindowsRevision("USB\\VID_1430&PID_1F17&REV_0100&MI_00") == 0x0100 &&
+              WindowsRevision("usb\\vid_1430&pid_09aa&rev_0227") == 0x0227 &&
+              WindowsRevision("USB\\VID_1430&PID_1F17") == 0 && WindowsRevision("USB\\VID_1&REV_01") == 0);
     }
 
     // Linux: the rule the log gives for a device libusb cannot open.

@@ -28,6 +28,7 @@
 #include "host/figures/figure_catalog.h"
 #include "host/figures/figure_crypto.h"
 #include "host/figures/figure_tag.h"
+#include "host/figures/tag_owner.h"
 #include "host/portal_backend.h"
 #include <cstdio>
 #include <cstdlib>
@@ -555,6 +556,27 @@ namespace
     }
 
     // SuperChargers' vehicles: the gearbits in the extra area's +0x08; a vehicle the game wrote keeps every other byte.
+    // Block 6, the toy's owner (tag_owner.h): bytes the games wrote in runs (SuperChargers: its offline id 1F3AB27A, as
+    // "[owner] the player's owner id" logged it), an Xbox Live owner, none.
+    void TestTagOwner()
+    {
+        auto text = [](const uint8_t* block) {
+            char out[64];
+            figures::FormatTagOwner(figures::ReadTagOwner(block), out, sizeof(out));
+            return std::string(out);
+        };
+        const uint8_t offline[16] = { 0x01, 0x7A, 0xB2, 0x3A, 0x1F };
+        CHECK(figures::ReadTagOwner(offline).kind == 1 && figures::ReadTagOwner(offline).id == 0x1F3AB27Au);
+        CHECK(text(offline) == "offline 1F3AB27A");
+        const uint8_t live[16] = { 0x80, 0x67, 0x45, 0x23, 0x01, 0x00, 0x00, 0x09, 0x00 };
+        CHECK(figures::ReadTagOwner(live).id == 0x0009000001234567ull);
+        CHECK(text(live) == "Xbox Live 0009000001234567");
+        const uint8_t none[16] = {};
+        CHECK(text(none) == "none");
+        const uint8_t other[16] = { 0x02, 0x01 };
+        CHECK(text(other) == "kind 02, id 0000000000000001");
+    }
+
     void TestVehicle()
     {
         CHECK(figures::IsVehicleType(3227) && !figures::IsVehicleType(3400) && !figures::IsVehicleType(14));
@@ -1580,6 +1602,7 @@ int main(int argc, char** argv)
     TestCrystal();
     TestCrystalRecipe();
     TestVehicle();
+    TestTagOwner();
     TestCatalog();
     TestGiants();
     TestRoundTrips();

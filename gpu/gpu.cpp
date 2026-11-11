@@ -2,9 +2,11 @@
 #include "gpu/auto_scale.h"
 #include "gpu/buffer_cache.h"
 #include "gpu/context.h"
+#include "gpu/first_frame.h"
 #include "gpu/fsr/fsr.h"
 #include "gpu/fsr/framegen.h"
 #include "gpu/frame_stats.h"
+#include "gpu/present_mode.h"
 #include "gpu/shader_cache.h"
 #include "../write_watch.h"
 #include "../platform/platform.h"
@@ -94,6 +96,94 @@ namespace
     constexpr uint64_t UploadOffsetAlignment = 512;
     constexpr uint64_t MinStagingSize = 4 << 20;
 
+    // Desktop Windows' guard on D3D12's first frames (gpu/first_frame.h): what the GPU code counts, read by the watch
+    // thread. Armed only while D3D12 runs as the setting's choice; once disarmed, the fence waits only test `armed`.
+    struct FirstFrameCounters
+    {
+        std::atomic<bool> armed = false;
+        std::atomic<uint32_t> attempts = 0, failures = 0, shown = 0;
+        std::atomic<uint64_t> waitingSinceMs = 0;
+        // The first presented frame's last command list, until its fence was waited for (under g_mutex).
+        plume::RenderCommandFence* fence = nullptr;
+        // SKY_GPU_TEST_NO_FRAME=fail (presents fail), stuck (the GPU never completes one) or lost (the device is removed
+        // at the first present): a test run on a PC proves the switch to Vulkan.
+        char test = 0;
+        // The watch thread is detached (an exit() must not find a joinable thread); `watching` while it runs.
+        std::atomic<bool> stop = false, watching = false;
+        void (*fallback)(const char* why) = nullptr;
+    } g_firstFrame;
+
+    // Every fence wait goes through here: the watch sees one that never returns, and the first frame shown.
+    void WaitFence(plume::RenderCommandQueue& queue, plume::RenderCommandFence* fence)
+    {
+        if (!g_firstFrame.armed.load(std::memory_order_relaxed))
+        {
+            queue.waitForCommandFence(fence);
+            return;
+        }
+        g_firstFrame.waitingSinceMs = SDL_GetTicks() | 1;
+        if (g_firstFrame.test == 's' && fence == g_firstFrame.fence)
+            for (;;) // SKY_GPU_TEST_NO_FRAME=stuck: this frame never completes
+                SDL_Delay(1000);
+        queue.waitForCommandFence(fence);
+        g_firstFrame.waitingSinceMs = 0;
+        if (fence == g_firstFrame.fence)
+        {
+            g_firstFrame.fence = nullptr;
+            g_firstFrame.shown++;
+        }
+    }
+
+    // An acquire or a present was tried on the swap chain; `fence`: the presented frame's, null when it failed.
+    void CountPresent(plume::RenderCommandFence* fence)
+    {
+        if (!g_firstFrame.armed.load(std::memory_order_relaxed))
+            return;
+        g_firstFrame.attempts++;
+        if (fence == nullptr || g_firstFrame.test == 'f')
+            g_firstFrame.failures++;
+        else if (g_firstFrame.fence == nullptr && g_firstFrame.shown == 0)
+            g_firstFrame.fence = fence;
+    }
+
+#if defined(_WIN32) && !defined(PLUME_D3D12_COREWINDOW)
+    // The watch thread: samples the counters until frames reach the screen, or calls the fallback, which does not return.
+    void WatchFirstFrames(HWND window)
+    {
+        gpu::firstframe::Watch watch;
+        struct Done
+        {
+            ~Done() { g_firstFrame.watching = false; }
+        } done;
+        while (!g_firstFrame.stop)
+        {
+            SDL_Delay(uint32_t(gpu::firstframe::WatchTickMs));
+            gpu::firstframe::Sample sample;
+            sample.nowMs = SDL_GetTicks();
+            sample.visible = IsWindowVisible(window) && !IsIconic(window);
+            sample.removedReason = int32_t(gpu::detail::D3D12RemovedReason(*gpu::detail::g_context->device));
+            sample.presentAttempts = g_firstFrame.attempts;
+            sample.presentFailures = g_firstFrame.failures;
+            sample.framesShown = g_firstFrame.shown;
+            sample.waitingSinceMs = g_firstFrame.waitingSinceMs;
+            if (g_firstFrame.test == 'l' && sample.presentAttempts != 0 && sample.removedReason == 0)
+                sample.removedReason = int32_t(0x887A0006u); // DXGI_ERROR_DEVICE_HUNG
+            const gpu::firstframe::Verdict verdict = watch.Update(sample);
+            if (verdict == gpu::firstframe::Verdict::Watching)
+                continue;
+            g_firstFrame.armed = false;
+            if (verdict == gpu::firstframe::Verdict::Fine)
+            {
+                fprintf(stderr, "[gpu] D3D12's first frames reached the screen (%u shown in the first minute)\n",
+                    sample.framesShown);
+                return;
+            }
+            fprintf(stderr, "[gpu] D3D12 shows nothing on this PC: %s\n", watch.Why());
+            g_firstFrame.fallback(watch.Why());
+            return;
+        }
+    }
+#endif
 }
 
 namespace gpu::detail
@@ -275,7 +365,7 @@ namespace gpu::detail
         uint64_t start = SDL_GetTicksNS();
         for (uint32_t i = 0; i < previous.submitted; i++)
         {
-            g_context->queue->waitForCommandFence(previous.submissions[i].fence.get());
+            WaitFence(*g_context->queue, previous.submissions[i].fence.get());
             ReadTiming(previous.submissions[i]);
         }
         g_context->perf.gpuWaitNs += SDL_GetTicksNS() - start;
@@ -296,7 +386,7 @@ namespace gpu::detail
         uint64_t start = SDL_GetTicksNS();
         for (uint32_t i = 0; i < c.submitted; i++)
         {
-            c.queue->waitForCommandFence(c.submissions[i].fence.get());
+            WaitFence(*c.queue, c.submissions[i].fence.get());
             ReadTiming(c.submissions[i]);
         }
         c.perf.gpuWaitNs += SDL_GetTicksNS() - start;
@@ -600,12 +690,54 @@ namespace
 #endif
     }
 
+    // VSync's mode for the window's display (gpu/present_mode.h): the refresh, the mode asked and the one in effect.
+    struct PresentChoice
+    {
+        double refreshHz = 0;
+        gpu::presentmode::Mode wanted = gpu::presentmode::Mode::Fifo, mode = gpu::presentmode::Mode::Fifo;
+    };
+    PresentChoice g_present;
+    gpu::presentmode::Cadence g_cadence; // the GPU thread's, read by LogPerf
+
+    gpu::presentmode::Mode WantedPresentMode(double& refreshHz)
+    {
+        Context& c = *g_context;
+        const SDL_DisplayMode* mode =
+            c.window != nullptr ? SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(c.window)) : nullptr;
+        refreshHz = mode != nullptr ? double(mode->refresh_rate) : 0.0;
+        return gpu::presentmode::Choose(gpu::g_settings.vsync, refreshHz, gpu::g_settings.fpsLimit);
+    }
+
+    // Sets the swap chain's mode for its display, and logs it when it changes (Vulkan applies it at the next resize).
+    void ApplyPresentMode()
+    {
+        Context& c = *g_context;
+        PresentChoice choice;
+        choice.wanted = WantedPresentMode(choice.refreshHz);
+        using gpu::presentmode::Mode;
+        const bool latest = c.swapChain->setPresentLatest(choice.wanted == Mode::Latest);
+        choice.mode = choice.wanted == Mode::Latest && !latest ? Mode::Fifo : choice.wanted;
+        static bool first = true;
+        const PresentChoice before = std::exchange(g_present, choice);
+        if (std::exchange(first, false) || before.mode != choice.mode || before.refreshHz != choice.refreshHz)
+        {
+            static uint32_t logged = 0;
+            if (logged++ < 10)
+                fprintf(stderr, "[gpu] vsync %s: display %.2f Hz, %u FPS%s: %s%s\n",
+                    gpu::g_settings.vsync ? "on" : "off", choice.refreshHz, gpu::g_settings.fpsLimit,
+                    choice.wanted == Mode::Latest ? ", not a multiple" : "", gpu::presentmode::Name(choice.mode),
+                    choice.wanted == Mode::Latest && !latest ? " (this backend has no other: FIFO)" : "");
+        }
+        g_cadence = {};
+    }
+
     // Framebuffers cache the image size: rebuild them after every resize, once the GPU is idle.
     void ResizeSwapChain()
     {
         Context& c = *g_context;
         WaitForSubmissions();
         c.swapChainFramebuffers.clear();
+        ApplyPresentMode(); // the window may be on another display now
         if (!c.swapChain->resize())
             return;
         for (uint32_t i = 0; i < c.swapChain->getTextureCount(); i++)
@@ -634,9 +766,27 @@ namespace
     void CreateSwapChain()
     {
         Context& c = *g_context;
-        c.swapChain = c.queue->createSwapChain(RenderSwapChainDesc(c.renderWindow, OutputFormat, SwapChainBufferCount));
+        // The newest frame at each refresh needs a third image: one shown, one waiting, one drawn.
+        double refreshHz = 0;
+        const bool latest = WantedPresentMode(refreshHz) == gpu::presentmode::Mode::Latest;
+#if !defined(PLUME_D3D12_COREWINDOW)
+        SDL_ClearError();
+#endif
+        c.swapChain = c.queue->createSwapChain(
+            RenderSwapChainDesc(c.renderWindow, OutputFormat, SwapChainBufferCount + (latest ? 1 : 0)));
+        const std::string surfaceError = SDL_GetError();
         c.swapChain->setVsyncEnabled(gpu::g_settings.vsync);
+        ApplyPresentMode();
         c.swapChainNoSurface = !HasSurface(*c.swapChain);
+        if (c.swapChainNoSurface && c.recovery.Failures() == 0)
+        {
+            const char* driver = nullptr;
+#if !defined(PLUME_D3D12_COREWINDOW)
+            driver = SDL_GetCurrentVideoDriver();
+#endif
+            fprintf(stderr, "[gpu] %s surface creation failed (SDL video %s): %s; swap chain recovery will retry\n",
+                g_backendName, driver != nullptr ? driver : "none", surfaceError.c_str());
+        }
         if (!c.swapChainNoSurface)
             ResizeSwapChain();
     }
@@ -734,6 +884,9 @@ namespace
     void FramePresented()
     {
         Context& c = *g_context;
+        if (plume::RenderDisplayStats stats; c.swapChain->getDisplayStats(stats))
+            g_cadence.Add(stats.frames, stats.refreshes, stats.timeNs,
+                g_present.refreshHz > 0 ? uint64_t(1e9 / g_present.refreshHz) : 0);
         if (uint32_t attempts = c.recovery.Presented(); attempts > 0 && c.recovery.LogStreak())
             fprintf(stderr, "[gpu] swap chain: frames again after %u rebuild%s\n", attempts, attempts == 1 ? "" : "s");
     }
@@ -810,6 +963,21 @@ namespace
         return why = "discrete GPU", 2;
     }
 
+    // gpu::DropTo30ByDefault, as AutoScale tells the GPUs apart.
+    bool DropTo30ByDefault(
+        const RenderDeviceDescription& description, const RenderDeviceCapabilities& capabilities, const char*& why)
+    {
+        if (description.vendor == RenderDeviceVendor::APPLE)
+            return why = "Apple GPU", true;
+        if (capabilities.uma || description.type == RenderDeviceType::INTEGRATED)
+            return why = "integrated GPU", true;
+        if (description.type != RenderDeviceType::DISCRETE && description.type != RenderDeviceType::UNKNOWN)
+            return why = "virtual or software GPU", true;
+        return why = "discrete GPU", false;
+    }
+    bool g_dropTo30Default = true;
+    const char* g_dropTo30Why = "no GPU yet";
+
     bool g_scaleAuto = false; // the player left the resolution scale on auto (gpu/auto_scale.h)
     const char* const AutoScaleFile = "auto_scale.txt";
 
@@ -838,6 +1006,7 @@ namespace
                 100.0 * SDL_GetWindowDisplayScale(window));
         }
 
+        g_dropTo30Default = DropTo30ByDefault(description, capabilities, g_dropTo30Why);
         if (requestedScale == 0)
         {
             const char* why = "";
@@ -859,6 +1028,13 @@ namespace
         uint32_t scale = gpu::g_settings.resolutionScale;
         fprintf(stderr, "[gpu] resolution scale %u: the 3D renders at %ux%u\n", scale, 1120 * scale, 704 * scale);
     }
+}
+
+bool gpu::DropTo30ByDefault(const char** why)
+{
+    if (why != nullptr)
+        *why = g_dropTo30Why;
+    return g_dropTo30Default;
 }
 
 SDL_WindowFlags gpu::WindowFlags()
@@ -891,6 +1067,7 @@ bool gpu::Init(SDL_Window* window, uint32_t width, uint32_t height)
     // Desktop Windows: the chosen backend (gpu_backend, D3D12 by default), then the other when it has no device;
     // SKY_GPU_BACKEND=d3d12 or vulkan names one and allows no other (gpu/gpu_backend.h).
     const gpubackend::Plan plan = gpubackend::Choose(g_settings.backend, skyenv::Get("SKY_GPU_BACKEND"));
+    std::optional<gpubackend::Backend> running;
     // SKY_GPU_TEST_NO_DEVICE=d3d12 or vulkan: that backend reports no device, so a test run proves the fallback.
     const char* refused = skyenv::Get("SKY_GPU_TEST_NO_DEVICE");
     auto open = [&](gpubackend::Backend backend) -> const char* {
@@ -917,7 +1094,7 @@ bool gpu::Init(SDL_Window* window, uint32_t width, uint32_t height)
         c.device = c.renderInterface->createDevice();
         return c.device == nullptr ? "no device was created" : nullptr;
     };
-    gpubackend::Run(plan, open, [](const char* line) { fprintf(stderr, "%s\n", line); });
+    running = gpubackend::Run(plan, open, [](const char* line) { fprintf(stderr, "%s\n", line); });
 #else
     c.renderInterface = CreateVulkanInterface();
     if (c.renderInterface != nullptr)
@@ -936,13 +1113,24 @@ bool gpu::Init(SDL_Window* window, uint32_t width, uint32_t height)
     Step("device created");
     c.queue = c.device->createCommandQueue(RenderCommandListType::DIRECT);
     Step("queue created");
+    if (c.queue == nullptr)
+    {
+        fprintf(stderr, "[gpu] %s initialization failed: no graphics command queue\n", g_backendName);
+        g_context.reset();
+        return false;
+    }
     if (!CreatePipelines())
     {
+        fprintf(stderr, "[gpu] %s initialization failed: present shaders or pipelines could not be created\n",
+            g_backendName);
         g_context.reset();
         return false;
     }
 
     RenderWindow renderWindow{};
+#if !defined(PLUME_D3D12_COREWINDOW)
+    SDL_ClearError();
+#endif
     if (window != nullptr && GetRenderWindow(window, renderWindow))
     {
         Step("present pipelines created");
@@ -956,6 +1144,15 @@ bool gpu::Init(SDL_Window* window, uint32_t width, uint32_t height)
     }
     else
     {
+        const char* driver = nullptr;
+#if !defined(PLUME_D3D12_COREWINDOW)
+        driver = SDL_GetCurrentVideoDriver();
+#endif
+        fprintf(stderr, "[gpu] no native render surface: %s (SDL video %s, flags 0x%llX, error: %s); "
+                        "using offscreen output\n",
+            window == nullptr ? "no window supplied" : "native window, graphics flag or view unavailable",
+            driver != nullptr ? driver : "none",
+            static_cast<unsigned long long>(window != nullptr ? SDL_GetWindowFlags(window) : 0), SDL_GetError());
         int pixelWidth = int(width), pixelHeight = int(height);
         if (window != nullptr)
             SDL_GetWindowSizeInPixels(window, &pixelWidth, &pixelHeight);
@@ -973,13 +1170,32 @@ bool gpu::Init(SDL_Window* window, uint32_t width, uint32_t height)
     DrawInit();
     StartWorker();
     Step(WorkerRunning() ? "GPU thread started" : "no GPU thread");
+#if defined(_WIN32) && !defined(PLUME_D3D12_COREWINDOW)
+    // D3D12 as the setting's choice (not SKY_GPU_BACKEND's) on a window: watched until its frames reach the screen.
+    if (running == gpubackend::Backend::D3D12 && plan.first == gpubackend::Backend::D3D12 && plan.fallback &&
+        c.swapChain != nullptr && g_firstFrame.fallback != nullptr)
+    {
+        const char* test = skyenv::Get("SKY_GPU_TEST_NO_FRAME");
+        g_firstFrame.test = test == nullptr ? 0 : test[0];
+        g_firstFrame.armed = true;
+        g_firstFrame.watching = true;
+        std::thread(WatchFirstFrames, c.renderWindow).detach();
+        fprintf(stderr, "[gpu] D3D12 is the setting's choice: should no frame reach the screen in its first seconds, "
+                        "this game switches to Vulkan\n");
+    }
+#endif
     return true;
 }
+
+void gpu::SetFirstFrameFallback(void (*fallback)(const char* why)) { g_firstFrame.fallback = fallback; }
 
 const char* gpu::BackendName() { return g_backendName; }
 
 void gpu::Shutdown()
 {
+    g_firstFrame.stop = true;
+    while (g_firstFrame.watching)
+        SDL_Delay(10);
     ProducerLock producer;
     StopWorker();
     std::lock_guard lock(g_mutex);
@@ -1249,6 +1465,23 @@ namespace
             return;
         WorkerTimes workers;
         TakeWorkerTimes(workers);
+        // The display's cadence (gpu/present_mode.h) where the backend reports it; then the mode, if the window moved
+        // to a display with another refresh.
+        if (const uint32_t shown = g_cadence.Counted(); enabled && shown != 0)
+        {
+            const auto& held = g_cadence.held;
+            auto share = [&](uint32_t n) { return 100.0 * double(held[n]) / double(shown); };
+            fprintf(stderr,
+                "[perf] display %.0f Hz, vsync %s: %u frames shown, for 1 refresh %.0f%%, 2: %.0f%%, 3: %.0f%%, 4 or "
+                "more: %.0f%%\n",
+                g_present.refreshHz, gpu::presentmode::Name(g_present.mode), shown, share(1), share(2), share(3),
+                share(4));
+        }
+        g_cadence.Clear();
+        if (c.swapChain != nullptr && !c.swapChainNoSurface)
+            if (double refreshHz = 0;
+                WantedPresentMode(refreshHz) != g_present.wanted || refreshHz != g_present.refreshHz)
+                ApplyPresentMode();
         if (enabled)
         {
             size_t frames = frameNs.size();
@@ -1502,6 +1735,8 @@ void gpu::detail::PresentNow(const Texture* image)
             !AcquireImage(c.acquireSemaphore.get(), &imageIndex, result))
         {
             SwapChainFailed("acquire", result);
+            if (!c.swapChain->isEmpty())
+                CountPresent(nullptr);
             if (c.recording || c.submitted != 0)
                 Submit();
             SDL_Delay(16);
@@ -1574,6 +1809,7 @@ void gpu::detail::PresentNow(const Texture* image)
         Step("frame submitted, presenting");
         uint64_t presentStart = SDL_GetTicksNS();
         bool presented = PresentSwapChain(imageIndex, rendered);
+        CountPresent(presented ? c.submissions[c.submitted - 1].fence.get() : nullptr);
         Step(presented ? "presented" : "present failed");
         if (presented)
             FramePresented();

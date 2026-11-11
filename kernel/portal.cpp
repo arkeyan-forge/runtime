@@ -4,6 +4,7 @@
 // poll, then at most one SetRaw with the next command. On the Xbox 360 every report starts with a 2-byte header
 // (0B 14 on commands, skipped by the title on input) followed by the portal protocol report. docs/runtime/host/portal.md.
 #include "game_hooks.h"
+#include "host/figures/tag_owner.h"
 #include "host/portal.h"
 #include "kernel/guest_format.h"
 #include "memory.h"
@@ -51,6 +52,28 @@ namespace
     }
 }
 
+namespace
+{
+    // Who the toy in each slot belongs to (host/figures/tag_owner.h), logged when the game reads its block 6 and it
+    // changed: a problem report then shows a toy the game counts as someone else's.
+    void LogTagOwner(const uint8_t* report, size_t size)
+    {
+        constexpr uint8_t OwnerBlock = 6;
+        constexpr size_t BlockStart = 3, Slots = 16;
+        if (size < BlockStart + 16 || report[0] != 'Q' || (report[1] & 0xF0) == 0 || report[2] != OwnerBlock)
+            return;
+        static figures::TagOwner last[Slots];
+        const int slot = report[1] & 0x0F;
+        const figures::TagOwner owner = figures::ReadTagOwner(report + BlockStart);
+        if (owner.kind == last[slot].kind && owner.id == last[slot].id)
+            return;
+        last[slot] = owner;
+        char text[64];
+        figures::FormatTagOwner(owner, text, sizeof(text));
+        fprintf(stderr, "[portal] slot %d's toy: owner %s\n", slot, text);
+    }
+}
+
 // XamInputNonControllerGetRaw(DWORD* state, DWORD* length, BYTE* buffer): in, *length is the buffer size (32);
 // out, the report and its size. *state is non-zero when the buffer holds a new report (the title reads it as a
 // DWORD). Any failure makes the title drop the portal and reset its protocol state.
@@ -78,6 +101,7 @@ PPC_FUNC(__imp__XamInputNonControllerGetRaw)
         memcpy(data, Header, HeaderSize);
         if (PortalLogEnabled())
             LogReport("<-", data + HeaderSize, size);
+        LogTagOwner(data + HeaderSize, size);
         size += HeaderSize;
     }
     g_memory.Write<uint32_t>(length, uint32_t(size));

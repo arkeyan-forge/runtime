@@ -1,11 +1,13 @@
-// Linux: a HID portal's commands as a USB control SET_REPORT, through libusb (host/portal_hid.cpp, method usb-control).
-// hidraw's write goes to the portal's interrupt OUT endpoint, and some Wii portals refuse it ("hid-write: Protocol
-// error"): the original Spyro's Adventure one and a Swap Force one (both 1430:0150 "Spyro Porta"; the product string
-// does not tell the models apart, the answer to 'R' does), while other Swap Force portals ("Spyro Portal") take it; on
-// macOS the same family needed the control request. A class request to an interface needs that interface claimed, so the kernel's HID
-// driver is detached from it (libusb's auto-detach) for as long as the portal stays open: the portal's hidraw node goes
-// away meanwhile, and its reports are read here, from the interrupt IN endpoint. Releasing the interface gives it back
-// to the kernel. UNTESTED ON HARDWARE: a fake libusb checks the calls and the bytes (portal_hid_report_test.cpp).
+// Linux and Windows: a HID portal's commands as a USB control SET_REPORT and its reports from the interrupt IN endpoint,
+// through libusb (Linux, host/portal_hid.cpp, method usb-control) or WinUSB (Windows, a portal a tool such as Zadig
+// moved to WinUSB: no HID device is left). hidraw's write goes to the portal's interrupt OUT endpoint, and some Wii
+// portals refuse it ("hid-write: Protocol error"): the original Spyro's Adventure one and a Swap Force one (both
+// 1430:0150 "Spyro Porta"; the product string does not tell the models apart, the answer to 'R' does), while other Swap
+// Force portals ("Spyro Portal") take it; on macOS the same family needed the control request. A class request to an
+// interface needs that interface claimed, so on Linux the kernel's HID driver is detached from it (libusb's
+// auto-detach) for as long as the portal stays open: the portal's hidraw node goes away meanwhile, and its reports are
+// read here. Releasing the interface gives it back to the kernel. UNTESTED ON HARDWARE: a fake libusb checks the calls
+// and the bytes (portal_hid_report_test.cpp).
 #pragma once
 #include "host/portal_hid_report.h"
 #include "host/portal_usb.h"
@@ -53,8 +55,8 @@ namespace portal_hid
     }
 
     // The first interrupt IN endpoint of interface `number` (alternate setting 0) in a raw configuration descriptor;
-    // 0 when there is none.
-    inline uint8_t InEndpoint(const uint8_t* descriptor, size_t size, int number)
+    // 0 when there is none. `packetSize` gets its wMaxPacketSize.
+    inline uint8_t InEndpoint(const uint8_t* descriptor, size_t size, int number, uint16_t* packetSize = nullptr)
     {
         bool inside = false;
         for (size_t offset = 0; offset + 2 <= size && descriptor[offset] >= 2; offset += descriptor[offset])
@@ -64,7 +66,11 @@ namespace portal_hid
                 inside = entry[2] == number && entry[3] == 0;
             else if (inside && entry[1] == 5 && entry[0] >= 7 && offset + 7 <= size && (entry[3] & 3) == 3 &&
                      (entry[2] & 0x80) != 0)
+            {
+                if (packetSize != nullptr)
+                    *packetSize = uint16_t(entry[4] | (entry[5] & 0x07) << 8);
                 return entry[2];
+            }
         }
         return 0;
     }
@@ -72,7 +78,8 @@ namespace portal_hid
     class ControlLink
     {
     public:
-        ControlLink() = default;
+        // `winusb`: the calls are WinUSB's (Windows): its name in the errors, no udev rule.
+        explicit ControlLink(bool winusb = false) : m_name(winusb ? "WinUSB" : "libusb"), m_winusb(winusb) {}
         ControlLink(const ControlLink&) = delete;
         ControlLink& operator=(const ControlLink&) = delete;
         ~ControlLink() { Release(); }
@@ -89,7 +96,7 @@ namespace portal_hid
             portal_usb::Device** devices = nullptr;
             ptrdiff_t count = usb.get_device_list(usb.context, &devices);
             if (count < 0)
-                return std::string("libusb: no device list (") + usb.error_name(int(count)) + ")";
+                return m_name + ": no device list (" + usb.error_name(int(count)) + ")";
             portal_usb::Device* found = nullptr;
             for (ptrdiff_t i = 0; i < count && found == nullptr; i++)
             {
@@ -106,11 +113,13 @@ namespace portal_hid
             std::string error;
             portal_usb::Handle* handle = nullptr;
             if (found == nullptr)
-                error = "libusb: the portal is not in the USB device list";
+                error = m_name + ": the portal is not in the USB device list";
             else if (int result = usb.open(found, &handle); result != 0)
             {
-                error = std::string("libusb: cannot open (") + usb.error_name(result) + ")";
-                if (result == portal_usb::ErrorAccess)
+                error = m_name + ": cannot open (" + usb.error_name(result) + ")";
+                if (result == portal_usb::ErrorAccess && m_winusb)
+                    error += "; another program holds the portal";
+                else if (result == portal_usb::ErrorAccess)
                     error += "; Linux needs the portal's udev rule: " + portal_usb::LinuxUdevRule(vendor, product);
             }
             usb.free_device_list(devices, 1);
@@ -120,22 +129,25 @@ namespace portal_hid
             const int number = std::max(address.interface, 0);
             uint8_t configuration[512];
             int size = usb.control_transfer(handle, 0x80, 0x06, 0x0200, 0, configuration, sizeof(configuration), 500);
-            const uint8_t in = size > 0 ? InEndpoint(configuration, size_t(size), number) : 0;
+            uint16_t packet = 0;
+            const uint8_t in = size > 0 ? InEndpoint(configuration, size_t(size), number, &packet) : 0;
             if (in == 0)
             {
                 usb.close(handle);
-                return "libusb: no interrupt IN endpoint on interface " + std::to_string(number);
+                return m_name + ": no interrupt IN endpoint on interface " + std::to_string(number);
             }
             usb.set_auto_detach_kernel_driver(handle, 1);
             if (int result = usb.claim_interface(handle, number); result != 0)
             {
                 usb.close(handle);
-                return "libusb: cannot claim interface " + std::to_string(number) + " (" + usb.error_name(result) + ")";
+                return m_name + ": cannot claim interface " + std::to_string(number) + " (" + usb.error_name(result) +
+                       ")";
             }
             m_usb = &usb;
             m_handle = handle;
             m_interface = number;
             m_in = in;
+            m_packet = packet;
             return {};
         }
 
@@ -146,26 +158,29 @@ namespace portal_hid
             int result = m_usb->control_transfer(m_handle, report.requestType, report.request, report.value,
                 report.index, report.data, uint16_t(sizeof(report.data)), 500);
             if (result < 0)
-                return std::string("libusb control transfer: ") + m_usb->error_name(result);
+                return m_name + " control transfer: " + m_usb->error_name(result);
             if (result != int(sizeof(report.data)))
-                return "libusb control transfer: " + std::to_string(result) + " of 32 bytes";
+                return m_name + " control transfer: " + std::to_string(result) + " of 32 bytes";
             return {};
         }
 
         // One report from the interrupt IN endpoint, waiting up to `timeoutMs` (at least 1: libusb's 0 waits forever):
         // its size, 0 for none, -1 on an error (`error` says which). A transfer that timed out may still carry data.
+        // One packet at most: a transfer longer than the endpoint's packets waits for a second one (issue #20).
         int Read(uint8_t* buffer, int capacity, unsigned timeoutMs, std::string& error)
         {
             int transferred = 0;
+            if (m_packet != 0)
+                capacity = std::min(capacity, int(m_packet));
             int result =
                 m_usb->interrupt_transfer(m_handle, m_in, buffer, capacity, &transferred, std::max(timeoutMs, 1u));
             if (result == 0 || result == portal_usb::ErrorTimeout)
                 return transferred;
-            error = std::string("libusb interrupt transfer: ") + m_usb->error_name(result);
+            error = m_name + " interrupt transfer: " + m_usb->error_name(result);
             return -1;
         }
 
-        // The interface goes back to the kernel's HID driver (auto-detach re-attaches it on release).
+        // The interface goes back to the kernel's HID driver (Linux: auto-detach re-attaches it on release).
         void Release()
         {
             if (m_handle == nullptr)
@@ -180,5 +195,8 @@ namespace portal_hid
         portal_usb::Handle* m_handle = nullptr;
         int m_interface = 0;
         uint8_t m_in = 0;
+        uint16_t m_packet = 0; // the IN endpoint's wMaxPacketSize
+        std::string m_name;
+        bool m_winusb = false;
     };
 }

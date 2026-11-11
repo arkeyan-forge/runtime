@@ -4,6 +4,7 @@
 //   ArkeyanCollectionTest [--icons <folder>]   (--icons also writes a contact sheet of the generated icons)
 // Exit code 0 = pass.
 #include "host/collection/catalogue.h"
+#include "host/collection/catalogue_ids.h"
 #include "host/collection/collection.h"
 #include "host/collection/icons.h"
 #include "host/collection/json.h"
@@ -251,6 +252,23 @@ namespace
     {
         using namespace collection;
         const Catalogue& catalogue = Catalogue::Get();
+        // Require exact entries: Describe's fallback can name an id that is absent from the catalogue.
+        // The checklist preserves the existing baseline; comparing the private tables is a separate audit.
+        for (uint16_t type : test::RequiredToyIds)
+        {
+            if (catalogue.Find(type) == nullptr)
+                fprintf(stderr, "missing catalogue toy: %u\n", unsigned(type));
+            CHECK(catalogue.Find(type) != nullptr);
+        }
+        for (const test::RequiredVariant& required : test::RequiredVariantIds)
+        {
+            const Toy* toy = catalogue.Find(required.type);
+            bool found = toy != nullptr && std::any_of(toy->variants.begin(), toy->variants.end(),
+                [&](const Variant& variant) { return !variant.sameTag && variant.id == required.id; });
+            if (!found)
+                fprintf(stderr, "missing catalogue variant: %u:0x%04X\n", unsigned(required.type), unsigned(required.id));
+            CHECK(found);
+        }
         std::set<uint16_t> types;
         int perGame[6] = {};
         const char* games[] = { "ssa", "giants", "swapforce", "trapteam", "superchargers", "imaginators" };
@@ -291,6 +309,24 @@ namespace
         // From SuperChargers' and Imaginators' own toy tables (tools/catalogue_tables.py): Trap Team's Dark Wildfire, a
         // racing villain and its vehicle, which only the two games that define them take.
         CHECK(catalogue.Describe(catalogue.Find(458), 0x3402).kind == VariantKind::Dark);
+        for (uint16_t type : { 458, 462, 476 })
+        {
+            const Toy* toy = catalogue.Find(type);
+            CHECK(toy != nullptr && toy->game == "trapteam");
+            const VariantInfo dark = catalogue.Describe(toy, 0x3402);
+            CHECK(toy != nullptr && dark.known && dark.kind == VariantKind::Dark && dark.name == "Dark " + toy->name);
+        }
+        // Sensei elements follow Imaginators, independently of their earlier villain appearances.
+        const Toy* pitBoss = catalogue.Find(605);
+        const Toy* hoodSickle = catalogue.Find(611);
+        const Toy* graveClobber = catalogue.Find(623);
+        CHECK(pitBoss != nullptr && pitBoss->element == Element::Undead);
+        CHECK(hoodSickle != nullptr && hoodSickle->element == Element::Dark);
+        CHECK(graveClobber != nullptr && graveClobber->element == Element::Water);
+        // Trap Team's Nitro Magna Charge image has a misnumbered filename; key it by the figure's actual id.
+        const Game* trapteam = catalogue.FindGame("trapteam");
+        CHECK(trapteam != nullptr && trapteam->portraits.contains((uint32_t(2010) << 16) | 0x2402));
+        CHECK(trapteam != nullptr && !trapteam->portraits.contains((uint32_t(2010) << 16) | 0x23A8));
         CHECK(catalogue.Find(3440) != nullptr && catalogue.Find(3440)->category == Category::Villain &&
               catalogue.Find(3470) != nullptr && catalogue.Find(3470)->category == Category::Vehicle);
         CHECK(catalogue.Accepts("superchargers", 3470) && catalogue.Accepts("imaginators", 3440) &&
