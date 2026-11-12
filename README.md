@@ -1,3 +1,5 @@
+> **This repository is archived.** Its content now lives in [arkeyan-forge/forge](https://github.com/arkeyan-forge/forge) (one repository for the whole project, since 2026-11-12).
+
 # runtime/: the shared runtime
 
 > **Purpose:** what is in the `runtime/` code folder and where is it documented? · **Status:** current (2026-10-26) · **Tags:** [Xbox] [XDK]
